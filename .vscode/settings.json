@@ -1,0 +1,22 @@
+{
+    "python-envs.pythonProjects": [
+        {
+            "path": ".",
+            "envManager": "ms-python.python:venv",
+            "packageManager": "ms-python.python:pip"
+        }
+    ],
+    "python.defaultInterpreterPath": "${workspaceFolder}\\env\\Scripts\\python.exe",
+    "python.terminal.activateEnvInCurrentTerminal": true,
+    "files.exclude": {
+        "**/node_modules": true,
+        "**/env": true,
+        "**/__pycache__": true
+    },
+    "search.exclude": {
+        "**/node_modules": true,
+        "**/env": true,
+        "**/data/processed": true
+    },
+    "files.encoding": "utf8"
+}

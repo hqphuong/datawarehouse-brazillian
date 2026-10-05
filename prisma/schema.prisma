@@ -1,0 +1,60 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model dim_location {
+  location_id                                                            String              @id @db.VarChar(50)
+  zip_code_prefix                                                        String?             @db.VarChar(5)
+  city                                                                   String?             @db.VarChar(100)
+  state                                                                  String?             @db.VarChar(5)
+  latitude                                                               Float?
+  longitude                                                              Float?
+  fact_delivery_sla_fact_delivery_sla_customer_location_idTodim_location fact_delivery_sla[] @relation("fact_delivery_sla_customer_location_idTodim_location")
+  fact_delivery_sla_fact_delivery_sla_seller_location_idTodim_location   fact_delivery_sla[] @relation("fact_delivery_sla_seller_location_idTodim_location")
+}
+
+model dim_product {
+  product_id            String              @id @db.VarChar(50)
+  category_name_english String?             @db.VarChar(100)
+  weight_g              Float?
+  volume_cm3            Float?
+  fact_delivery_sla     fact_delivery_sla[]
+}
+
+model dim_time {
+  time_id           Int                 @id
+  full_date         DateTime            @db.Date
+  month             Int?
+  year              Int?
+  quarter           Int?
+  day_of_week       String?             @db.VarChar(15)
+  fact_delivery_sla fact_delivery_sla[]
+}
+
+model fact_delivery_sla {
+  order_id                                                          String        @db.VarChar(50)
+  order_item_id                                                     Int
+  product_id                                                        String?       @db.VarChar(50)
+  customer_location_id                                              String?       @db.VarChar(50)
+  seller_location_id                                                String?       @db.VarChar(50)
+  time_id                                                           Int?
+  payment_type                                                      String?       @db.VarChar(50)
+  approval_time_days                                                Float?
+  seller_prep_time_days                                             Float?
+  carrier_transit_time_days                                         Float?
+  freight_value                                                     Float?
+  review_score                                                      Int?
+  is_late                                                           Boolean?
+  has_logistics_complaint                                           Boolean?
+  dim_location_fact_delivery_sla_customer_location_idTodim_location dim_location? @relation("fact_delivery_sla_customer_location_idTodim_location", fields: [customer_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_customer_location")
+  dim_product                                                       dim_product?  @relation(fields: [product_id], references: [product_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_product")
+  dim_location_fact_delivery_sla_seller_location_idTodim_location   dim_location? @relation("fact_delivery_sla_seller_location_idTodim_location", fields: [seller_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_seller_location")
+  dim_time                                                          dim_time?     @relation(fields: [time_id], references: [time_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_time")
+
+  @@id([order_id, order_item_id])
+}

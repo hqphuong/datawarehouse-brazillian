@@ -1,0 +1,24 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# --- Môi trường ảo ---
+env/
+.venv/
+venv/
+
+# --- Node ---
+node_modules/
+npm-debug.log*
+
+# --- Bí mật / cấu hình local ---
+.env
+
+# --- Dữ liệu đã xử lý (sinh ra từ data/raw, có thể tạo lại bằng ETL) ---
+data/processed/
+
+# --- Hệ điều hành / IDE ---
+.DS_Store
+Thumbs.db

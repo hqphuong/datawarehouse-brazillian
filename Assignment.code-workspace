@@ -1,0 +1,22 @@
+{
+	"folders": [
+		{
+			"name": "Brazillian",
+			"path": "."
+		}
+	],
+	"settings": {
+		"python.defaultInterpreterPath": "${workspaceFolder}\\env\\Scripts\\python.exe",
+		"files.exclude": {
+			"**/node_modules": true,
+			"**/env": true,
+			"**/__pycache__": true
+		},
+		"search.exclude": {
+			"**/node_modules": true,
+			"**/env": true,
+			"**/data/processed": true
+		},
+		"files.encoding": "utf8"
+	}
+}

@@ -1,0 +1,6 @@
+# Thư viện Python dùng cho pipeline ETL của Brazillian
+# Cài đặt:  pip install -r requirements.txt
+
+pandas>=2.0
+numpy>=1.24
+psycopg2-binary>=2.9
