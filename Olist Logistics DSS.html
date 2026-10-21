@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Olist Logistics DSS</title>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/prop-types@15.8.1/prop-types.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-is@18.3.1/umd/react-is.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<style>
+  :root { color-scheme: light; box-sizing: border-box; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  body { margin: 0; background: #f8fafc; color: #1e293b; font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .card { background: #fff; border: 1px solid #e8edf3; border-radius: 14px; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+  input[type=range] { accent-color: #7aa7e0; }
+  @keyframes fadein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  .fade { animation: fadein .25s ease; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo, useEffect } = React;
+const { ResponsiveContainer, BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot } = Recharts;
+
+const BLUE = '#7aa7e0', RED = '#e59a9a', AMBER = '#e8c27a', GRID = '#eef2f6', MUTED = '#94a3b8';
+
+/* Lucide-style inline icons (no extra network dependency) */
+const P = {
+  dashboard: <><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></>,
+  dss: <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/>,
+  olap: <><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></>,
+  etl: <><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5M3 12a9 3 0 0 0 18 0"/></>,
+  play: <polygon points="6 3 20 12 6 21 6 3"/>,
+  alert: <path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3zM12 9v4M12 17h.01"/>,
+  check: <path d="M20 6 9 17l-5-5"/>,
+  x: <path d="M18 6 6 18M6 6l12 12"/>,
+  sort: <path d="m7 15 5 5 5-5M7 9l5-5 5 5"/>,
+  up: <path d="m18 15-6-6-6 6"/>,
+  down: <path d="m6 9 6 6 6-6"/>,
+  truck: <><path d="M10 17h4V5H2v12h3M20 17h2v-5l-3-4h-4v9h2"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></>,
+  loader: <path d="M21 12a9 9 0 1 1-6.2-8.55"/>,
+};
+const Icon = ({ n, size = 18, className = '' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className}>{P[n]}</svg>
+);
+
+const TABS = [
+  { id: 'dashboard', label: 'BI Dashboard', icon: 'dashboard' },
+  { id: 'dss', label: 'DSS Action Center', icon: 'dss' },
+  { id: 'olap', label: 'OLAP Query', icon: 'olap' },
+  { id: 'etl', label: 'ETL Monitor', icon: 'etl' },
+];
+const STATES = ['SP', 'RJ', 'MG', 'RS', 'PR'];
+const CATS = ['Electronics', 'Furniture', 'Toys', 'Health & Beauty'];
+const QTRS = ['Q1', 'Q2', 'Q3', 'Q4'];
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+const Select = ({ value, onChange, options, label }) => (
+  <label className="flex items-center gap-2 text-xs text-slate-500">
+    <span className="hidden sm:inline">{label}</span>
+    <select value={value} onChange={e => onChange(e.target.value)}
+      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-200">
+      {options.map(o => <option key={o}>{o}</option>)}
+    </select>
+  </label>
+);
+
+const Card = ({ title, children, className = '', right }) => (
+  <div className={`card p-5 ${className}`}>
+    {title && <div className="flex items-center justify-between mb-4"><h3 className="text-sm font-medium text-slate-600">{title}</h3>{right}</div>}
+    {children}
+  </div>
+);
+
+/* ---------- VIEW 1 ---------- */
+function Dashboard({ f }) {
+  const k = (f.year === 'All' ? 1 : f.year === '2017' ? 0.45 : 0.55) * (f.quarter === 'All' ? 1 : 0.25) * (f.state === 'All' ? 1 : 0.3);
+  const month = f.month === 'All' ? 1 : 0.2;
+  const sc = k * month;
+  const fmt = n => Math.round(n).toLocaleString();
+  const cards = [
+    { l: 'Total Orders', v: fmt(99441 * sc), s: 'delivered & shipped' },
+    { l: 'SLA Violation Rate', v: (8.1 + (f.state === 'RJ' ? 3.2 : f.state === 'SP' ? -1.1 : 0.6)).toFixed(1) + '%', s: 'vs 7.5% target', warn: true },
+    { l: 'Avg Freight Cost', v: 'R$ ' + (f.state === 'All' ? 19.9 : 21.4).toFixed(2), s: 'per order' },
+    { l: 'Avg Transit Time', v: (12.1 + (f.state === 'RJ' ? 1.8 : 0)).toFixed(1) + ' days', s: 'purchase → delivery' },
+  ];
+  const states = [['SP', 3420], ['RJ', 2315], ['MG', 1180], ['RS', 640], ['PR', 520]]
+    .filter(([s]) => f.state === 'All' || s === f.state).map(([s, v]) => ({ s, v: Math.round(v * (f.year === 'All' ? 1 : 0.5) * (f.quarter === 'All' ? 1 : 0.25)) }));
+  const trend = MONTHS.map((m, i) => ({ m, v: Math.round((260 + 90 * Math.sin(i / 1.8) + i * 14) * (f.state === 'All' ? 1 : 0.35)) }));
+  const causes = [{ n: 'Carrier', v: 52, c: BLUE }, { n: 'Seller', v: 33, c: AMBER }, { n: 'Weather', v: 15, c: RED }];
+  const tip = { contentStyle: { borderRadius: 10, border: '1px solid #e8edf3', boxShadow: 'none', fontSize: 12 } };
+  return (
+    <div className="space-y-6 fade">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+        {cards.map(c => (
+          <div key={c.l} className="card p-5">
+            <div className="text-xs text-slate-500">{c.l}</div>
+            <div className={`text-2xl font-semibold mt-2 ${c.warn ? 'text-red-400' : 'text-slate-800'}`}>{c.v}</div>
+            <div className="text-xs text-slate-400 mt-1">{c.s}</div>
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <Card title="Top States by Delay Count">
+          <div className="h-64"><ResponsiveContainer><BarChart data={states} barSize={28}>
+            <CartesianGrid vertical={false} stroke={GRID} /><XAxis dataKey="s" tick={{ fontSize: 12, fill: MUTED }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 12, fill: MUTED }} axisLine={false} tickLine={false} /><Tooltip {...tip} cursor={{ fill: '#f1f5f9' }} />
+            <Bar dataKey="v" name="Delays" fill={BLUE} radius={[6, 6, 0, 0]} /></BarChart></ResponsiveContainer></div>
+        </Card>
+        <Card title="Delay Trend over Time">
+          <div className="h-64"><ResponsiveContainer><LineChart data={trend}>
+            <CartesianGrid vertical={false} stroke={GRID} /><XAxis dataKey="m" tick={{ fontSize: 12, fill: MUTED }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 12, fill: MUTED }} axisLine={false} tickLine={false} /><Tooltip {...tip} />
+            <Line type="monotone" dataKey="v" name="Delays" stroke={BLUE} strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} /></LineChart></ResponsiveContainer></div>
+        </Card>
+        <Card title="Root Causes of Delays">
+          <div className="h-52"><ResponsiveContainer><PieChart>
+            <Pie data={causes} dataKey="v" nameKey="n" innerRadius={55} outerRadius={80} paddingAngle={3} stroke="none">
+              {causes.map(c => <Cell key={c.n} fill={c.c} />)}</Pie><Tooltip {...tip} formatter={v => v + '%'} /></PieChart></ResponsiveContainer></div>
+          <div className="flex justify-center gap-4 text-xs text-slate-500 mt-2">
+            {causes.map(c => <span key={c.n} className="flex items-center gap-1.5"><i className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: c.c }} />{c.n} {c.v}%</span>)}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- VIEW 2 ---------- */
+function DSS({ toast }) {
+  const [days, setDays] = useState(2);
+  const [done, setDone] = useState({});
+  const base = 18.4;
+  const proj = d => Math.max(4, +(base - d * 2.1 + d * d * 0.08).toFixed(1));
+  const data = [0, 1, 2, 3, 4, 5].map(d => ({ d, v: proj(d) }));
+  const alerts = [
+    { id: 1, t: 'SP → RJ route exceeded SLA by 3 days', d: '1,240 orders affected · carrier hub congestion detected', c: 'red' },
+    { id: 2, t: 'MG → BA lane forecast to breach SLA next week', d: '380 orders at risk · seller prep time above 4.5 days', c: 'amber' },
+  ];
+  const cls = { red: 'bg-red-50/60 border-red-100', amber: 'bg-amber-50/60 border-amber-100' };
+  const ic = { red: 'text-red-400', amber: 'text-amber-500' };
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 fade">
+      <div className="space-y-4">
+        <h2 className="text-sm font-medium text-slate-600">Active Alerts</h2>
+        {alerts.map(a => (
+          <div key={a.id} className={`rounded-2xl border p-5 ${cls[a.c]}`}>
+            <div className="flex gap-3">
+              <Icon n="alert" className={`mt-0.5 shrink-0 ${ic[a.c]}`} />
+              <div className="flex-1">
+                <div className="font-medium text-slate-800 text-sm">Warning: {a.t}</div>
+                <div className="text-xs text-slate-500 mt-1">{a.d}</div>
+                <button disabled={done[a.id]} onClick={() => { setDone({ ...done, [a.id]: true }); toast('Success: orders re-routed via alternate carrier'); }}
+                  className={`mt-4 inline-flex items-center gap-2 text-sm px-3.5 py-1.5 rounded-lg border transition ${done[a.id] ? 'bg-white text-emerald-600 border-emerald-100' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}>
+                  <Icon n={done[a.id] ? 'check' : 'truck'} size={15} />{done[a.id] ? 'Rerouted' : 'Auto-Reroute Orders'}
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <Card title="What-if Analysis">
+        <div className="flex items-center justify-between text-sm"><span className="text-slate-600">Reduce Seller Prep Time (Days)</span><span className="font-semibold text-slate-800">{days}d</span></div>
+        <input type="range" min="0" max="5" step="1" value={days} onChange={e => setDays(+e.target.value)} className="w-full mt-3" />
+        <div className="flex justify-between text-xs text-slate-400 mt-1"><span>0</span><span>5</span></div>
+        <div className="mt-6 p-4 rounded-xl bg-slate-50 border border-slate-100">
+          <div className="text-xs text-slate-500">Projected SLA Violation Rate</div>
+          <div className="flex items-baseline gap-3 mt-1">
+            <span className="text-3xl font-semibold text-slate-800">{proj(days)}%</span>
+            <span className="text-sm text-emerald-600">{days > 0 ? `↓ ${(base - proj(days)).toFixed(1)} pts from ${base}%` : 'baseline'}</span>
+          </div>
+        </div>
+        <div className="h-48 mt-4"><ResponsiveContainer><LineChart data={data} margin={{ top: 10, right: 10 }}>
+          <CartesianGrid vertical={false} stroke={GRID} /><XAxis dataKey="d" tick={{ fontSize: 12, fill: MUTED }} axisLine={false} tickLine={false} unit="d" />
+          <YAxis tick={{ fontSize: 12, fill: MUTED }} axisLine={false} tickLine={false} unit="%" domain={[0, 20]} />
+          <Tooltip contentStyle={{ borderRadius: 10, border: '1px solid #e8edf3', boxShadow: 'none', fontSize: 12 }} formatter={v => v + '%'} />
+          <Line type="monotone" dataKey="v" name="Violation" stroke={BLUE} strokeWidth={2.5} dot={false} />
+          <ReferenceDot x={days} y={proj(days)} r={6} fill={BLUE} stroke="#fff" strokeWidth={2} /></LineChart></ResponsiveContainer></div>
+      </Card>
+    </div>
+  );
+}
+
+/* ---------- VIEW 3 ---------- */
+const DIMS = { loc: 'Location', cat: 'Product Category', qtr: 'Quarter' };
+const MEAS = { orders: 'Order Count', freight: 'Total Freight', delay: 'Avg Delay (days)', rev: 'Revenue' };
+const RAW = [];
+STATES.forEach((s, i) => CATS.forEach((c, j) => QTRS.forEach((q, k) => {
+  const n = 120 + ((i * 37 + j * 53 + k * 29) % 220) + (s === 'SP' ? 400 : 0);
+  RAW.push({ loc: s, cat: c, qtr: q, orders: n, freight: Math.round(n * (17 + j * 2.5 + (i % 3))), delay: +(1.5 + ((i * 7 + j * 3 + k) % 9) * 0.45).toFixed(1), rev: Math.round(n * (95 + j * 40)) });
+})));
+
+function OLAP() {
+  const [dims, setDims] = useState(['loc', 'cat']);
+  const [meas, setMeas] = useState(['orders', 'freight']);
+  const [sort, setSort] = useState({ k: null, dir: 1 });
+  const [over, setOver] = useState(null);
+  const drop = (zone, e) => {
+    e.preventDefault(); setOver(null);
+    const key = e.dataTransfer.getData('text');
+    if (zone === 'dim' && DIMS[key] && !dims.includes(key)) setDims([...dims, key]);
+    if (zone === 'meas' && MEAS[key] && !meas.includes(key)) setMeas([...meas, key]);
+  };
+  const rows = useMemo(() => {
+    const g = {};
+    RAW.forEach(r => {
+      const key = dims.map(d => r[d]).join('|');
+      const o = g[key] || (g[key] = { _n: 0, ...Object.fromEntries(dims.map(d => [d, r[d]])), orders: 0, freight: 0, delay: 0, rev: 0 });
+      o._n++; o.orders += r.orders; o.freight += r.freight; o.rev += r.rev; o.delay += r.delay;
+    });
+    let a = Object.values(g).map(o => ({ ...o, delay: +(o.delay / o._n).toFixed(2) }));
+    if (sort.k) a.sort((x, y) => (x[sort.k] > y[sort.k] ? 1 : -1) * sort.dir);
+    return a;
+  }, [dims, meas, sort]);
+  const cols = [...dims.map(d => ({ k: d, l: DIMS[d], dim: true })), ...meas.map(m => ({ k: m, l: MEAS[m] }))];
+  const fmtv = (k, v) => k === 'freight' || k === 'rev' ? 'R$ ' + v.toLocaleString() : typeof v === 'number' ? v.toLocaleString() : v;
+  const Pill = ({ id, label, tone, onRemove, drag }) => (
+    <span draggable={drag} onDragStart={e => e.dataTransfer.setData('text', id)}
+      className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border ${drag ? 'cursor-grab bg-white text-slate-600 border-slate-200 hover:border-blue-200' : tone === 'dim' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-amber-50 text-amber-700 border-amber-100'}`}>
+      {label}{onRemove && <button onClick={onRemove} className="opacity-60 hover:opacity-100"><Icon n="x" size={12} /></button>}
+    </span>
+  );
+  const Zone = ({ z, title, items, set, names, tone }) => (
+    <div onDragOver={e => { e.preventDefault(); setOver(z); }} onDragLeave={() => setOver(null)} onDrop={e => drop(z, e)}
+      className={`rounded-xl border-2 border-dashed p-4 min-h-[88px] transition ${over === z ? 'border-blue-300 bg-blue-50/40' : 'border-slate-200 bg-slate-50/50'}`}>
+      <div className="text-xs font-medium text-slate-500 mb-3">{title}</div>
+      <div className="flex flex-wrap gap-2">
+        {items.length === 0 && <span className="text-xs text-slate-400">Drop fields here</span>}
+        {items.map(i => <Pill key={i} id={i} label={names[i]} tone={tone} onRemove={() => set(items.filter(x => x !== i))} />)}
+      </div>
+    </div>
+  );
+  return (
+    <div className="space-y-6 fade">
+      <Card title="Query Builder" right={<span className="text-xs text-slate-400">Drag fields into a zone</span>}>
+        <div className="flex flex-wrap gap-2 mb-4">
+          {Object.entries(DIMS).map(([k, l]) => <Pill key={k} id={k} label={l} drag />)}
+          <span className="w-px bg-slate-200 mx-1" />
+          {Object.entries(MEAS).map(([k, l]) => <Pill key={k} id={k} label={l} drag />)}
+        </div>
+        <div className="grid md:grid-cols-2 gap-4">
+          <Zone z="dim" title="Dimensions" items={dims} set={setDims} names={DIMS} tone="dim" />
+          <Zone z="meas" title="Measures" items={meas} set={setMeas} names={MEAS} tone="meas" />
+        </div>
+      </Card>
+      <Card title={`Pivot Table · ${rows.length} rows`}>
+        {dims.length === 0 || meas.length === 0 ? <div className="text-sm text-slate-400 py-10 text-center">Select at least one dimension and one measure.</div> : (
+          <div className="overflow-x-auto"><table className="w-full text-sm">
+            <thead><tr className="border-b border-slate-200">
+              {cols.map(c => (
+                <th key={c.k} onClick={() => setSort({ k: c.k, dir: sort.k === c.k ? -sort.dir : 1 })}
+                  className={`py-2.5 px-3 font-medium text-xs text-slate-500 cursor-pointer select-none whitespace-nowrap ${c.dim ? 'text-left' : 'text-right'}`}>
+                  <span className="inline-flex items-center gap-1">{c.l}<Icon n={sort.k === c.k ? (sort.dir === 1 ? 'up' : 'down') : 'sort'} size={13} className={sort.k === c.k ? 'text-blue-400' : 'text-slate-300'} /></span>
+                </th>))}
+            </tr></thead>
+            <tbody>{rows.map((r, i) => (
+              <tr key={i} className="border-b border-slate-100 hover:bg-slate-50/70">
+                {cols.map(c => <td key={c.k} className={`py-2.5 px-3 ${c.dim ? 'text-slate-700' : 'text-right tabular-nums text-slate-600'}`}>{fmtv(c.k, r[c.k])}</td>)}
+              </tr>))}</tbody>
+          </table></div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+/* ---------- VIEW 4 ---------- */
+function ETL({ toast }) {
+  const [runs, setRuns] = useState([
+    { id: 3, ok: true, t: '21 Oct 2026, 02:00', d: '4m 12s' },
+    { id: 2, ok: false, t: '20 Oct 2026, 02:00', d: '1m 47s', e: 'Source timeout on olist_orders' },
+    { id: 1, ok: true, t: '19 Oct 2026, 02:00', d: '4m 05s' },
+  ]);
+  const [running, setRunning] = useState(false);
+  const run = () => {
+    setRunning(true);
+    setTimeout(() => {
+      setRuns(r => [{ id: r[0].id + 1, ok: true, t: new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }), d: '4m 08s' }, ...r].slice(0, 3));
+      setRunning(false); toast('ETL pipeline completed successfully');
+    }, 2500);
+  };
+  const stats = [['Fact_Delivery_SLA', '100,000'], ['Dim_Location', '4,000'], ['Dim_Seller', '3,095'], ['Dim_Product', '32,951'], ['Dim_Customer', '96,096'], ['Dim_Date', '1,461']];
+  return (
+    <div className="space-y-6 fade">
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div><div className="text-sm font-medium text-slate-700">Data Warehouse Pipeline</div><div className="text-xs text-slate-400 mt-1">Extract → Transform → Load · scheduled daily at 02:00</div></div>
+          <button onClick={run} disabled={running} className="inline-flex items-center gap-2 bg-blue-400 hover:bg-blue-500 disabled:bg-blue-300 text-white text-sm font-medium px-5 py-2.5 rounded-xl transition">
+            <Icon n={running ? 'loader' : 'play'} size={16} className={running ? 'animate-spin' : ''} />{running ? 'Running…' : 'Run ETL Pipeline Now'}
+          </button>
+        </div>
+      </Card>
+      <Card title="Last 3 Runs">
+        <ol className="relative border-l border-slate-200 ml-2 space-y-5">
+          {runs.map(r => (
+            <li key={r.id} className="pl-6 relative">
+              <span className={`absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full ${r.ok ? 'bg-emerald-400' : 'bg-red-300'}`} />
+              <div className="flex flex-wrap items-center gap-3">
+                <span className={`text-xs px-2.5 py-0.5 rounded-full border ${r.ok ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-500 border-red-100'}`}>{r.ok ? 'Success' : 'Failed'}</span>
+                <span className="text-sm text-slate-700">{r.t}</span><span className="text-xs text-slate-400">{r.d}</span>
+              </div>
+              {r.e && <div className="text-xs text-red-400 mt-1">{r.e}</div>}
+            </li>))}
+        </ol>
+      </Card>
+      <div>
+        <h3 className="text-sm font-medium text-slate-600 mb-3">Warehouse Metadata</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+          {stats.map(([n, v]) => <div key={n} className="card p-4"><div className="text-xs text-slate-400 truncate">{n}</div><div className="text-lg font-semibold text-slate-800 mt-1">{v}</div><div className="text-xs text-slate-400">rows</div></div>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- SHELL ---------- */
+function App() {
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [f, setF] = useState({ year: 'All', quarter: 'All', month: 'All', state: 'All' });
+  const [msg, setMsg] = useState(null);
+  const toast = m => { setMsg(m); setTimeout(() => setMsg(null), 2800); };
+  const set = k => v => setF({ ...f, [k]: v });
+  return (
+    <div className="flex min-h-screen">
+      <aside className="w-16 md:w-60 shrink-0 bg-white border-r border-slate-200 flex flex-col sticky top-0 h-screen">
+        <div className="h-16 flex items-center justify-center md:justify-start md:px-5 gap-2.5 border-b border-slate-100">
+          <span className="w-8 h-8 rounded-lg bg-blue-50 text-blue-500 flex items-center justify-center"><Icon n="truck" size={17} /></span>
+          <span className="hidden md:block font-semibold text-slate-800 text-sm">Olist Logistics DSS</span>
+        </div>
+        <nav className="p-3 space-y-1">
+          {TABS.map(t => (
+            <button key={t.id} onClick={() => setActiveTab(t.id)} title={t.label}
+              className={`w-full flex items-center justify-center md:justify-start gap-3 px-3 py-2.5 rounded-xl text-sm transition ${activeTab === t.id ? 'bg-blue-50 text-blue-600 font-medium' : 'text-slate-500 hover:bg-slate-50'}`}>
+              <Icon n={t.icon} /><span className="hidden md:inline">{t.label}</span>
+            </button>))}
+        </nav>
+      </aside>
+      <div className="flex-1 min-w-0">
+        <header className="h-16 bg-white/90 backdrop-blur border-b border-slate-200 px-4 md:px-8 flex items-center justify-between gap-3 sticky top-0 z-10">
+          <h1 className="text-base font-semibold text-slate-800 hidden lg:block">{TABS.find(t => t.id === activeTab).label}</h1>
+          <div className="flex flex-wrap items-center gap-2 md:gap-3 ml-auto">
+            <Select label="Year" value={f.year} onChange={set('year')} options={['All', '2016', '2017', '2018']} />
+            <Select label="Quarter" value={f.quarter} onChange={set('quarter')} options={['All', ...QTRS]} />
+            <Select label="Month" value={f.month} onChange={set('month')} options={['All', ...MONTHS]} />
+            <Select label="State" value={f.state} onChange={set('state')} options={['All', ...STATES]} />
+          </div>
+        </header>
+        <main className="p-4 md:p-8 max-w-[1400px]">
+          {activeTab === 'dashboard' && <Dashboard f={f} />}
+          {activeTab === 'dss' && <DSS toast={toast} />}
+          {activeTab === 'olap' && <OLAP />}
+          {activeTab === 'etl' && <ETL toast={toast} />}
+        </main>
+      </div>
+      {msg && <div className="fixed bottom-6 right-6 fade bg-white border border-emerald-100 shadow-lg rounded-xl px-4 py-3 text-sm text-slate-700 flex items-center gap-2 z-50"><Icon n="check" size={16} className="text-emerald-500" />{msg}</div>}
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
