@@ -43,9 +43,9 @@ CREATE TABLE Fact_Delivery_SLA (
     carrier_transit_time_days DOUBLE PRECISION,
     freight_value DOUBLE PRECISION,
     review_score INT,
-    
+    delay_days DOUBLE PRECISION,
+
     -- Các cờ phân loại (Flags)
-    is_late BOOLEAN,
     has_logistics_complaint BOOLEAN,
 
     -- Ràng buộc Khóa chính

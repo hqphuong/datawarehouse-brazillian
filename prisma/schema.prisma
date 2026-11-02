@@ -49,7 +49,7 @@ model fact_delivery_sla {
   carrier_transit_time_days                                         Float?
   freight_value                                                     Float?
   review_score                                                      Int?
-  is_late                                                           Boolean?
+  delay_days                                                        Float?
   has_logistics_complaint                                           Boolean?
   dim_location_fact_delivery_sla_customer_location_idTodim_location dim_location? @relation("fact_delivery_sla_customer_location_idTodim_location", fields: [customer_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_customer_location")
   dim_product                                                       dim_product?  @relation(fields: [product_id], references: [product_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_product")

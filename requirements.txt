@@ -1,6 +1,10 @@
-# Thư viện Python dùng cho pipeline ETL của Brazillian
+# Thư viện Python dùng cho pipeline ETL và phần DSS của Brazillian
 # Cài đặt:  pip install -r requirements.txt
 
 pandas>=2.0
 numpy>=1.24
 psycopg2-binary>=2.9
+scikit-learn>=1.5
+django>=5.0
+django-cors-headers>=4.0
+pytest>=8.0

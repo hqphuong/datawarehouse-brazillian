@@ -1,5 +1,7 @@
 """Load - Nạp dữ liệu từ thư mục data/processed vào PostgreSQL Data Warehouse."""
 
+import csv
+
 import psycopg2
 
 try:  # chạy như package:  python -m src.load_data
@@ -31,8 +33,17 @@ def load_data_warehouse():
 
             print(f"Đang nạp dữ liệu vào bảng {table_name} (từ {file_path.name})...")
 
+            # COPY ... CSV HEADER chỉ bỏ qua dòng header chứ không map theo tên cột,
+            # nên phải chỉ định rõ danh sách cột để tránh lệch thứ tự giữa CSV và bảng.
+            with open(file_path, "r", encoding="utf-8", newline="") as f:
+                header = next(csv.reader(f))
+            columns = ", ".join(f'"{column}"' for column in header)
+
             with open(file_path, "r", encoding="utf-8") as f:
-                copy_sql = f"COPY {table_name} FROM STDIN WITH CSV HEADER DELIMITER ','"
+                copy_sql = (
+                    f"COPY {table_name} ({columns}) "
+                    "FROM STDIN WITH CSV HEADER DELIMITER ','"
+                )
                 cur.copy_expert(copy_sql, f)
 
             conn.commit()

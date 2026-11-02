@@ -54,7 +54,8 @@ df_cleaned = df_cleaned.dropna(subset=time_cols)
 df_cleaned["approval_time_days"] = (df_cleaned["order_approved_at"] - df_cleaned["order_purchase_timestamp"]).dt.total_seconds() / 86400.0
 df_cleaned["seller_prep_time_days"] = (df_cleaned["order_delivered_carrier_date"] - df_cleaned["order_approved_at"]).dt.total_seconds() / 86400.0
 df_cleaned["carrier_transit_time_days"] = (df_cleaned["order_delivered_customer_date"] - df_cleaned["order_delivered_carrier_date"]).dt.total_seconds() / 86400.0
-df_cleaned["is_late"] = df_cleaned["order_delivered_customer_date"] > df_cleaned["order_estimated_delivery_date"]
+# delay_days > 0: giao muộn so với cam kết; < 0: giao sớm; = 0: đúng hạn
+df_cleaned["delay_days"] = (df_cleaned["order_delivered_customer_date"] - df_cleaned["order_estimated_delivery_date"]).dt.total_seconds() / 86400.0
 
 # Đảm bảo time_id là số nguyên INT
 df_cleaned["time_id"] = df_cleaned["order_purchase_timestamp"].dt.strftime("%Y%m%d").astype(int)
@@ -109,7 +110,8 @@ fact_df = fact_df.merge(df_reviews[["order_id", "review_score", "has_logistics_c
 fact_df = fact_df.merge(main_payments[["order_id", "payment_type"]], on="order_id", how="left")
 
 # Lấp đầy giá trị Boolean khuyết để tránh báo lỗi NULL khi Copy
-fact_df["is_late"] = fact_df["is_late"].fillna(False)
+# (delay_days đã được đảm bảo đủ dữ liệu bởi dropna ở trên; giữ NULL nếu thiếu
+# thay vì gán 0 để không làm sai lệch thống kê giao hàng)
 fact_df["has_logistics_complaint"] = fact_df["has_logistics_complaint"].fillna(False)
 fact_df["review_score"] = fact_df["review_score"].astype("Int64")
 
@@ -126,7 +128,7 @@ fact_cols = [
     "carrier_transit_time_days",
     "freight_value",
     "review_score",
-    "is_late",
+    "delay_days",
     "has_logistics_complaint",
 ]
 
