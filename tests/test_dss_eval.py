@@ -34,6 +34,56 @@ def test_backtest_contract(o):
         comparable["diff"], weights=comparable["total_orders"]
     )
     assert summary["weighted_diff"] == pytest.approx(float(expected))
+    assert summary["weighted_diff_basis"] == "total_orders"
+    expected_flagged = np.average(
+        comparable["diff"], weights=comparable["flagged_orders"]
+    )
+    assert summary["weighted_diff_flagged"] == pytest.approx(float(expected_flagged))
+
+
+def test_backtest_historical_baseline_contract(o):
+    frame, summary = E.backtest(o, min_orders=30, baseline=True)
+
+    assert "baseline_diff" in frame.columns
+    assert len(frame) == 19
+    assert summary["baseline_periods_evaluated"] == len(
+        frame.dropna(subset=["baseline_diff"])
+    )
+    assert (
+        summary["baseline_better_periods"]
+        + summary["dss_better_periods"]
+        + summary["tied_periods"]
+        == summary["paired_periods"]
+    )
+    assert summary["paired_periods"] <= summary["periods_evaluated"]
+    # DSS phải tốt hơn baseline lịch sử trên trung bình có trọng số.
+    assert summary["weighted_diff"] > summary["baseline_weighted_diff"]
+
+
+def test_backtest_historical_baseline_through_contract(o):
+    frame, summary = E.backtest(o, min_orders=30, baseline_through=True)
+
+    assert "baseline_through_diff" in frame.columns
+    assert summary["baseline_through_periods_evaluated"] == len(
+        frame.dropna(subset=["baseline_through_diff"])
+    )
+    assert (
+        summary["baseline_through_better_periods"]
+        + summary["dss_better_vs_through_periods"]
+        + summary["tied_vs_through_periods"]
+        == summary["paired_through_periods"]
+    )
+    # Biến thể "through" dùng nhiều thông tin hơn nên sát DSS hơn baseline "prior",
+    # nhưng DSS vẫn cao hơn về trung bình có trọng số.
+    assert (
+        summary["baseline_weighted_diff"]
+        < summary["baseline_through_weighted_diff"]
+        < summary["weighted_diff"]
+    )
+    # Số kỳ đã kiểm chứng độc lập với dữ liệu hiện tại.
+    assert summary["baseline_through_higher_periods"] == 14
+    assert summary["baseline_through_better_periods"] == 5
+    assert summary["tied_vs_through_periods"] == 3
 
 
 def test_backtest_handles_period_without_flagged_routes(o):
@@ -79,6 +129,8 @@ def test_negative_time_comparison_contract(o):
     table = E.negative_time_comparison(o, n=3)
 
     assert len(table) == 3
-    assert set(table["route"]) == set(M.route_priority(o, top=3)["route"])
+    assert set(table["route"]) == set(
+        M.route_priority(o, top=3, ensure_red=False)["route"]
+    )
     assert (table["stage_keep"] == table["stage_drop"]).all()
     assert (table["has_bottleneck_keep"] == table["has_bottleneck_drop"]).all()

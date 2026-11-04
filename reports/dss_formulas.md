@@ -111,9 +111,21 @@ $$\Delta = \sum_{i \in O_r}\left(\mathbb{1}[d_i > 0] - \mathbb{1}[d_i' > 0]\righ
 
 **Giả định quan trọng:** giảm 1 ngày ở bất kỳ giai đoạn nào đều dịch chuyển ngày giao thực tế sớm hơn 1 ngày (chuỗi các giai đoạn không trùng nhau, không có buffer). Trong thực tế, tiết kiệm thời gian chuẩn bị không phải lúc nào cũng chuyển thẳng sang ngày giao (người bán có thể giữ hàng thêm, carrier có lịch cố định, ...).
 
-### Phân tích độ nhạy — `sensitivity(O, r, stage, max_days=5)`
+### Phân tích độ nhạy — `sensitivity(O, r, stage, max_days=5, base_cut=None)`
 
-Tính $L_r'$ khi $c_s \in \{0, 1, 2, \ldots, \text{max\_days}\}$ cho một giai đoạn $s$ duy nhất.
+Tính $L_r'$ khi $c_s \in \{0, 1, 2, \ldots, \text{max\_days}\}$ cho một giai đoạn $s$ duy nhất, trong khi giữ cố định mức cắt của các giai đoạn khác.
+
+**Tham số `base_cut`:** dict các mức cắt cố định của giai đoạn *khác* $s$ (ví dụ `{"prep": 2}` khi quét `transit`). Nếu `base_cut=None` (mặc định), các giai đoạn còn lại được đặt về 0 — hành vi giống phiên bản cũ.
+
+Với bước quét $x$:
+
+$$L_r'(x) = \text{projected}\!\left(O, r,\ \{s: x\} \cup \text{base\_cut}\right)$$
+
+**Tính nhất quán với `projected`:** khi view Django nhận `approval`, `prep`, `transit` từ query string, `base_cut` được đặt thành `{k: v for k, v in \text{cut}.items() if k \neq s^*}` (loại bỏ giai đoạn bottleneck $s^*$ ra khỏi base). Vì vậy với mức quét $x = c_{s^*}$ (mức cắt hiện tại của bottleneck):
+
+$$\text{series}[c_{s^*}].\text{projected} = \text{projected}(O, r, \text{cut})$$
+
+Điều này đảm bảo điểm tương ứng trên đường cong độ nhạy luôn khớp với giá trị `projected` trả về trong cùng response.
 
 ---
 
@@ -191,6 +203,8 @@ Kỳ không có tuyến nào gắn cờ được ghi lại trong `periods` với
 
 1. **Cắt giảm thời gian giai đoạn chuyển 1:1 sang ngày giao:** Giảm $c$ ngày ở bất kỳ giai đoạn nào làm ngày giao sớm hơn đúng $c$ ngày. Không mô hình hóa buffer, lịch cố định của carrier, hay hiệu ứng nghẽn cổ chai thực tế.
 
+   **Hệ quả của giả định 1:1 đối với `transit_goal_cut` và `promise_days`:** Dưới giả định này, cắt $c$ ngày transit tương đương kéo dài cam kết $c$ ngày (trừ phần chặn bởi `transit_i < c`). Do đó `transit_goal_cut` (kết quả của `goal_seek_cut`) thường xấp xỉ `promise_days` (kết quả của `goal_seek_promise`). Ví dụ với SP->BA: cả hai đều cho 10 ngày. **Lưu ý quan trọng:** 10 ngày transit cut vượt quá excess transit trung bình của SP->BA (~7,2 ngày), nghĩa là yêu cầu cắt nhiều hơn tổng phần vượt mức — không phải phương án khả thi trong thực tế. `transit_goal_cut=10` chỉ là giới hạn trên trong lưới tìm kiếm, **không nên trình bày như phương án can thiệp cụ thể**.
+
 2. **Tuyến = (bang người bán → bang khách hàng):** Bỏ qua sự khác biệt giữa các thành phố, mã bưu điện, hay carrier cụ thể trong cùng một tuyến.
 
 3. **Một đơn có thể xuất hiện ở nhiều tuyến** nếu có item từ nhiều bang khác nhau. Trong thực tế đây là ~519 đơn (~0.5%).
@@ -203,14 +217,19 @@ Kỳ không có tuyến nào gắn cờ được ghi lại trong `periods` với
 
 ### Hạn chế đã quan sát
 
+> **⚠️ Nhãn cảnh báo giao diện:**
+> - Tab **Dashboard**, **OLAP**, **ETL Monitor** trong `web/Olist_Logistics_DSS_v3.html` hiển thị **dữ liệu mẫu** (mock data, Flask, chưa nối Django). Số liệu trên các tab đó **không phản ánh dữ liệu Olist thực tế**.
+> - Khối **At-Risk** hiển thị **điểm nguy cơ (`risk_score`)** — điểm xếp hạng từ mô hình ML chưa hiệu chỉnh, **không phải xác suất trễ thực tế**. Điểm trung bình ~0,412 trong khi tỷ lệ trễ thật chỉ ~5,98% (miscalibrated). Dùng để **xếp thứ tự ưu tiên rà soát**, không dùng làm ngưỡng tuyệt đối.
+
 | Hạn chế | Số liệu | Ảnh hưởng |
 | --- | --- | --- |
 | `seller_prep_time_days` âm | 1 542 dòng (cấp fact) | Có thể là lỗi dữ liệu (timestamp ngược); loại bỏ không đổi kết luận nghẽn nhưng thay đổi độ lớn excess một chút |
 | `carrier_transit_time_days` âm | 50 dòng | Tương tự trên |
 | `review_score` rỗng | 827 dòng | Không ảnh hưởng mô hình chính (không dùng review score); ảnh hưởng cột `has_logistics_complaint` |
-| Backtest chưa so sánh với baseline đơn giản | — | Chưa rõ liệu gắn cờ theo tỷ lệ trễ trung bình lịch sử có hiệu quả tương đương không |
+| Backtest so sánh với baseline đơn giản — kết quả hỗn hợp | DSS tốt hơn 11/19 kỳ vs baseline "through"; CI vs through chứa 0 | Tín hiệu DSS có giá trị nhưng không vượt trội rõ rệt về mặt thống kê so với baseline dùng cùng thông tin |
 | `goal_seek_cut` thường không đạt target trong 10 ngày | SP->RJ, SP->BA, SP->ES đều `None` | Với tuyến có transit excess lớn (>3 ngày), cắt đơn thuần một giai đoạn không đủ; cần kết hợp nhiều giai đoạn hoặc dùng `goal_seek_promise` |
-| Không có ML | Thiết kế chủ ý | Mô hình hoàn toàn theo luật (rule-based); dễ giải thích nhưng không học từ dữ liệu mới |
+| `risk_score` không phải xác suất đã hiệu chỉnh | Điểm TB 0,412 vs tỷ lệ trễ thật 5,98% | Không dùng ngưỡng tuyệt đối; chỉ dùng để xếp hạng ưu tiên rà soát |
+| Không có ML trong mô hình DSS chính | Thiết kế chủ ý | Mô hình hoàn toàn theo luật (rule-based); dễ giải thích nhưng không học từ dữ liệu mới |
 
 ---
 
@@ -227,6 +246,7 @@ Kỳ không có tuyến nào gắn cờ được ghi lại trong `periods` với
 | `goal_seek_cut` | `step` | 0.5 | Bước tìm kiếm (ngày) |
 | `goal_seek_cut` | `max_days` | 10 | Giới hạn tìm kiếm tối đa |
 | `sensitivity` | `max_days` | 5 | Dải cắt giảm 0..5 ngày |
+| `sensitivity` | `base_cut` | `None` (→ `{}`) | Mức cắt cố định của giai đoạn khác khi quét; `None` = tương thích ngược |
 | `backtest` | `min_orders` | 30 | Cho đánh giá theo tháng (không phải sản xuất) |
 | `backtest` | `min_period_orders` | 500 | Ngưỡng tối thiểu đơn trong kỳ |
 | `backtest` | `start_year` | 2017 | Bỏ năm 2016 quá thưa |

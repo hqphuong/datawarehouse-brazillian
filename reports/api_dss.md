@@ -24,14 +24,14 @@ NaN và Infinity trong kết quả Python được chuyển thành `null` trư�
 
 | Tên | Kiểu | Bắt buộc | Mặc định | Mô tả |
 | --- | --- | --- | --- | --- |
-| `top` | int | Không | `10` | Số tuyến trả về (sắp xếp giảm dần theo số đơn trễ) |
+| `top` | int | Không | `10` | Số tuyến tối thiểu trả về. Mặc định red-first: trả **tất cả tuyến đỏ** trước (sắp giảm dần theo số đơn trễ), rồi vàng cho đủ `top`. Nếu số đỏ > `top` thì trả hết tuyến đỏ (có thể nhiều hơn `top`). |
 | `year` | int hoặc `"all"` | Không | toàn bộ | Lọc theo năm mua hàng (ví dụ `2017`, `2018`). Bỏ qua hoặc `"all"` = toàn bộ dữ liệu |
 
 ### Response 200
 
-Mảng các object, mỗi phần tử là một tuyến được gắn cờ đỏ hoặc vàng.
+Mảng các object, mỗi phần tử là một tuyến được gắn cờ đỏ hoặc vàng. Response có thêm `ci_low`, `ci_high` (Wilson 95%) và `low_sample` (`orders < 200`).
 
-**Ví dụ: `GET /api/dss/routes?top=3`** (gọi thật lúc 2026-11-02T14:17, server đang chạy với dữ liệu đầy đủ)
+**Ví dụ: `GET /api/dss/routes?top=10`** (gọi thật; dưới đây trích **3 tuyến vàng đầu tiên sau nhóm đỏ**, bỏ 6 tuyến đỏ đứng trước; còn `SP->CE` không hiển thị)
 
 ```json
 [
@@ -41,6 +41,9 @@ Mảng các object, mỗi phần tử là một tuyến được gắn cờ đ�
     "late_orders": 1263,
     "late_rate": 0.155772077,
     "level": "amber",
+    "ci_low": 0.1480417047,
+    "ci_high": 0.1638284876,
+    "low_sample": false,
     "root_cause": {
       "stage": "transit",
       "owner": "Đơn vị vận chuyển",
@@ -59,6 +62,9 @@ Mảng các object, mỗi phần tử là một tuyến được gắn cờ đ�
     "late_orders": 344,
     "late_rate": 0.1498910675,
     "level": "amber",
+    "ci_low": 0.1358720117,
+    "ci_high": 0.1650802592,
+    "low_sample": false,
     "root_cause": {
       "stage": "transit",
       "owner": "Đơn vị vận chuyển",
@@ -77,6 +83,9 @@ Mảng các object, mỗi phần tử là một tuyến được gắn cờ đ�
     "late_orders": 206,
     "late_rate": 0.1411925977,
     "level": "amber",
+    "ci_low": 0.124265226,
+    "ci_high": 0.1600045131,
+    "low_sample": false,
     "root_cause": {
       "stage": "transit",
       "owner": "Đơn vị vận chuyển",
@@ -92,7 +101,7 @@ Mảng các object, mỗi phần tử là một tuyến được gắn cờ đ�
 ]
 ```
 
-**Ví dụ: `GET /api/dss/routes?year=2018&top=3`**
+**Ví dụ: `GET /api/dss/routes?year=2018`** (gọi thật; dưới đây trích **3 tuyến vàng cuối** danh sách, bỏ 7 tuyến đỏ đứng trước)
 
 ```json
 [
@@ -102,6 +111,9 @@ Mảng các object, mỗi phần tử là một tuyến được gắn cờ đ�
     "late_orders": 715,
     "late_rate": 0.1732073643,
     "level": "amber",
+    "ci_low": 0.1619682671,
+    "ci_high": 0.1850541356,
+    "low_sample": false,
     "root_cause": {
       "stage": "transit",
       "owner": "Đơn vị vận chuyển",
@@ -120,6 +132,9 @@ Mảng các object, mỗi phần tử là một tuyến được gắn cờ đ�
     "late_orders": 219,
     "late_rate": 0.1735340729,
     "level": "amber",
+    "ci_low": 0.1536385903,
+    "ci_high": 0.1954110854,
+    "low_sample": false,
     "root_cause": {
       "stage": "transit",
       "owner": "Đơn vị vận chuyển",
@@ -138,6 +153,9 @@ Mảng các object, mỗi phần tử là một tuyến được gắn cờ đ�
     "late_orders": 142,
     "late_rate": 0.1795195954,
     "level": "amber",
+    "ci_low": 0.1543423793,
+    "ci_high": 0.2077946805,
+    "low_sample": false,
     "root_cause": {
       "stage": "transit",
       "owner": "Đơn vị vận chuyển",
@@ -162,6 +180,9 @@ Mảng các object, mỗi phần tử là một tuyến được gắn cờ đ�
 | `late_orders` | int | Số đơn trễ (delay_days > 0) |
 | `late_rate` | float | Tỷ lệ trễ = late_orders / orders |
 | `level` | string | `"red"` hoặc `"amber"` |
+| `ci_low` | float | Cận dưới khoảng tin cậy Wilson 95% cho `late_rate` |
+| `ci_high` | float | Cận trên khoảng tin cậy Wilson 95% cho `late_rate` |
+| `low_sample` | bool | `true` nếu `orders < 200` (mẫu nhỏ); không đổi nhãn đỏ/vàng |
 | `root_cause.stage` | string | Giai đoạn nghẽn: `"approval"`, `"prep"`, hoặc `"transit"` |
 | `root_cause.owner` | string | Bên chịu trách nhiệm giai đoạn nghẽn |
 | `root_cause.excess` | object | Chênh lệch thời gian trung bình của tuyến so với toàn hệ thống (ngày) |
@@ -225,17 +246,19 @@ What-if: tính tỷ lệ trễ dự báo nếu cắt giảm thời gian từng g
   "bottleneck": "transit",
   "has_bottleneck": true,
   "series": [
-    {"cut": 0, "projected": 0.15577207696102616},
-    {"cut": 1, "projected": 0.1419585594474593},
-    {"cut": 2, "projected": 0.13159842131228416},
-    {"cut": 3, "projected": 0.123334977799704},
-    {"cut": 4, "projected": 0.11642821904292057},
-    {"cut": 5, "projected": 0.10878145041933893}
+    {"cut": 0, "projected": 0.12987173162308832},
+    {"cut": 1, "projected": 0.12012827330044401},
+    {"cut": 2, "projected": 0.11198815985448939},
+    {"cut": 3, "projected": 0.10162801554763690},
+    {"cut": 4, "projected": 0.09373457694251356},
+    {"cut": 5, "projected": 0.08645782190429206}
   ]
 }
 ```
 
-> Lưu ý: `series` luôn tính theo giai đoạn **bottleneck** (ở đây là `transit`), không theo giai đoạn được cắt trong tham số. Tham số `prep=5` ảnh hưởng `projected` và `avoided`, nhưng `series` vẫn là sensitivity của `transit`.
+> **Ghi chú `series` khi có `base_cut`:** Khi truyền `prep=5`, `series[c]` phản ánh kịch bản `{prep: 5, transit: c}` — tức là mức cắt `prep=5` được giữ cố định trong suốt đường cong nhạy cảm transit. Vì vậy `series[0]["projected"]` (transit_cut=0, prep=5) **bằng đúng** giá trị `projected` trong response này (`0.12987…`), không phải giá trị baseline (`0.15577…`). Đây là hành vi đúng — nếu `series[0].projected == baseline`, có nghĩa là `base_cut` không được áp dụng.
+
+**Trạng thái kiểm tra `base_cut`:** ✅ Đã kiểm tra thực tế — `series[0].projected` (`0.12987`) khớp chính xác với `projected` (`0.12987`). Lỗi ban đầu trong doc đã được sửa.
 
 ### Trường response
 
@@ -247,7 +270,7 @@ What-if: tính tỷ lệ trễ dự báo nếu cắt giảm thời gian từng g
 | `avoided` | int | Số đơn trễ tránh được |
 | `bottleneck` | string | Giai đoạn nghẽn (`approval`/`prep`/`transit`) |
 | `has_bottleneck` | bool | Có nghẽn thực sự không |
-| `series` | array | Độ nhạy của `bottleneck`: `[{"cut": 0..5, "projected": float}]` |
+| `series` | array | Độ nhạy của `bottleneck`: `[{"cut": 0..5, "projected": float}]`. Mỗi điểm giữ cố định mức cắt hiện tại của các giai đoạn còn lại (`base_cut`) và chỉ quét giai đoạn bottleneck từ 0 đến 5. `series[0].projected` **luôn bằng** `projected` của kịch bản không cắt bottleneck (với mức cắt hiện tại của các giai đoạn khác). Ví dụ: khi `prep=5`, `series[0].projected` = `0.12987…` (= projected), **không phải** `baseline` (`0.15577…`). |
 
 ### Mã lỗi
 

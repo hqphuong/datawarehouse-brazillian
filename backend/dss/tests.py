@@ -1,7 +1,13 @@
 import json
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
 from urllib.parse import urlencode
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
+
+from etl import dss_ml as ML
+from etl import dss_models as M
 
 from .models import ActionLog
 
@@ -14,9 +20,32 @@ class DssApiTests(TestCase):
         self.assertEqual(len(rows), 10)
         self.assertEqual(set(rows[0]), {
             "route", "orders", "late_orders", "late_rate", "level", "root_cause",
+            "ci_low", "ci_high", "low_sample", "uncertain",
         })
         self.assertIn(rows[0]["level"], {"red", "amber"})
         self.assertIn("has_bottleneck", rows[0]["root_cause"])
+
+    def test_routes_default_top_contains_all_red(self):
+        rows = self.client.get("/api/dss/routes").json()
+        all_rows = self.client.get("/api/dss/routes?top=100").json()
+
+        red = {r["route"] for r in all_rows if r["level"] == "red"}
+        self.assertTrue(red)
+        self.assertLessEqual(red, {r["route"] for r in rows})
+        self.assertEqual(rows[0]["level"], "red")
+
+    def test_routes_wilson_fields_and_low_sample(self):
+        rows = self.client.get("/api/dss/routes").json()
+        for row in rows:
+            self.assertIn("ci_low", row)
+            self.assertIn("ci_high", row)
+            self.assertIn("low_sample", row)
+            self.assertLessEqual(0.0, row["ci_low"])
+            self.assertLessEqual(row["ci_low"], row["late_rate"])
+            self.assertLessEqual(row["late_rate"], row["ci_high"])
+            self.assertLessEqual(row["ci_high"], 1.0)
+            self.assertIsInstance(row["low_sample"], bool)
+            self.assertEqual(row["low_sample"], row["orders"] < 200)
 
     def test_routes_top_100_returns_all_flagged(self):
         res = self.client.get("/api/dss/routes?top=100")
@@ -106,3 +135,145 @@ class DssApiTests(TestCase):
         )
         self.assertEqual(res.status_code, 400)
         self.assertEqual(ActionLog.objects.count(), 0)
+
+    def test_scenario_series_matches_projected_with_base_cut(self):
+        """series[transit_cut].projected phải bằng projected khi cut kết hợp prep+transit."""
+        from urllib.parse import urlencode
+        params = urlencode({"route": "SP->RJ", "prep": 2, "transit": 1})
+        res = self.client.get(f"/api/dss/scenario?{params}")
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        # bottleneck là transit; series[1] ứng với transit_cut=1, prep=2 cố định
+        self.assertEqual(body["bottleneck"], "transit")
+        series = body["series"]
+        self.assertEqual(series[1]["cut"], 1)
+        self.assertAlmostEqual(series[1]["projected"], body["projected"], places=12)
+
+
+class AtRiskApiTests(TestCase):
+    def test_at_risk_default_limit_sorted_and_keys(self):
+        res = self.client.get("/api/dss/at-risk")
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+
+        self.assertEqual(len(body["orders"]), 20)
+        self.assertEqual(set(body), {"orders", "meta"})
+        self.assertEqual(
+            set(body["orders"][0]),
+            {"order_id", "route", "risk_score", "actual_late"},
+        )
+
+        scores = [row["risk_score"] for row in body["orders"]]
+        self.assertEqual(scores, sorted(scores, reverse=True))
+        self.assertTrue(all(0.0 <= score <= 1.0 for score in scores))
+        self.assertTrue(all(isinstance(row["actual_late"], bool) for row in body["orders"]))
+
+    def test_at_risk_risk_score_matches_predict_orders(self):
+        body = self.client.get("/api/dss/at-risk?limit=10").json()
+        meta = body["meta"]
+
+        o = M.load_orders()
+        test = o[o["period"].isin(meta["test_periods"])]
+        lookup = test.set_index(["order_id", "route"])
+        keys = [(row["order_id"], row["route"]) for row in body["orders"]]
+        selected = lookup.loc[keys].reset_index()
+
+        expected = ML.predict_orders(selected)
+        for row, score in zip(body["orders"], expected):
+            self.assertAlmostEqual(row["risk_score"], float(score), places=12)
+
+    def test_at_risk_only_test_period_and_actual_late_matches(self):
+        body = self.client.get("/api/dss/at-risk?limit=50").json()
+        meta = body["meta"]
+
+        self.assertEqual(meta["cutoff_period"], 201804)
+        self.assertEqual(meta["test_periods"], [201804, 201805, 201806, 201807, 201808])
+        self.assertEqual(meta["test_rows"], 32378)
+        self.assertAlmostEqual(meta["test_late_rate"], 0.05979368707146828, places=12)
+
+        o = M.load_orders()
+        test = o[o["period"].isin(meta["test_periods"])]
+        late = test.set_index(["order_id", "route"])["is_late"]
+        for row in body["orders"]:
+            key = (row["order_id"], row["route"])
+            self.assertIn(key, late.index)
+            self.assertEqual(row["actual_late"], bool(late.loc[key]))
+
+    def test_at_risk_metadata(self):
+        meta = self.client.get("/api/dss/at-risk?limit=1").json()["meta"]
+
+        for key in (
+            "cutoff_period",
+            "test_periods",
+            "test_rows",
+            "test_late_rate",
+            "model_name",
+            "threshold",
+            "threshold_selected_on",
+            "roc_auc",
+            "pr_auc",
+            "precision",
+            "recall",
+            "f1",
+            "precision_at_k",
+            "score_note",
+            "note",
+        ):
+            self.assertIn(key, meta)
+
+        self.assertEqual(meta["model_name"], "logistic_regression")
+        self.assertEqual(meta["threshold_selected_on"], "validation")
+        self.assertIn("không phải xác suất đã hiệu chỉnh", meta["score_note"])
+        self.assertEqual(
+            [row["k_fraction"] for row in meta["precision_at_k"]], [0.01, 0.05, 0.10]
+        )
+        self.assertIn("mô phỏng", meta["note"].lower())
+        self.assertIn("không phụ thuộc bộ lọc năm", meta["note"].lower())
+
+    def test_at_risk_limit_valid_and_invalid(self):
+        for limit in (1, 37, 100):
+            res = self.client.get(f"/api/dss/at-risk?limit={limit}")
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(len(res.json()["orders"]), limit)
+
+        for bad in ("0", "-1", "101", "abc", "1.5", ""):
+            res = self.client.get(f"/api/dss/at-risk?limit={bad}")
+            self.assertEqual(res.status_code, 400)
+            self.assertIn("error", res.json())
+
+        # Không truyền limit -> mặc định 20 (đã kiểm ở test đầu), kiểm thêm 100.
+        res = self.client.get("/api/dss/at-risk?limit=100")
+        self.assertEqual(len(res.json()["orders"]), 100)
+
+    def test_at_risk_missing_model_returns_503_without_touching_real_file(self):
+        self.assertTrue(ML.MODEL_PATH.is_file())
+
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = Path(tmp) / "late_risk.joblib"
+            with override_settings(DSS_ML_MODEL_PATH=str(missing)):
+                res = self.client.get("/api/dss/at-risk")
+            self.assertEqual(res.status_code, 503)
+            self.assertIn("error", res.json())
+            self.assertIn("etl\\dss_ml.py", res.json()["error"])
+            self.assertFalse(missing.exists())
+
+        # File thật vẫn còn và endpoint hoạt động lại bình thường.
+        self.assertTrue(ML.MODEL_PATH.is_file())
+        self.assertEqual(self.client.get("/api/dss/at-risk?limit=1").status_code, 200)
+
+    def test_at_risk_model_is_cached_between_requests(self):
+        ML.clear_model_cache(ML.MODEL_PATH)
+        first = self.client.get("/api/dss/at-risk?limit=1")
+        self.assertEqual(first.status_code, 200)
+
+        key = str(ML.MODEL_PATH.resolve())
+        self.assertIn(key, ML._MODEL_CACHE)
+
+        # Nếu cố nạp lại từ đĩa, test sẽ fail; cache phải phục vụ yêu cầu thứ hai.
+        with patch(
+            "etl.dss_ml.joblib.load",
+            side_effect=AssertionError("không được nạp lại mô hình"),
+        ):
+            second = self.client.get("/api/dss/at-risk?limit=1")
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(first.json()["orders"], second.json()["orders"])

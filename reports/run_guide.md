@@ -90,7 +90,15 @@ Start-Process "web\Olist_Logistics_DSS_v3.html"
 
 hoặc kéo thả file vào trình duyệt. Giao diện gọi `http://localhost:8000/api/dss` — cần Django đang chạy (bước 2).
 
-Tab **Dashboard**, **OLAP**, **ETL Monitor** dùng dữ liệu mẫu (do thành viên khác làm bằng Flask, chưa nối Django). Tab **DSS** nối API thật.
+> **⚠️ Nhãn cảnh báo giao diện (quan trọng khi trình bày):**
+> - Tab **Dashboard**, **OLAP**, **ETL Monitor** hiển thị **dữ liệu mẫu** (mock
+>   data, do thành viên khác phát triển bằng Flask, chưa nối Django thật). Số
+>   liệu trên các tab này **không phản ánh dữ liệu Olist thực tế**.
+> - Khối **At-Risk** (tab DSS) hiển thị **điểm nguy cơ (`risk_score`)** — đây
+>   là điểm xếp hạng từ mô hình ML chưa hiệu chỉnh, **không phải xác suất trễ
+>   thực tế**. Điểm trung bình ~0,412 trong khi tỷ lệ trễ thật chỉ ~5,98%
+>   (miscalibrated). Dùng để **xếp thứ tự ưu tiên rà soát**, không dùng làm
+>   ngưỡng tuyệt đối.
 
 ---
 

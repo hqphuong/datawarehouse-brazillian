@@ -23,6 +23,71 @@ def _next_period(period: int) -> int:
     return (year + 1) * 100 + 1 if month == 12 else year * 100 + (month + 1)
 
 
+def _group_metrics(future: pd.DataFrame, mask: pd.Series):
+    """Số đơn và tỷ lệ trễ của nhóm gắn cờ / nhóm còn lại trong kỳ t+1."""
+    flagged_orders = int(mask.sum())
+    other_orders = int((~mask).sum())
+    flagged_rate = (
+        float(future.loc[mask, "is_late"].mean()) if flagged_orders else np.nan
+    )
+    other_rate = (
+        float(future.loc[~mask, "is_late"].mean()) if other_orders else np.nan
+    )
+    diff = (
+        flagged_rate - other_rate
+        if not (math.isnan(flagged_rate) or math.isnan(other_rate))
+        else np.nan
+    )
+    return flagged_orders, other_orders, flagged_rate, other_rate, diff
+
+
+def _historical_baseline_routes(
+    o: pd.DataFrame,
+    period: int,
+    current: pd.DataFrame,
+    min_orders: int,
+    k: int,
+    include_current: bool = False,
+):
+    """Chọn ``k`` tuyến theo tỷ lệ trễ gộp của lịch sử.
+
+    Mặc định chỉ dùng các kỳ **trước** ``period`` (biến thể "prior"). Nếu
+    ``include_current=True`` thì dùng lịch sử **đến hết kỳ ``period``** (biến
+    thể "through"), tức cùng lượng thông tin DSS nhìn thấy ở kỳ hiện tại.
+
+    Baseline chỉ xét các tuyến có đủ ``min_orders`` đơn trong kỳ hiện tại và có
+    ít nhất một dòng lịch sử (để tính được tỷ lệ trễ trung bình). Xếp hạng theo
+    tỷ lệ trễ lịch sử, phá hòa bằng số đơn lịch sử rồi theo tên tuyến.
+    """
+    if k <= 0:
+        return set()
+
+    if include_current:
+        history = o[o["period"] <= period]
+    else:
+        history = o[o["period"] < period]
+    if history.empty:
+        return set()
+
+    hist = history.groupby("route").agg(
+        hist_orders=("is_late", "size"),
+        hist_late_rate=("is_late", "mean"),
+    )
+    eligible = (
+        current.groupby("route")
+        .size()
+        .rename("current_orders")
+        .reset_index()
+        .merge(hist, on="route", how="inner")
+    )
+    eligible = eligible[eligible["current_orders"] >= min_orders]
+    picked = eligible.sort_values(
+        ["hist_late_rate", "hist_orders", "route"],
+        ascending=[False, False, True],
+    ).head(k)
+    return set(picked["route"])
+
+
 def backtest(
     o: pd.DataFrame,
     min_orders: int = 30,
@@ -30,6 +95,8 @@ def backtest(
     start_year: int = 2017,
     red: float = 2.0,
     amber: float = 1.5,
+    baseline: bool = False,
+    baseline_through: bool = False,
 ):
     """Backtest một bước: tuyến gắn cờ ở kỳ t có trễ hơn ở kỳ t+1 không?
 
@@ -40,8 +107,19 @@ def backtest(
 
     Trả về ``(periods, summary)``:
     - ``periods``: DataFrame mỗi dòng một kỳ, có cột ``diff = flagged - other``.
-    - ``summary``: dict tóm tắt một dòng (số kỳ cờ trễ hơn / số kỳ so sánh được,
-      chênh lệch trung bình có trọng số theo tổng số đơn của kỳ t+1).
+    - ``summary``: dict tóm tắt một dòng. Số chính ``weighted_diff`` dùng trọng
+      số là ``total_orders`` kỳ t+1 (= flagged_orders + other_orders). Cột
+      ``weighted_diff_flagged`` dùng trọng số là ``flagged_orders`` kỳ t+1.
+
+    Nếu ``baseline=True``, thêm baseline lịch sử: với mỗi kỳ t, chọn đúng số
+    tuyến như DSS nhưng xếp hạng theo tỷ lệ trễ gộp của mọi kỳ trước t (chỉ xét
+    tuyến đủ ``min_orders`` đơn trong kỳ t). Kết quả baseline nằm ở các cột
+    ``baseline_*`` và phần tóm tắt ``baseline_*``/``dss_better_periods``.
+
+    Nếu ``baseline_through=True`` (tự bật ``baseline``), thêm biến thể baseline
+    dùng lịch sử **đến hết kỳ t** (gồm cả kỳ t, cùng thông tin DSS nhìn thấy).
+    Kết quả nằm ở các cột ``baseline_through_*`` và phần tóm tắt
+    ``baseline_through_*``/``dss_better_vs_through_periods``.
 
     Kỳ không có tuyến nào gắn cờ vẫn xuất hiện trong ``periods`` với
     ``flagged_late_rate``/``diff`` bằng NaN, nhưng không được tính vào mẫu số
@@ -50,6 +128,9 @@ def backtest(
     periods = sorted({int(p) for p in o["period"].dropna().unique()})
     available = set(periods)
     rows = []
+
+    if baseline_through:
+        baseline = True
 
     for t in periods:
         nxt = _next_period(t)
@@ -69,35 +150,71 @@ def backtest(
             top=len(current),
         )
         routes = set(flagged["route"])
-        mask = future["route"].isin(routes)
-        flagged_orders = int(mask.sum())
-        other_orders = int((~mask).sum())
+        (
+            flagged_orders,
+            other_orders,
+            flagged_rate,
+            other_rate,
+            diff,
+        ) = _group_metrics(future, future["route"].isin(routes))
 
-        flagged_rate = (
-            float(future.loc[mask, "is_late"].mean()) if flagged_orders else np.nan
-        )
-        other_rate = (
-            float(future.loc[~mask, "is_late"].mean()) if other_orders else np.nan
-        )
-        diff = (
-            flagged_rate - other_rate
-            if not (math.isnan(flagged_rate) or math.isnan(other_rate))
-            else np.nan
-        )
+        row = {
+            "period": t,
+            "next_period": nxt,
+            "flagged_routes": len(routes),
+            "flagged_orders": flagged_orders,
+            "other_orders": other_orders,
+            "total_orders": len(future),
+            "flagged_late_rate": flagged_rate,
+            "other_late_rate": other_rate,
+            "diff": diff,
+        }
 
-        rows.append(
-            {
-                "period": t,
-                "next_period": nxt,
-                "flagged_routes": len(routes),
-                "flagged_orders": flagged_orders,
-                "other_orders": other_orders,
-                "total_orders": len(future),
-                "flagged_late_rate": flagged_rate,
-                "other_late_rate": other_rate,
-                "diff": diff,
-            }
-        )
+        if baseline:
+            baseline_routes = _historical_baseline_routes(
+                o, t, current, min_orders, len(routes)
+            )
+            (
+                baseline_flagged_orders,
+                baseline_other_orders,
+                baseline_flagged_rate,
+                baseline_other_rate,
+                baseline_diff,
+            ) = _group_metrics(future, future["route"].isin(baseline_routes))
+            row.update(
+                {
+                    "baseline_routes": len(baseline_routes),
+                    "baseline_flagged_orders": baseline_flagged_orders,
+                    "baseline_other_orders": baseline_other_orders,
+                    "baseline_flagged_late_rate": baseline_flagged_rate,
+                    "baseline_other_late_rate": baseline_other_rate,
+                    "baseline_diff": baseline_diff,
+                }
+            )
+
+        if baseline_through:
+            through_routes = _historical_baseline_routes(
+                o, t, current, min_orders, len(routes), include_current=True
+            )
+            (
+                through_flagged_orders,
+                through_other_orders,
+                through_flagged_rate,
+                through_other_rate,
+                through_diff,
+            ) = _group_metrics(future, future["route"].isin(through_routes))
+            row.update(
+                {
+                    "baseline_through_routes": len(through_routes),
+                    "baseline_through_flagged_orders": through_flagged_orders,
+                    "baseline_through_other_orders": through_other_orders,
+                    "baseline_through_flagged_late_rate": through_flagged_rate,
+                    "baseline_through_other_late_rate": through_other_rate,
+                    "baseline_through_diff": through_diff,
+                }
+            )
+
+        rows.append(row)
 
     columns = [
         "period",
@@ -110,17 +227,34 @@ def backtest(
         "other_late_rate",
         "diff",
     ]
+    if baseline:
+        columns += [
+            "baseline_routes",
+            "baseline_flagged_orders",
+            "baseline_other_orders",
+            "baseline_flagged_late_rate",
+            "baseline_other_late_rate",
+            "baseline_diff",
+        ]
+    if baseline_through:
+        columns += [
+            "baseline_through_routes",
+            "baseline_through_flagged_orders",
+            "baseline_through_other_orders",
+            "baseline_through_flagged_late_rate",
+            "baseline_through_other_late_rate",
+            "baseline_through_diff",
+        ]
     frame = pd.DataFrame(rows, columns=columns)
     comparable = frame.dropna(subset=["diff"])
 
     higher = int((comparable["diff"] > 0).sum())
-    # weighted_diff: trung bình có trọng số của (flagged_late_rate - other_late_rate)
-    # trọng số = total_orders kỳ t+1 (= flagged_orders + other_orders).
-    # Lý do: kỳ có nhiều đơn hơn đại diện tốt hơn cho mẫu, và tỷ lệ trễ ổn định hơn.
-    # Cách thay thế (trọng số = flagged_orders kỳ t+1) cho weighted_diff_flagged = +10.32 pp;
-    # cách này nhấn mạnh các kỳ nhiều đơn thuộc nhóm gắn cờ hơn.
-    # Số chính được chọn là weighted_diff với trọng số total_orders (+8.14 pp)
-    # vì nó trung lập hơn và phù hợp với ý nghĩa "kỳ có nhiều dữ liệu quan trọng hơn".
+    # weighted_diff (số chính): trung bình có trọng số của
+    # (flagged_late_rate - other_late_rate), trọng số = total_orders kỳ t+1
+    # (= flagged_orders + other_orders). Cách này coi mỗi kỳ là một đơn vị và
+    # đặt trọng số cao hơn cho kỳ có nhiều đơn (ước lượng ổn định hơn).
+    # weighted_diff_flagged: cùng công thức nhưng trọng số = flagged_orders kỳ
+    # t+1; dùng để đối chiếu, không phải số chính.
     weighted_diff = (
         float(
             np.average(comparable["diff"], weights=comparable["total_orders"])
@@ -152,12 +286,144 @@ def backtest(
         "share_higher": (higher / len(comparable)) if len(comparable) else None,
         # Số chính: trọng số = total_orders kỳ t+1 (trung lập, kỳ nhiều dữ liệu hơn có trọng số cao hơn)
         "weighted_diff": weighted_diff,
+        "weighted_diff_basis": "total_orders",
         # Tham khảo: trọng số = flagged_orders kỳ t+1 (nhấn mạnh kỳ có nhiều đơn bị gắn cờ)
         "weighted_diff_flagged": weighted_diff_flagged,
         "mean_diff": (
             float(comparable["diff"].mean()) if len(comparable) else None
         ),
     }
+
+    if baseline:
+        baseline_comparable = frame.dropna(subset=["baseline_diff"])
+        baseline_higher = int((baseline_comparable["baseline_diff"] > 0).sum())
+        baseline_weighted = (
+            float(
+                np.average(
+                    baseline_comparable["baseline_diff"],
+                    weights=baseline_comparable["total_orders"],
+                )
+            )
+            if len(baseline_comparable)
+            else None
+        )
+        baseline_weighted_flagged = (
+            float(
+                np.average(
+                    baseline_comparable["baseline_diff"],
+                    weights=baseline_comparable["baseline_flagged_orders"],
+                )
+            )
+            if len(baseline_comparable)
+            else None
+        )
+
+        paired = frame.dropna(subset=["diff", "baseline_diff"])
+        baseline_better = int((paired["baseline_diff"] > paired["diff"]).sum())
+        dss_better = int((paired["diff"] > paired["baseline_diff"]).sum())
+        tied = int(len(paired) - baseline_better - dss_better)
+
+        summary.update(
+            {
+                "baseline_periods_evaluated": int(len(baseline_comparable)),
+                "baseline_periods_without_flags": int(
+                    (frame["baseline_routes"] == 0).sum()
+                ),
+                "baseline_higher_periods": baseline_higher,
+                "baseline_share_higher": (
+                    baseline_higher / len(baseline_comparable)
+                    if len(baseline_comparable)
+                    else None
+                ),
+                "baseline_weighted_diff": baseline_weighted,
+                "baseline_weighted_diff_flagged": baseline_weighted_flagged,
+                "baseline_mean_diff": (
+                    float(baseline_comparable["baseline_diff"].mean())
+                    if len(baseline_comparable)
+                    else None
+                ),
+                "paired_periods": int(len(paired)),
+                "baseline_better_periods": baseline_better,
+                "dss_better_periods": dss_better,
+                "tied_periods": tied,
+            }
+        )
+
+    if baseline_through:
+        through_comparable = frame.dropna(subset=["baseline_through_diff"])
+        through_higher = int(
+            (through_comparable["baseline_through_diff"] > 0).sum()
+        )
+        through_weighted = (
+            float(
+                np.average(
+                    through_comparable["baseline_through_diff"],
+                    weights=through_comparable["total_orders"],
+                )
+            )
+            if len(through_comparable)
+            else None
+        )
+        through_weighted_flagged = (
+            float(
+                np.average(
+                    through_comparable["baseline_through_diff"],
+                    weights=through_comparable["baseline_through_flagged_orders"],
+                )
+            )
+            if len(through_comparable)
+            else None
+        )
+
+        through_paired = frame.dropna(
+            subset=["diff", "baseline_through_diff"]
+        )
+        through_better = int(
+            (
+                through_paired["baseline_through_diff"]
+                > through_paired["diff"]
+            ).sum()
+        )
+        dss_better_vs_through = int(
+            (
+                through_paired["diff"]
+                > through_paired["baseline_through_diff"]
+            ).sum()
+        )
+        through_tied = int(
+            len(through_paired) - through_better - dss_better_vs_through
+        )
+
+        summary.update(
+            {
+                "baseline_through_periods_evaluated": int(
+                    len(through_comparable)
+                ),
+                "baseline_through_periods_without_flags": int(
+                    (frame["baseline_through_routes"] == 0).sum()
+                ),
+                "baseline_through_higher_periods": through_higher,
+                "baseline_through_share_higher": (
+                    through_higher / len(through_comparable)
+                    if len(through_comparable)
+                    else None
+                ),
+                "baseline_through_weighted_diff": through_weighted,
+                "baseline_through_weighted_diff_flagged": (
+                    through_weighted_flagged
+                ),
+                "baseline_through_mean_diff": (
+                    float(through_comparable["baseline_through_diff"].mean())
+                    if len(through_comparable)
+                    else None
+                ),
+                "paired_through_periods": int(len(through_paired)),
+                "baseline_through_better_periods": through_better,
+                "dss_better_vs_through_periods": dss_better_vs_through,
+                "tied_vs_through_periods": through_tied,
+            }
+        )
+
     return frame, summary
 
 
@@ -198,10 +464,19 @@ def top_routes_report(
 ) -> pd.DataFrame:
     """Bảng chi tiết cho ``n`` tuyến đứng đầu ``route_priority``.
 
-    Mỗi dòng gồm số đơn, baseline, root cause (excess từng giai đoạn), kết quả
-    cắt 1/3/5 ngày cho từng giai đoạn, goal seek cam kết và goal seek cắt.
+    Mỗi dòng gồm số đơn, baseline, root cause (excess từng giai đoạn và
+    excess_ratio = excess / |mean_sys|), kết quả cắt 1/3/5 ngày cho từng
+    giai đoạn, goal seek cam kết và goal seek cắt.
+
+    Cột ``excess_ratio_<stage>`` chỉ để **tham khảo** (so sánh tương đối
+    giữa các giai đoạn khi mean hệ thống chênh lệch nhiều); ``stage`` và
+    ``has_bottleneck`` vẫn xác định theo excess tuyệt đối để giữ nhất quán
+    với logic DSS. Nếu ``stage`` theo excess_ratio khác ``stage`` theo tuyệt
+    đối, cột ``stage_ratio_diff`` sẽ bằng ``True``.
     """
-    priority = M.route_priority(o, top=n)
+    # Bảng chi tiết giữ đúng n tuyến theo late_orders (không dùng red-first)
+    priority = M.route_priority(o, top=n, ensure_red=False)
+    sys_means = {s: float(o[s].mean()) for s in M.STAGES}
     rows = []
     for _, item in priority.iterrows():
         route = item["route"]
@@ -217,6 +492,23 @@ def top_routes_report(
         }
         for stage in M.STAGES:
             row[f"excess_{stage}"] = cause["excess"][stage]
+        # excess_ratio: chỉ tham khảo — không đổi stage/has_bottleneck
+        for stage in M.STAGES:
+            denom = abs(sys_means[stage])
+            row[f"excess_ratio_{stage}"] = (
+                cause["excess"][stage] / denom if denom > 1e-9 else None
+            )
+        stage_by_ratio = max(
+            M.STAGES,
+            key=lambda s: (
+                cause["excess"][s] / abs(sys_means[s])
+                if abs(sys_means[s]) > 1e-9
+                else float("-inf")
+            ),
+        )
+        row["stage_ratio_diff"] = stage_by_ratio != cause["stage"]
+
+        for stage in M.STAGES:
             for cut in cuts:
                 row[f"{stage}_cut_{cut}"] = M.scenario(
                     o, route, {stage: cut}
@@ -254,7 +546,7 @@ def negative_time_comparison(
     thực hiện trên toàn bộ dữ liệu, nên cả trung bình hệ thống (mẫu số của
     ``excess``) cũng thay đổi, không chỉ trung bình riêng tuyến.
     """
-    routes = list(M.route_priority(o, top=n)["route"])
+    routes = list(M.route_priority(o, top=n, ensure_red=False)["route"])
     clean = o[(o["prep"] >= 0) & (o["transit"] >= 0)].copy()
     removed = (o[["prep", "transit"]] < 0).any(axis=1)
 
@@ -310,6 +602,130 @@ def _md_table(frame: pd.DataFrame) -> str:
     return "\n".join(lines)
 
 
+def bootstrap_ci(
+    frame: pd.DataFrame,
+    n_boot: int = 10_000,
+    seed: int = 42,
+    alpha: float = 0.05,
+    weight_col: str = "total_orders",
+) -> dict:
+    """Bootstrap CI 95% cho ``weighted_diff`` và các so sánh với baseline.
+
+    Thực hiện hai loại bootstrap:
+
+    * **pair** — lấy mẫu có hoàn lại theo kỳ (đơn vị = một kỳ).
+    * **block** — circular block bootstrap, kích thước khối = 3 tháng, để tính
+      đến tự tương quan giữa các kỳ gần nhau.
+
+    Cả hai loại đều dùng ``weight_col`` (mặc định ``total_orders``) làm trọng số
+    khi tính ``weighted_diff`` trong mỗi mẫu bootstrap.
+
+    Tham số:
+        frame: DataFrame trả về bởi :func:`backtest` (cần có cột ``diff``,
+            ``baseline_diff``, ``baseline_through_diff``, ``total_orders``).
+        n_boot: Số lần lặp bootstrap (tối thiểu 10 000 để CI ổn định).
+        seed: Seed cố định để tái hiện kết quả.
+        alpha: Mức ý nghĩa; 0.05 → CI 95%.
+        weight_col: Cột dùng làm trọng số cho ``np.average``.
+
+    Trả về dict với các khoá:
+        ``n_boot``, ``seed``, ``weight_col``,
+        ``pair_ci_vs_zero``, ``pair_ci_vs_prior``, ``pair_ci_vs_through``,
+        ``block_ci_vs_zero``, ``block_ci_vs_prior``, ``block_ci_vs_through``.
+
+    Mỗi CI là tuple ``(lo_pp, hi_pp)`` — **đơn vị: điểm phần trăm (pp)**.
+
+    Ghi chú về cách đọc:
+        * ``ci_vs_zero``: CI của ``weighted_diff`` (DSS so với 0). Nếu CI không
+          chứa 0 → nói "vượt" có cơ sở thống kê.
+        * ``ci_vs_prior``: CI của ``dss_weighted_diff − baseline_prior_weighted``
+          (chênh lệch DSS so với baseline lịch sử prior).
+        * ``ci_vs_through``: CI của ``dss_weighted_diff − baseline_through_weighted``
+          (chênh lệch DSS so với baseline through — so sánh chính vì through cùng
+          lượng thông tin với DSS).
+    """
+    comp = frame.dropna(
+        subset=["diff", "baseline_diff", "baseline_through_diff"]
+    ).sort_values("period").reset_index(drop=True)
+
+    if len(comp) == 0:
+        empty_ci = (float("nan"), float("nan"))
+        return {
+            "n_boot": n_boot,
+            "seed": seed,
+            "weight_col": weight_col,
+            "pair_ci_vs_zero": empty_ci,
+            "pair_ci_vs_prior": empty_ci,
+            "pair_ci_vs_through": empty_ci,
+            "block_ci_vs_zero": empty_ci,
+            "block_ci_vs_prior": empty_ci,
+            "block_ci_vs_through": empty_ci,
+        }
+
+    diffs = comp["diff"].values
+    base_diffs = comp["baseline_diff"].values
+    through_diffs = comp["baseline_through_diff"].values
+    weights = comp[weight_col].values
+    n = len(diffs)
+
+    def _w_avg(d: np.ndarray, w: np.ndarray) -> float:
+        return float(np.average(d, weights=w))
+
+    def _percentile_ci(samples: np.ndarray) -> tuple[float, float]:
+        lo = float(np.percentile(samples, 100 * alpha / 2))
+        hi = float(np.percentile(samples, 100 * (1 - alpha / 2)))
+        return round(lo, 4), round(hi, 4)
+
+    # ── Pair bootstrap ──────────────────────────────────────────────────────
+    rng = np.random.default_rng(seed)
+    boot_dss_p = np.empty(n_boot)
+    boot_prior_p = np.empty(n_boot)
+    boot_through_p = np.empty(n_boot)
+    for i in range(n_boot):
+        idx = rng.integers(0, n, size=n)
+        w_s = weights[idx]
+        boot_dss_p[i] = _w_avg(diffs[idx], w_s)
+        boot_prior_p[i] = _w_avg(base_diffs[idx], w_s)
+        boot_through_p[i] = _w_avg(through_diffs[idx], w_s)
+
+    pair_ci_vs_zero = _percentile_ci(boot_dss_p * 100)
+    pair_ci_vs_prior = _percentile_ci((boot_dss_p - boot_prior_p) * 100)
+    pair_ci_vs_through = _percentile_ci((boot_dss_p - boot_through_p) * 100)
+
+    # ── Block bootstrap (circular, block_size=3) ────────────────────────────
+    block_size = 3
+    n_blocks = int(np.ceil(n / block_size))
+    rng_blk = np.random.default_rng(seed)
+    boot_dss_b = np.empty(n_boot)
+    boot_prior_b = np.empty(n_boot)
+    boot_through_b = np.empty(n_boot)
+    for i in range(n_boot):
+        starts = rng_blk.integers(0, n, size=n_blocks)
+        idx = np.concatenate(
+            [np.arange(s, s + block_size) % n for s in starts]
+        )[:n]
+        w_s = weights[idx]
+        boot_dss_b[i] = _w_avg(diffs[idx], w_s)
+        boot_prior_b[i] = _w_avg(base_diffs[idx], w_s)
+        boot_through_b[i] = _w_avg(through_diffs[idx], w_s)
+
+    block_ci_vs_zero = _percentile_ci(boot_dss_b * 100)
+    block_ci_vs_prior = _percentile_ci((boot_dss_b - boot_prior_b) * 100)
+    block_ci_vs_through = _percentile_ci((boot_dss_b - boot_through_b) * 100)
+
+    return {
+        "n_boot": n_boot,
+        "seed": seed,
+        "weight_col": weight_col,
+        "pair_ci_vs_zero": pair_ci_vs_zero,
+        "pair_ci_vs_prior": pair_ci_vs_prior,
+        "pair_ci_vs_through": pair_ci_vs_through,
+        "block_ci_vs_zero": block_ci_vs_zero,
+        "block_ci_vs_prior": block_ci_vs_prior,
+        "block_ci_vs_through": block_ci_vs_through,
+    }
+
+
 def main() -> None:
     o = M.load_orders()
 
@@ -318,11 +734,56 @@ def main() -> None:
     print(f"- Tỷ lệ trễ toàn hệ thống: {o.is_late.mean():.6f}")
 
     print("\n## Backtest theo min_orders")
+    main_frame = None
     for min_orders in (30, 50, 100):
-        frame, summary = backtest(o, min_orders=min_orders)
+        frame, summary = backtest(
+            o, min_orders=min_orders, baseline=True, baseline_through=True
+        )
         print(f"\n### min_orders={min_orders}")
         print(_md_table(frame))
         print("\nTóm tắt:", summary)
+        if min_orders == 30:
+            main_frame = frame
+            print("\n#### So sánh baseline lịch sử (min_orders=30)")
+            print(
+                _md_table(
+                    frame[
+                        [
+                            "period",
+                            "flagged_routes",
+                            "baseline_routes",
+                            "baseline_through_routes",
+                            "diff",
+                            "baseline_diff",
+                            "baseline_through_diff",
+                        ]
+                    ]
+                )
+            )
+
+    print("\n## Bootstrap CI (min_orders=30, n_boot=10 000, seed=42, trọng số=total_orders)")
+    ci = bootstrap_ci(main_frame, n_boot=10_000, seed=42, weight_col="total_orders")
+    print(f"- weight_col: {ci['weight_col']}, seed: {ci['seed']}")
+    lo, hi = ci["pair_ci_vs_zero"]
+    print(f"\n### Pair bootstrap (resample kỳ)")
+    print(f"  vs 0 (DSS > 0):     [{lo:+.2f}; {hi:+.2f}] pp")
+    lo, hi = ci["pair_ci_vs_prior"]
+    print(f"  vs prior:           [{lo:+.2f}; {hi:+.2f}] pp")
+    lo, hi = ci["pair_ci_vs_through"]
+    print(f"  vs through (so sánh chính): [{lo:+.2f}; {hi:+.2f}] pp")
+    lo, hi = ci["block_ci_vs_zero"]
+    print(f"\n### Block bootstrap (khối 3 tháng, circular)")
+    print(f"  vs 0 (DSS > 0):     [{lo:+.2f}; {hi:+.2f}] pp")
+    lo, hi = ci["block_ci_vs_prior"]
+    print(f"  vs prior:           [{lo:+.2f}; {hi:+.2f}] pp")
+    lo, hi = ci["block_ci_vs_through"]
+    print(f"  vs through (so sánh chính): [{lo:+.2f}; {hi:+.2f}] pp")
+    print()
+    lo_z, hi_z = ci["pair_ci_vs_zero"]
+    lo_t, hi_t = ci["pair_ci_vs_through"]
+    print(f"Kết luận pair bootstrap:")
+    print(f"  DSS vs 0:     CI=[{lo_z:+.2f}; {hi_z:+.2f}] → {'CI không chứa 0 → có thể nói vượt 0' if lo_z > 0 else 'CI chứa 0 → không nói vượt'}")
+    print(f"  DSS vs through: CI=[{lo_t:+.2f}; {hi_t:+.2f}] → {'CI không chứa 0 → DSS vượt through' if lo_t > 0 else 'CI chứa 0 → không nói vượt through'}")
 
     print("\n## Độ nhạy ngưỡng")
     print(_md_table(threshold_sensitivity(o)))

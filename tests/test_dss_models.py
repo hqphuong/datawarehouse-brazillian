@@ -1,3 +1,4 @@
+import pandas as pd
 import pytest
 
 from etl import dss_models as M
@@ -10,6 +11,54 @@ def o():
 
 def test_unique_order_route(o):
     assert not o.duplicated(["order_id", "route"]).any()
+
+
+def test_wilson_interval_known_values():
+    """Kiểm tra công thức Wilson 95% với vài giá trị tính trước."""
+    lo, hi = M.wilson_interval(50, 100)
+    assert lo == pytest.approx(0.403830, abs=1e-6)
+    assert hi == pytest.approx(0.596170, abs=1e-6)
+
+    lo, hi = M.wilson_interval(31, 124)
+    assert lo == pytest.approx(0.1821, abs=5e-4)
+    assert hi == pytest.approx(0.3329, abs=5e-4)
+
+
+def test_low_sample_threshold_is_200_orders():
+    """Cờ low_sample bật đúng khi orders < 200, tắt khi orders = 200."""
+    routes = ["A->A"] * 199 + ["B->B"] * 200 + ["C->C"] * 1000
+    late = [True] * 100 + [False] * 99 + [True] * 100 + [False] * 100 + [False] * 1000
+    orders = pd.DataFrame(
+        {
+            "route": routes,
+            "order_id": [f"o{i}" for i in range(len(routes))],
+            "is_late": late,
+        }
+    )
+
+    out = M.route_priority(orders, top=10).set_index("route")
+    assert bool(out.loc["A->A", "low_sample"]) is True
+    assert bool(out.loc["B->B", "low_sample"]) is False
+    assert "C->C" not in out.index  # tuyến nền không bị gắn cờ
+
+
+def test_default_top_contains_all_red_routes(o):
+    """Top mặc định phải chứa mọi tuyến đỏ, và đỏ phải đứng trước vàng."""
+    all_flagged = M.route_priority(o, top=len(o))
+    default = M.route_priority(o)
+
+    red_routes = set(all_flagged.loc[all_flagged.level == "red", "route"])
+    assert red_routes
+    assert red_routes <= set(default["route"])
+
+    levels = default["level"].tolist()
+    n_red = levels.count("red")
+    assert levels == ["red"] * n_red + ["amber"] * (len(levels) - n_red)
+
+    reds = default[default.level == "red"]
+    assert reds["late_orders"].tolist() == sorted(
+        reds["late_orders"].tolist(), reverse=True
+    )
 
 
 def test_delay_days_valid(o):
@@ -77,3 +126,33 @@ def test_root_cause_sp_rj_bottleneck_is_transit(o):
     assert rc["has_bottleneck"] is True
     assert rc["stage"] == "transit"
     assert rc["recommendation"] == M.RULES["transit"]
+
+
+def test_sensitivity_base_cut_series_matches_projected(o):
+    """series[cut_transit].projected phải bằng projected của scenario với cùng bộ cut."""
+    route = "SP->RJ"
+    cut = {"prep": 2, "transit": 1}
+    # bottleneck của SP->RJ là transit
+    cause = M.root_cause(o, route)
+    assert cause["stage"] == "transit", "test giả định bottleneck là transit"
+
+    projected_scenario = M.scenario(o, route, cut)["projected"]
+    base_cut = {k: v for k, v in cut.items() if k != "transit"}
+    series = M.sensitivity(o, route, "transit", base_cut=base_cut)
+
+    # series[1] ứng với transit_cut=1 — phải khớp projected của scenario(cut)
+    assert series[1]["cut"] == 1
+    assert series[1]["projected"] == pytest.approx(projected_scenario)
+
+
+def test_sensitivity_base_cut_none_unchanged(o):
+    """Gọi sensitivity không truyền base_cut (mặc định None) phải cho kết quả như cũ."""
+    route = M.route_priority(o).route.iloc[0]
+    old = [
+        {"cut": x, "projected": M.scenario(o, route, {"prep": x})["projected"]}
+        for x in range(6)
+    ]
+    new = M.sensitivity(o, route, "prep")  # base_cut=None
+    for a, b in zip(old, new):
+        assert a["cut"] == b["cut"]
+        assert a["projected"] == pytest.approx(b["projected"])

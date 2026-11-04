@@ -431,6 +431,10 @@ useEffect(() => {
 - Nút Apply gọi `POST /api/dss/actions`.
 - Xoá `DS_ORD` và các hàm `ds*` khi giao diện đã chạy bằng API.
 
+> **⚠️ Nhãn cảnh báo bắt buộc trên giao diện:**
+> - Tab **Dashboard**, **OLAP**, **ETL Monitor** phải hiển thị nhãn **"Dữ liệu mẫu — không phản ánh Olist thực tế"** (do thành viên khác làm bằng Flask, chưa nối Django). Nếu trình bày trước giảng viên, nhắc rõ điều này.
+> - Khối **At-Risk** phải hiển thị chú thích: **"Điểm nguy cơ (`risk_score`) dùng để xếp hạng ưu tiên, không phải xác suất trễ thực tế. Điểm trung bình ~0,412 trong khi tỷ lệ trễ thật ~5,98% (miscalibrated)."**
+
 ### Bước 9. Đánh giá (số liệu đưa vào báo cáo)
 
 1. **Kiểm thử mô hình:** kết quả các test ở Bước 4.
@@ -468,7 +472,7 @@ Ghi tất cả kết quả vào `reports/dss_results.md`.
 | Kết quả backtest, ML, hạn chế | Chương 7 |
 | Chuẩn đầu ra | Cột "Minh chứng": L.O.3.2 (4 giai đoạn), L.O.3.3 (mô hình hoá), L.O.4.2 (hiện thực DSS) |
 
-**Hạn chế nên ghi:** dữ liệu lịch sử nên cảnh báo mang tính mô phỏng; What-if giả định cắt giảm chuyển 1:1; nguyên nhân gốc chỉ đến mức giai đoạn vì Fact chưa có `seller_id`; mô hình ML chỉ huấn luyện trên đơn đã giao.
+**Hạn chế nên ghi:** dữ liệu lịch sử nên cảnh báo mang tính mô phỏng; What-if giả định cắt giảm chuyển 1:1; nguyên nhân gốc chỉ đến mức giai đoạn vì Fact chưa có `seller_id`; mô hình ML chỉ huấn luyện trên đơn đã giao; **tab Dashboard/OLAP/ETL Monitor hiển thị dữ liệu mẫu, không phải Olist thực tế**; **`risk_score` không phải xác suất đã hiệu chỉnh** (điểm TB ~0,412 vs tỷ lệ trễ thật ~5,98%).
 
 ---
 

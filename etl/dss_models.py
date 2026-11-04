@@ -76,11 +76,45 @@ def load_orders() -> pd.DataFrame:
     )
 
 
-def route_priority(o, red=2.0, amber=1.5, min_orders=100, top=10):
+def wilson_interval(late_orders, orders, z=1.96):
+    """Khoảng tin cậy Wilson 95% cho tỷ lệ trễ (``late_orders / orders``)."""
+    n = int(orders)
+    if n <= 0:
+        return 0.0, 1.0
+    p = float(late_orders) / n
+    denom = 1.0 + z * z / n
+    center = (p + z * z / (2.0 * n)) / denom
+    half = (
+        z * math.sqrt(p * (1.0 - p) / n + z * z / (4.0 * n * n)) / denom
+    )
+    return max(0.0, center - half), min(1.0, center + half)
+
+
+def route_priority(
+    o, red=2.0, amber=1.5, min_orders=100, top=10, ensure_red=True
+):
     """Khối 1: xếp hạng tuyến theo mức vượt tỷ lệ trễ toàn hệ thống.
 
     ``red``/``amber`` là bội số so với tỷ lệ trễ chung; chỉ giữ tuyến có tối
     thiểu ``min_orders`` đơn để tránh kết luận từ mẫu quá nhỏ.
+
+    Mặc định ``ensure_red=True``: trả **tất cả** tuyến đỏ trước (sắp theo
+    ``late_orders`` giảm dần), rồi mới đến tuyến vàng cho đủ ``top``. Nếu số
+    tuyến đỏ nhiều hơn ``top`` thì trả hết tuyến đỏ (nhiều hơn ``top``) để
+    không che tuyến đỏ nào. ``ensure_red=False`` giữ cách xếp hạng cũ (thuần
+    theo ``late_orders``, cắt đúng ``top``) cho các bảng chi tiết.
+
+    Cột ``uncertain``: ``True`` khi cận dưới Wilson 95% của tuyến nằm dưới
+    ngưỡng phân loại của chính mình (``ci_low < overall * red`` với tuyến đỏ;
+    ``ci_low < overall * amber`` với tuyến vàng). Nghĩa là khoảng tin cậy
+    **chứa** ngưỡng phân loại — tức nhãn đỏ/vàng chưa được xác nhận chắc chắn
+    bởi CI. Cột này chỉ để **hiển thị cảnh báo trên UI**, không đổi ``level``,
+    không đổi thứ tự xếp hạng, không đổi ``stage``/``has_bottleneck``.
+
+    Sáu điều kiện khi ``uncertain=True`` đối với tuyến r:
+      1. level=red  AND ci_low < overall × θ_red
+      2. level=amber AND ci_low < overall × θ_amber
+    (điều kiện 3–6 trong spec là các ví dụ cụ thể của hai điều kiện trên.)
     """
     overall = o.is_late.mean()
     g = (
@@ -92,13 +126,44 @@ def route_priority(o, red=2.0, amber=1.5, min_orders=100, top=10):
         )
         .reset_index()
     )
-    g = g[g.orders >= min_orders]
+    g = g[g.orders >= min_orders].copy()
     g["level"] = np.where(
         g.late_rate >= overall * red,
         "red",
         np.where(g.late_rate >= overall * amber, "amber", "ok"),
     )
-    return g[g.level != "ok"].sort_values("late_orders", ascending=False).head(top)
+
+    intervals = [
+        wilson_interval(k, n) for k, n in zip(g["late_orders"], g["orders"])
+    ]
+    g["ci_low"] = [lo for lo, _ in intervals]
+    g["ci_high"] = [hi for _, hi in intervals]
+    g["low_sample"] = g["orders"] < 200
+
+    # uncertain: ci_low nằm dưới ngưỡng phân loại của tuyến → CI chứa ngưỡng
+    red_thr = float(overall) * red
+    amber_thr = float(overall) * amber
+    g["uncertain"] = np.where(
+        g["level"] == "red",
+        g["ci_low"] < red_thr,
+        np.where(g["level"] == "amber", g["ci_low"] < amber_thr, False),
+    )
+
+    flagged = g[g.level != "ok"]
+    if top <= 0:
+        return flagged.head(0)
+    if not ensure_red:
+        return flagged.sort_values("late_orders", ascending=False).head(top)
+
+    reds = flagged[flagged.level == "red"].sort_values(
+        "late_orders", ascending=False
+    )
+    ambers = flagged[flagged.level == "amber"].sort_values(
+        "late_orders", ascending=False
+    )
+    if len(reds) >= top:
+        return reds
+    return pd.concat([reds, ambers.head(top - len(reds))])
 
 
 def root_cause(o, route):
@@ -145,10 +210,25 @@ def scenario(o, route=None, cut=None):
     }
 
 
-def sensitivity(o, route, stage, max_days=5):
-    """Phân tích độ nhạy: tỷ lệ trễ dự báo khi cắt 0..max_days ngày ở một giai đoạn."""
+def sensitivity(o, route, stage, max_days=5, base_cut=None):
+    """Phân tích độ nhạy: tỷ lệ trễ dự báo khi cắt 0..max_days ngày ở ``stage``.
+
+    ``base_cut`` (dict, tuỳ chọn) là các mức cắt cố định của các giai đoạn
+    *khác* để giữ bối cảnh What-if hiện tại. Ví dụ nếu người dùng đang xem
+    ``prep=2`` và quét ``transit``, truyền ``base_cut={"prep": 2}`` để mỗi
+    điểm trên đường cong phản ánh đúng kịch bản đang chọn.
+
+    Khi ``base_cut=None`` (mặc định) hàm hoạt động y như trước — chỉ cắt
+    ``stage``, các giai đoạn còn lại để 0 — đảm bảo tương thích ngược.
+
+    Điểm ``cut = c`` trên series sẽ bằng ``projected`` của
+    ``scenario(o, route, {**base_cut, stage: c})``.
+    """
+    fixed = dict(base_cut) if base_cut else {}
+    # Loại bỏ giai đoạn đang quét khỏi base_cut nếu vô tình truyền vào
+    fixed.pop(stage, None)
     return [
-        {"cut": x, "projected": scenario(o, route, {stage: x})["projected"]}
+        {"cut": x, "projected": scenario(o, route, {**fixed, stage: x})["projected"]}
         for x in range(max_days + 1)
     ]
 
