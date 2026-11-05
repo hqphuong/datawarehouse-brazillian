@@ -24,6 +24,194 @@ def test_wilson_interval_known_values():
     assert hi == pytest.approx(0.3329, abs=5e-4)
 
 
+# Tỷ lệ trễ của giai đoạn kiểm tra mô hình ML (~5,98%). Không được dùng làm
+# ngưỡng đỏ/vàng: route_priority nhân red/amber với tỷ lệ trễ chung (~8,07%).
+TEST_PREVALENCE = 0.05979368707146828
+
+
+def _orders_from_counts(specs, stages=None):
+    """Tạo bảng đơn tối thiểu: mỗi spec là (route, số đơn, số đơn trễ)."""
+    rows = []
+    for route, n_orders, n_late in specs:
+        for i in range(n_orders):
+            rows.append(
+                {
+                    "route": route,
+                    "order_id": f"{route}-{i}",
+                    "is_late": i < n_late,
+                    "approval": 1.0,
+                    "prep": 1.0,
+                    "transit": 1.0,
+                }
+            )
+    frame = pd.DataFrame(rows)
+    for route, values in (stages or {}).items():
+        mask = frame["route"] == route
+        for column, value in values.items():
+            frame.loc[mask, column] = value
+    return frame
+
+
+def test_uncertain_threshold_and_independence_from_low_sample():
+    """uncertain = ci_low dưới ngưỡng của chính level; không đi theo low_sample.
+
+    Bốn tuyến cố ý tách bốn tổ hợp (low_sample, uncertain). Tuyến đỏ có CI
+    cắt ngưỡng vẫn giữ level red.
+    """
+    frame = _orders_from_counts(
+        [
+            ("ZZ->ZZ", 20000, 1500),  # nền, dưới ngưỡng vàng
+            ("SU->RE", 600, 280),  # đỏ, mẫu lớn, CI nằm trên ngưỡng
+            ("CR->OS", 250, 50),  # đỏ, mẫu lớn, CI cắt ngưỡng đỏ
+            ("SM->AL", 150, 70),  # đỏ, mẫu < 200, CI nằm trên ngưỡng
+            ("AM->BG", 2000, 300),  # vàng, mẫu lớn, CI cắt ngưỡng vàng
+            ("BO->TH", 130, 22),  # vàng, mẫu < 200, CI cắt ngưỡng vàng
+        ]
+    )
+    overall = float(frame["is_late"].mean())
+    red_thr = overall * 2.0
+    amber_thr = overall * 1.5
+
+    out = M.route_priority(frame).set_index("route")
+    assert "ZZ->ZZ" not in out.index
+    assert set(out.index) == {"SU->RE", "CR->OS", "SM->AL", "AM->BG", "BO->TH"}
+
+    for route, row in out.iterrows():
+        if row["late_rate"] >= red_thr:
+            assert row["level"] == "red"
+            threshold = red_thr
+        else:
+            assert row["level"] == "amber"
+            assert row["late_rate"] >= amber_thr
+            threshold = amber_thr
+        lower, _ = M.wilson_interval(int(row["late_orders"]), int(row["orders"]))
+        assert row["ci_low"] == pytest.approx(lower)
+        assert bool(row["uncertain"]) is bool(lower < threshold)
+        assert bool(row["low_sample"]) is bool(row["orders"] < 200)
+
+    # CI cắt ngưỡng không kéo level xuống.
+    assert out.loc["CR->OS", "level"] == "red"
+    assert float(out.loc["CR->OS", "ci_low"]) < red_thr
+    assert out.loc["AM->BG", "level"] == "amber"
+    assert float(out.loc["AM->BG", "ci_low"]) < amber_thr
+
+    assert bool(out.loc["SU->RE", "low_sample"]) is False
+    assert bool(out.loc["SU->RE", "uncertain"]) is False
+    assert bool(out.loc["CR->OS", "low_sample"]) is False
+    assert bool(out.loc["CR->OS", "uncertain"]) is True
+    assert bool(out.loc["SM->AL", "low_sample"]) is True
+    assert bool(out.loc["SM->AL", "uncertain"]) is False
+    assert bool(out.loc["BO->TH", "low_sample"]) is True
+    assert bool(out.loc["BO->TH", "uncertain"]) is True
+
+
+def test_uncertain_does_not_change_order_stage_or_bottleneck():
+    """Cờ không đổi thứ tự đỏ-trước / late_orders, cũng không đổi root_cause."""
+    frame = _orders_from_counts(
+        [
+            ("ZZ->ZZ", 20000, 1500),
+            ("SU->RE", 600, 280),
+            ("CR->OS", 250, 50),
+            ("SM->AL", 150, 70),
+            ("AM->BG", 2000, 300),
+            ("BO->TH", 130, 22),
+        ],
+        stages={
+            "CR->OS": {"transit": 8.0},
+            "BO->TH": {"approval": 0.0, "prep": 0.0, "transit": 0.0},
+        },
+    )
+    out = M.route_priority(frame).reset_index(drop=True)
+
+    # AM->BG có nhiều đơn trễ hơn mọi tuyến đỏ trừ cách xếp theo level.
+    # CR->OS là đỏ không chắc; nếu xếp uncertain lên trước thì nó đứng trên SU->RE.
+    assert out["route"].tolist() == ["SU->RE", "SM->AL", "CR->OS", "AM->BG", "BO->TH"]
+    assert int(out.loc[out["route"] == "AM->BG", "late_orders"].iloc[0]) > int(
+        out.loc[out["route"] == "SU->RE", "late_orders"].iloc[0]
+    )
+    assert bool(out.loc[out["route"] == "CR->OS", "uncertain"].iloc[0]) is True
+    assert out.loc[out["route"] == "CR->OS", "level"].iloc[0] == "red"
+
+    cross = M.root_cause(frame, "CR->OS")
+    assert cross["stage"] == "transit"
+    assert cross["has_bottleneck"] is True
+    assert "uncertain" not in cross
+
+    both = M.root_cause(frame, "BO->TH")
+    excess = {
+        stage: float(frame.loc[frame["route"] == "BO->TH", stage].mean() - frame[stage].mean())
+        for stage in M.STAGES
+    }
+    assert both["stage"] == max(excess, key=excess.get)
+    assert both["has_bottleneck"] is False
+    assert max(excess.values()) < 0
+
+
+def test_uncertain_on_warehouse_uses_overall_rate_not_test_prevalence(o):
+    """Ngưỡng trên kho thật là red/amber × tỷ lệ trễ chung ≈ 8,07%, không phải 5,98%."""
+    overall = float(o["is_late"].mean())
+    assert round(overall * 100, 2) == 8.07
+    assert round(TEST_PREVALENCE * 100, 2) == 5.98
+    assert abs(overall - TEST_PREVALENCE) > 0.02
+
+    flagged = M.route_priority(o, top=len(o)).reset_index(drop=True)
+    red_thr = overall * 2.0
+    amber_thr = overall * 1.5
+    wrong_red = TEST_PREVALENCE * 2.0
+    wrong_amber = TEST_PREVALENCE * 1.5
+
+    disagree = 0
+    for row in flagged.itertuples(index=False):
+        if row.late_rate >= red_thr:
+            assert row.level == "red"
+            threshold = red_thr
+            wrong = wrong_red
+        else:
+            assert row.level == "amber"
+            assert row.late_rate >= amber_thr
+            threshold = amber_thr
+            wrong = wrong_amber
+        expected = bool(row.ci_low < threshold)
+        assert bool(row.uncertain) is expected
+        if bool(row.ci_low < wrong) != expected:
+            disagree += 1
+        assert bool(row.low_sample) is (row.orders < 200)
+
+    assert disagree > 0
+
+    pairs = {
+        (bool(low), bool(unc))
+        for low, unc in zip(flagged["low_sample"], flagged["uncertain"])
+    }
+    assert (False, True) in pairs
+    assert (True, False) in pairs
+
+    levels = flagged["level"].tolist()
+    n_red = levels.count("red")
+    assert levels == ["red"] * n_red + ["amber"] * (len(levels) - n_red)
+    for level in ("red", "amber"):
+        part = flagged.loc[flagged["level"] == level, "late_orders"]
+        assert part.is_unique
+        assert part.tolist() == sorted(part.tolist(), reverse=True)
+
+    rank = flagged["level"].map({"red": 0, "amber": 1})
+    by_flag = flagged.assign(_rank=rank).sort_values(
+        ["_rank", "uncertain", "late_orders"],
+        ascending=[True, False, False],
+    )
+    assert flagged["route"].tolist() != by_flag["route"].tolist()
+
+    for row in flagged.itertuples(index=False):
+        cause = M.root_cause(o, row.route)
+        subset = o[o["route"] == row.route]
+        excess = {
+            stage: float(subset[stage].mean() - o[stage].mean()) for stage in M.STAGES
+        }
+        assert cause["stage"] == max(excess, key=excess.get)
+        assert cause["has_bottleneck"] is (max(excess.values()) > 0)
+        assert "uncertain" not in cause
+
+
 def test_low_sample_threshold_is_200_orders():
     """Cờ low_sample bật đúng khi orders < 200, tắt khi orders = 200."""
     routes = ["A->A"] * 199 + ["B->B"] * 200 + ["C->C"] * 1000

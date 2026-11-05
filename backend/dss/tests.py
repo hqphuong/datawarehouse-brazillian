@@ -47,6 +47,80 @@ class DssApiTests(TestCase):
             self.assertIsInstance(row["low_sample"], bool)
             self.assertEqual(row["low_sample"], row["orders"] < 200)
 
+    def test_routes_uncertain_uses_overall_rate_not_test_prevalence(self):
+        """Cờ uncertain dùng tỷ lệ trễ chung ≈ 8,07%, không dùng 5,98% của tập kiểm tra.
+
+        Cờ không đổi level, thứ tự, stage, has_bottleneck, và không trùng low_sample.
+        """
+        test_prevalence = 0.05979368707146828
+        orders = M.load_orders()
+        overall = float(orders["is_late"].mean())
+        self.assertEqual(round(overall * 100, 2), 8.07)
+        self.assertEqual(round(test_prevalence * 100, 2), 5.98)
+        self.assertGreater(abs(overall - test_prevalence), 0.02)
+
+        rows = self.client.get("/api/dss/routes?top=100").json()
+        self.assertEqual(len(rows), 14)
+        red_thr = overall * 2.0
+        amber_thr = overall * 1.5
+        disagree = 0
+        for row in rows:
+            self.assertIsInstance(row["uncertain"], bool)
+            if row["late_rate"] >= red_thr:
+                self.assertEqual(row["level"], "red")
+                threshold = red_thr
+                wrong = test_prevalence * 2.0
+            else:
+                self.assertEqual(row["level"], "amber")
+                self.assertGreaterEqual(row["late_rate"], amber_thr)
+                threshold = amber_thr
+                wrong = test_prevalence * 1.5
+            expected = row["ci_low"] < threshold
+            self.assertIs(row["uncertain"], expected)
+            if (row["ci_low"] < wrong) is not expected:
+                disagree += 1
+
+            cause = M.root_cause(orders, row["route"])
+            subset = orders[orders["route"] == row["route"]]
+            excess = {
+                stage: float(subset[stage].mean() - orders[stage].mean())
+                for stage in M.STAGES
+            }
+            self.assertEqual(row["root_cause"]["stage"], max(excess, key=excess.get))
+            self.assertIs(
+                row["root_cause"]["has_bottleneck"], max(excess.values()) > 0
+            )
+            self.assertEqual(row["root_cause"]["stage"], cause["stage"])
+            self.assertIs(row["root_cause"]["has_bottleneck"], cause["has_bottleneck"])
+            self.assertNotIn("uncertain", row["root_cause"])
+
+        self.assertGreater(disagree, 0)
+
+        pairs = {(row["low_sample"], row["uncertain"]) for row in rows}
+        self.assertIn((False, True), pairs)
+        self.assertIn((True, False), pairs)
+
+        levels = [row["level"] for row in rows]
+        n_red = levels.count("red")
+        self.assertEqual(levels, ["red"] * n_red + ["amber"] * (len(levels) - n_red))
+        for level in ("red", "amber"):
+            late_orders = [row["late_orders"] for row in rows if row["level"] == level]
+            self.assertEqual(len(late_orders), len(set(late_orders)))
+            self.assertEqual(late_orders, sorted(late_orders, reverse=True))
+
+        uncertain_first = sorted(
+            rows,
+            key=lambda row: (
+                0 if row["level"] == "red" else 1,
+                0 if row["uncertain"] else 1,
+                -row["late_orders"],
+            ),
+        )
+        self.assertNotEqual(
+            [row["route"] for row in rows],
+            [row["route"] for row in uncertain_first],
+        )
+
     def test_routes_top_100_returns_all_flagged(self):
         res = self.client.get("/api/dss/routes?top=100")
         self.assertEqual(res.status_code, 200)
