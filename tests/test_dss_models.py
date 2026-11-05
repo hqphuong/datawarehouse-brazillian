@@ -157,6 +157,10 @@ def test_uncertain_on_warehouse_uses_overall_rate_not_test_prevalence(o):
     flagged = M.route_priority(o, top=len(o)).reset_index(drop=True)
     red_thr = overall * 2.0
     amber_thr = overall * 1.5
+    # Khóa cứng các mốc đã xác nhận (dung sai 4 chữ số thập phân).
+    assert overall == pytest.approx(0.0807, abs=1e-4)
+    assert red_thr == pytest.approx(0.1615, abs=1e-4)
+    assert amber_thr == pytest.approx(0.1211, abs=1e-4)
     wrong_red = TEST_PREVALENCE * 2.0
     wrong_amber = TEST_PREVALENCE * 1.5
 

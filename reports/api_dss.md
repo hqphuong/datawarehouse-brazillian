@@ -29,7 +29,9 @@ NaN và Infinity trong kết quả Python được chuyển thành `null` trư�
 
 ### Response 200
 
-Mảng các object, mỗi phần tử là một tuyến được gắn cờ đỏ hoặc vàng. Response có thêm `ci_low`, `ci_high` (Wilson 95%) và `low_sample` (`orders < 200`).
+Mảng các object, mỗi phần tử là một tuyến được gắn cờ đỏ hoặc vàng. Response có thêm `ci_low`, `ci_high` (Wilson 95%), `low_sample` (`orders < 200`) và `uncertain` (cảnh báo nhãn đỏ/vàng chưa chắc chắn theo CI).
+
+**Số liệu xác nhận trên dữ liệu hiện tại:** toàn bộ dữ liệu có **14 tuyến gắn cờ (6 đỏ, 8 vàng)**; `top=10` mặc định trả **10 tuyến**; **7/14 tuyến có `uncertain=true`**; `excess` của giai đoạn `transit` trên 14 tuyến nằm trong khoảng **1,43–12,54 ngày**.
 
 **Ví dụ: `GET /api/dss/routes?top=10`** (gọi thật; dưới đây trích **3 tuyến vàng đầu tiên sau nhóm đỏ**, bỏ 6 tuyến đỏ đứng trước; còn `SP->CE` không hiển thị)
 
@@ -44,6 +46,7 @@ Mảng các object, mỗi phần tử là một tuyến được gắn cờ đ�
     "ci_low": 0.1480417047,
     "ci_high": 0.1638284876,
     "low_sample": false,
+    "uncertain": false,
     "root_cause": {
       "stage": "transit",
       "owner": "Đơn vị vận chuyển",
@@ -65,6 +68,7 @@ Mảng các object, mỗi phần tử là một tuyến được gắn cờ đ�
     "ci_low": 0.1358720117,
     "ci_high": 0.1650802592,
     "low_sample": false,
+    "uncertain": false,
     "root_cause": {
       "stage": "transit",
       "owner": "Đơn vị vận chuyển",
@@ -86,6 +90,7 @@ Mảng các object, mỗi phần tử là một tuyến được gắn cờ đ�
     "ci_low": 0.124265226,
     "ci_high": 0.1600045131,
     "low_sample": false,
+    "uncertain": false,
     "root_cause": {
       "stage": "transit",
       "owner": "Đơn vị vận chuyển",
@@ -114,6 +119,7 @@ Mảng các object, mỗi phần tử là một tuyến được gắn cờ đ�
     "ci_low": 0.1619682671,
     "ci_high": 0.1850541356,
     "low_sample": false,
+    "uncertain": false,
     "root_cause": {
       "stage": "transit",
       "owner": "Đơn vị vận chuyển",
@@ -135,6 +141,7 @@ Mảng các object, mỗi phần tử là một tuyến được gắn cờ đ�
     "ci_low": 0.1536385903,
     "ci_high": 0.1954110854,
     "low_sample": false,
+    "uncertain": false,
     "root_cause": {
       "stage": "transit",
       "owner": "Đơn vị vận chuyển",
@@ -156,6 +163,7 @@ Mảng các object, mỗi phần tử là một tuyến được gắn cờ đ�
     "ci_low": 0.1543423793,
     "ci_high": 0.2077946805,
     "low_sample": false,
+    "uncertain": false,
     "root_cause": {
       "stage": "transit",
       "owner": "Đơn vị vận chuyển",
@@ -183,6 +191,7 @@ Mảng các object, mỗi phần tử là một tuyến được gắn cờ đ�
 | `ci_low` | float | Cận dưới khoảng tin cậy Wilson 95% cho `late_rate` |
 | `ci_high` | float | Cận trên khoảng tin cậy Wilson 95% cho `late_rate` |
 | `low_sample` | bool | `true` nếu `orders < 200` (mẫu nhỏ); không đổi nhãn đỏ/vàng |
+| `uncertain` | bool | `true` nếu cận dưới Wilson 95% thấp hơn ngưỡng phân loại của chính tuyến (đỏ = 2,0 × tỷ lệ trễ chung; vàng = 1,5 ×), tức khoảng tin cậy chứa ngưỡng. Chỉ để cảnh báo; không đổi `level`, thứ tự, `root_cause.stage` hay `root_cause.has_bottleneck` |
 | `root_cause.stage` | string | Giai đoạn nghẽn: `"approval"`, `"prep"`, hoặc `"transit"` |
 | `root_cause.owner` | string | Bên chịu trách nhiệm giai đoạn nghẽn |
 | `root_cause.excess` | object | Chênh lệch thời gian trung bình của tuyến so với toàn hệ thống (ngày) |
@@ -247,18 +256,16 @@ What-if: tính tỷ lệ trễ dự báo nếu cắt giảm thời gian từng g
   "has_bottleneck": true,
   "series": [
     {"cut": 0, "projected": 0.12987173162308832},
-    {"cut": 1, "projected": 0.12012827330044401},
-    {"cut": 2, "projected": 0.11198815985448939},
-    {"cut": 3, "projected": 0.10162801554763690},
-    {"cut": 4, "projected": 0.09373457694251356},
-    {"cut": 5, "projected": 0.08645782190429206}
+    {"cut": 1, "projected": 0.12012826837691169},
+    {"cut": 2, "projected": 0.11198815984213123},
+    {"cut": 3, "projected": 0.10162802170695609},
+    {"cut": 4, "projected": 0.09373458312777504},
+    {"cut": 5, "projected": 0.0864578194375925}
   ]
 }
 ```
 
-> **Ghi chú `series` khi có `base_cut`:** Khi truyền `prep=5`, `series[c]` phản ánh kịch bản `{prep: 5, transit: c}` — tức là mức cắt `prep=5` được giữ cố định trong suốt đường cong nhạy cảm transit. Vì vậy `series[0]["projected"]` (transit_cut=0, prep=5) **bằng đúng** giá trị `projected` trong response này (`0.12987…`), không phải giá trị baseline (`0.15577…`). Đây là hành vi đúng — nếu `series[0].projected == baseline`, có nghĩa là `base_cut` không được áp dụng.
-
-**Trạng thái kiểm tra `base_cut`:** ✅ Đã kiểm tra thực tế — `series[0].projected` (`0.12987`) khớp chính xác với `projected` (`0.12987`). Lỗi ban đầu trong doc đã được sửa.
+> **Ghi chú `series` khi có `base_cut`:** Khi truyền `prep=5`, `series[c]` phản ánh kịch bản `{prep: 5, transit: c}` — tức là mức cắt `prep=5` được giữ cố định trong suốt đường cong nhạy cảm transit. Vì vậy `series[0]["projected"]` (transit_cut=0, prep=5) **bằng đúng** giá trị `projected` trong response này (`0.12987…`), không phải giá trị baseline (`0.15577…`).
 
 ### Trường response
 
