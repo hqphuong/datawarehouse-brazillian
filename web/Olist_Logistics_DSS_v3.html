@@ -151,9 +151,6 @@ function DSS({ toast }) {
   const [loadingPri, setLoadingPri] = useState(true);
   const [loadingSc, setLoadingSc] = useState(false);
   const [loadingPm, setLoadingPm] = useState(false);
-  const [risk, setRisk] = useState(null);
-  const [loadingRisk, setLoadingRisk] = useState(true);
-  const [riskError, setRiskError] = useState('');
   const [listError, setListError] = useState('');
   const [scError, setScError] = useState('');
   const [pmError, setPmError] = useState('');
@@ -164,8 +161,9 @@ function DSS({ toast }) {
   const chosen = pri.find(p => p.route === route) || null;
   const root = chosen && chosen.root_cause;
   const stageLabel = k => (DS_ST.find(s => s.k === k) || { l: k }).l;
-  const pct = v => (v == null ? '—' : (v * 100).toFixed(1) + '%');
+  const pct = v => (v == null ? '—' : (v * 100).toFixed(1).replace('.', ',') + '%');
   const pct1 = v => (v == null ? '—' : (v * 100).toFixed(1).replace('.', ',') + '%');
+  const fixed = (v, d = 2) => (v == null ? '—' : Number(v).toFixed(d).replace('.', ','));
 
   // Khối 1: nạp danh sách tuyến từ Django API.
   useEffect(() => {
@@ -262,33 +260,6 @@ function DSS({ toast }) {
       .catch(() => {});
   }, []);
 
-  // Khối 5: chỉ gọi một lần khi mở tab, không phụ thuộc bộ lọc năm.
-  useEffect(() => {
-    let cancelled = false;
-    setLoadingRisk(true);
-    setRiskError('');
-    fetch(`${DSS_API}/at-risk?limit=20`)
-      .then(async r => {
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) {
-          if (r.status === 503) {
-            throw new Error((d.error || 'Server chưa có mô hình dự báo.') +
-              ' — Hãy chạy: .\\backend\\env\\Scripts\\python.exe etl\\dss_ml.py rồi thử lại.');
-          }
-          throw new Error(d.error || `HTTP ${r.status}`);
-        }
-        return d;
-      })
-      .then(d => { if (!cancelled) setRisk(d); })
-      .catch(e => {
-        if (cancelled) return;
-        setRisk(null);
-        setRiskError(`Không tải được danh sách đơn có nguy cơ trễ. Kiểm tra API Django (${DSS_API}) đã chạy chưa; nếu server báo 503, hãy chạy: .\\backend\\env\\Scripts\\python.exe etl\\dss_ml.py. Chi tiết: ${e.message}`);
-      })
-      .finally(() => { if (!cancelled) setLoadingRisk(false); });
-    return () => { cancelled = true; };
-  }, []);
-
   const series = (sc && sc.series ? sc.series : []).map(x => ({
     d: x.cut,
     v: +(x.projected * 100).toFixed(2),
@@ -360,6 +331,9 @@ function DSS({ toast }) {
                 {p.low_sample && (
                   <div className="text-[11px] text-amber-600 whitespace-nowrap" title="Số đơn dưới 200">⚠ mẫu nhỏ (&lt;200 đơn)</div>
                 )}
+                {p.uncertain && (
+                  <div className="text-[11px] text-sky-600 whitespace-nowrap" title="Khoảng tin cậy Wilson 95% chứa ngưỡng xếp loại">ⓘ chưa chắc</div>
+                )}
               </div>
             </button>))}</div>
         </Card>
@@ -378,7 +352,7 @@ function DSS({ toast }) {
                 return (<div key={s.k}>
                   <div className="flex justify-between text-xs mb-1">
                     <span className={isBottleneck ? 'font-medium text-slate-800' : 'text-slate-500'}>{s.l}{isBottleneck && ' · bottleneck'}</span>
-                    <span className="text-slate-500">{v >= 0 ? '+' : ''}{v.toFixed(2)}d vs system average</span></div>
+                    <span className="text-slate-500">{v >= 0 ? '+' : ''}{fixed(v)}d vs system average</span></div>
                   <div className="h-2 rounded bg-slate-100 relative">
                     <div className={`h-2 rounded ${isBottleneck ? 'bg-red-300' : v > 0 ? 'bg-amber-200' : 'bg-slate-300'}`}
                       style={{ width: (Math.abs(v) / excessMax * 100) + '%' }} />
@@ -423,8 +397,8 @@ function DSS({ toast }) {
                 </div>
                 <div className="h-56"><ResponsiveContainer><LineChart data={series} margin={{ top: 10, right: 10 }}>
                   <CartesianGrid vertical={false} stroke={GRID} /><XAxis dataKey="d" tick={{ fontSize: 12, fill: MUTED }} axisLine={false} tickLine={false} unit="d" />
-                  <YAxis tick={{ fontSize: 12, fill: MUTED }} axisLine={false} tickLine={false} unit="%" />
-                  <Tooltip contentStyle={{ borderRadius: 10, border: '1px solid #e8edf3', boxShadow: 'none', fontSize: 12 }} formatter={v => v + '%'} />
+                  <YAxis tick={{ fontSize: 12, fill: MUTED }} axisLine={false} tickLine={false} unit="%" tickFormatter={v => String(v).replace('.', ',')} />
+                  <Tooltip contentStyle={{ borderRadius: 10, border: '1px solid #e8edf3', boxShadow: 'none', fontSize: 12 }} formatter={v => String(v).replace('.', ',') + '%'} />
                   <Line type="monotone" dataKey="v" name={`Cut ${stageLabel(root.stage)}`} stroke={BLUE} strokeWidth={2.5} dot={false} />
                   {sc && <ReferenceDot x={cut[root.stage]} y={+(sc.projected * 100).toFixed(2)} r={6} fill={BLUE} stroke="#fff" strokeWidth={2} />}</LineChart></ResponsiveContainer>
                   <div className="text-xs text-slate-400 text-center">Chart: cutting {stageLabel(root.stage)} by 0–5 days{root.has_bottleneck ? ' (bottleneck stage)' : ''}</div></div>
@@ -432,90 +406,6 @@ function DSS({ toast }) {
             </Card>
           </div>
         </>)}
-        <div className="lg:col-span-3">
-          <Card title="5. Đơn có nguy cơ trễ" right={<span className="text-xs text-slate-400">Logistic Regression · top 20 đơn giai đoạn test</span>}>
-            {loadingRisk && <div className="text-sm text-slate-400 py-6 text-center">Đang tải danh sách đơn có nguy cơ trễ…</div>}
-            {riskError && <div className="rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 text-sm text-red-500">{riskError}</div>}
-            {risk && (
-              <div className="space-y-4">
-                <div className="rounded-xl border border-amber-100 bg-amber-50/60 px-3 py-2 text-xs text-amber-700">
-                  Mô phỏng trên dữ liệu lịch sử (tháng 4–8/2018), không phụ thuộc bộ lọc năm.
-                  {risk.meta && risk.meta.score_note ? ' ' + risk.meta.score_note : ''}
-                </div>
-
-                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-                  <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-                    <div className="text-xs text-slate-500">Đơn trễ thật trong top 20</div>
-                    <div className="font-semibold text-slate-800">
-                      {risk.orders.filter(o => o.actual_late).length}/{risk.orders.length}
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-                    <div className="text-xs text-slate-500">Tỷ lệ trễ nền giai đoạn test</div>
-                    <div className="font-semibold text-slate-800">{pct(risk.meta && risk.meta.test_late_rate)}</div>
-                  </div>
-                  <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-                    <div className="text-xs text-slate-500">ROC-AUC</div>
-                    <div className="font-semibold text-slate-800">
-                      {risk.meta && risk.meta.roc_auc != null ? risk.meta.roc_auc.toFixed(4) : '—'}
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-                    <div className="text-xs text-slate-500">PR-AUC</div>
-                    <div className="font-semibold text-slate-800">
-                      {risk.meta && risk.meta.pr_auc != null ? risk.meta.pr_auc.toFixed(4) : '—'}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-slate-100 bg-white px-3 py-2">
-                  <div className="text-xs text-slate-500 mb-1">Precision@K / lift@K (K% đơn có điểm cao nhất)</div>
-                  <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-700">
-                    {(risk.meta && risk.meta.precision_at_k ? risk.meta.precision_at_k : []).map(row => (
-                      <span key={row.k_fraction}>
-                        <b>{Math.round(row.k_fraction * 100)}%</b>: {pct(row.precision_at_k)} · lift {row.lift_at_k != null ? row.lift_at_k.toFixed(2) + '×' : '—'}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="text-xs text-slate-400 mt-1">
-                    Điểm nguy cơ là đầu ra mô hình dùng để xếp hạng; không phải xác suất đã hiệu chỉnh.
-                  </div>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-xs text-slate-400 border-b border-slate-100">
-                        <th className="py-2 pr-3 font-medium">#</th>
-                        <th className="py-2 pr-3 font-medium">Order ID</th>
-                        <th className="py-2 pr-3 font-medium">Tuyến</th>
-                        <th className="py-2 pr-3 font-medium text-right">Điểm nguy cơ</th>
-                        <th className="py-2 font-medium">Kết quả thật</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {risk.orders.map((order, index) => (
-                        <tr key={order.order_id + '-' + order.route} className="border-b border-slate-50">
-                          <td className="py-2 pr-3 text-slate-400">{index + 1}</td>
-                          <td className="py-2 pr-3">
-                            <span className="font-mono text-xs text-slate-700" title={order.order_id}>{String(order.order_id).slice(0, 8)}</span>
-                          </td>
-                          <td className="py-2 pr-3 text-slate-600">{order.route}</td>
-                          <td className="py-2 pr-3 text-right font-mono text-slate-800">{Number(order.risk_score).toFixed(4)}</td>
-                          <td className="py-2">
-                            {order.actual_late
-                              ? <span className="text-red-500">Trễ</span>
-                              : <span className="text-emerald-600">Đúng hạn</span>}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </Card>
-        </div>
       </div>
     </div>
   );
@@ -775,10 +665,12 @@ function App() {
         <header className="h-16 bg-white/90 backdrop-blur border-b border-slate-200 px-4 md:px-8 flex items-center justify-between gap-3 sticky top-0 z-10">
           <h1 className="text-base font-semibold text-slate-800 hidden lg:block">{TABS.find(t => t.id === activeTab).label}</h1>
           <div className="flex flex-wrap items-center gap-2 md:gap-3 ml-auto">
-            <Select label="Year" value={f.year} onChange={set('year')} options={['All', '2016', '2017', '2018']} />
-            <Select label="Quarter" value={f.quarter} onChange={set('quarter')} options={['All', ...QTRS]} />
-            <Select label="Month" value={f.month} onChange={set('month')} options={['All', ...MONTHS]} />
-            <Select label="State" value={f.state} onChange={set('state')} options={['All', ...STATES]} />
+            {activeTab !== 'dss' && (<>
+              <Select label="Year" value={f.year} onChange={set('year')} options={['All', '2016', '2017', '2018']} />
+              <Select label="Quarter" value={f.quarter} onChange={set('quarter')} options={['All', ...QTRS]} />
+              <Select label="Month" value={f.month} onChange={set('month')} options={['All', ...MONTHS]} />
+              <Select label="State" value={f.state} onChange={set('state')} options={['All', ...STATES]} />
+            </>)}
           </div>
         </header>
         <main className="p-4 md:p-8 max-w-[1400px]">

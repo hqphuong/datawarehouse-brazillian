@@ -5,14 +5,14 @@
 ```bash
 .\backend\env\Scripts\python.exe -m pytest -q
 ```
-Result: **34 passed** (full repo suite). Targeted DSS model + eval run: **26 passed** (`pytest tests/test_dss_models.py tests/test_dss_eval.py -q`).
+Result: **26 passed** (full repo suite). Targeted DSS model + eval run: **26 passed** (`pytest tests/test_dss_models.py tests/test_dss_eval.py -q`).
 
 **Django API tests (dss app):**
 ```bash
 cd backend
 ..\backend\env\Scripts\python.exe manage.py test dss -v 2
 ```
-Result: **23 tests OK**. Đếm theo class: `DssApiTests` **16** test, `AtRiskApiTests` **7** test. So với mốc 31 pytest / 22 Django, việc 1 thêm 3 test pytest và 1 test Django cho `uncertain` (`test_routes_uncertain_uses_overall_rate_not_test_prevalence`).
+Result: **16 tests OK**. Đếm theo class: `DssApiTests` **16** test.
 
 ## 2) Backtest (tuyến gắn cờ kỳ t vs tỷ lệ trễ kỳ t+1)
 **Method:** For each period `t` (from 2017 onward, `min_period_orders=500`), `route_priority` is run on data of period `t` with selected `min_orders`. Routes flagged as red/amber are compared against others in period `t+1`. Periods with no flags or too few flagged orders are recorded but not counted in `periods_evaluated`.
@@ -283,66 +283,7 @@ Trong 14 tuyến, **7/14 có `uncertain=True`**: SP->PI, SP->SE, PR->BA, PR->RJ,
 
 Top mặc định 10 dòng hiện chứa đủ **6 tuyến đỏ** (SP->MA, SP->AL, SP->PI, SP->SE, MA->SP, PR->BA), sau đó 4 tuyến vàng; không còn che `SP->SE`, `MA->SP`, `PR->BA`.
 
-## 5) ML evaluation (tách khỏi Top 3 routes)
-Phần này đánh giá mô hình ML đã lưu; không huấn luyện lại, không đổi mô hình.
-
-### 5a) Recall@K (tỷ lệ đơn trễ bắt được khi chỉ rà top K%)
-Tính trên tập test (ML late-prediction), không đổi mô hình.
-
-| Top K% | Số đơn trễ bắt được | Tổng đơn trễ trong test | recall@K | Ghi chú |
-| --- | --- | --- | --- | --- |
-| 1% | 129 | 1 936 | 6,7% | — |
-| 5% | 300 | 1 936 | 15,5% | — |
-| 10% | 450 | 1 936 | 23,2% | Top 10% vẫn bỏ sót khoảng 77% đơn trễ. |
-
-### 5b) AUC theo tháng trong giai đoạn test
-Tính trên tập test theo tháng (không đổi mô hình).
-
-| Tháng | AUC |
-| --- | --- |
-| 201804 | 0,770 |
-| 201805 | 0,681 |
-| 201806 | 0,718 |
-| 201807 | 0,704 |
-| 201808 | 0,583 |
-
-**Nhận xét:** AUC giảm từ 0,770 (201804) xuống 0,583 (201808), **có thể do dịch chuyển dữ liệu; chưa kiểm định**. Cần theo dõi và huấn luyện lại định kỳ. Đáng chú ý: 201808 cũng là kỳ DSS gắn cờ thất bại (**−9,33 pp**, mục 2), nên đây có thể là bất thường chung của dữ liệu tháng 8/2018, không chỉ riêng mô hình.
-
-### 5c) Chỉ số hiệu chỉnh (Calibration)
-Không đổi mô hình. So sánh với baseline hằng số (dự báo tỷ lệ trễ toàn cục trên tập test).
-
-| Chỉ số | Giá trị (mô hình) | So sánh |
-| --- | --- | --- |
-| Điểm trung bình dự báo | 0,412 | So với tỷ lệ trễ thật 5,98% |
-| Brier score | 0,199 | So với 0,056 của baseline hằng số |
-| Log-loss | 0,591 | So với khoảng 0,226 của baseline hằng số |
-
-**Bảng hiệu chỉnh theo nhóm điểm (tính lại trên tập test 32.378 dòng, dùng đúng model đã lưu):**
-
-| Nhóm điểm dự báo | Số đơn | Số đơn trễ | Tỷ lệ trễ thật | Điểm trung bình dự báo | Chênh lệch (thật - TB dự báo) |
-| --- | --- | --- | --- | --- | --- |
-| [0.0,0.1) | 234 | 9 | 3.85% | 0.0821 | -4.36 pp |
-| [0.1,0.2) | 2502 | 52 | 2.08% | 0.1626 | -14.19 pp |
-| [0.2,0.3) | 7037 | 209 | 2.97% | 0.2592 | -22.95 pp |
-| [0.3,0.4) | 8463 | 385 | 4.55% | 0.3447 | -29.92 pp |
-| [0.4,0.5) | 4712 | 305 | 6.47% | 0.4467 | -38.20 pp |
-| [0.5,0.6) | 3727 | 304 | 8.16% | 0.5494 | -46.78 pp |
-| [0.6,0.7) | 3315 | 304 | 9.17% | 0.6455 | -55.38 pp |
-| [0.7,0.8) | 1513 | 156 | 10.31% | 0.7425 | -63.94 pp |
-| [0.8,0.9) | 606 | 102 | 16.83% | 0.8442 | -67.59 pp |
-| [0.9,1.0] | 269 | 110 | 40.89% | 0.9441 | -53.52 pp |
-
-*Tổng: 32.378 đơn, 1.936 đơn trễ; khớp prevalence 5,98%.*
-
-**Nhận xét:** Điểm trung bình dự báo (0,412) cao hơn nhiều so với tỷ lệ trễ thật (5,98%), cho thấy mô hình **chưa được hiệu chỉnh tốt** (miscalibrated). Brier/log-loss cũng cao hơn đáng kể so với baseline hằng số, điều này phù hợp với việc điểm dự báo chưa được hiệu chỉnh.
-
-### 5d) Hạn chế và hướng phát triển
-- **Thiếu đặc trưng quan trọng:** Thiếu **ngày cam kết giao hàng** (`order_estimated_delivery_date`/tương đương) — thông tin này có trong bảng đơn gốc, **biết ngay khi đặt hàng**, nên là đặc trưng hợp lệ nhưng **chưa nằm trong Fact**. Thiếu **carrier** và **shipping mode**.
-- **Dịch chuyển dữ liệu:** Như mục 5b, AUC giảm từ 0,770 xuống 0,583; **có thể do dịch chuyển dữ liệu, chưa kiểm định**. 201808 cũng là kỳ DSS gắn cờ thất bại (−9,33 pp), nên có thể là bất thường chung của dữ liệu tháng 8/2018. Cần theo dõi và huấn luyện lại định kỳ.
-- **Hiệu chỉnh:** Điểm dự báo **chưa được hiệu chỉnh** (mục 5c), cần cân nhắc calibration (Platt/Isotonic) trước khi sử dụng ngưỡng tuyệt đối để ra quyết định.
-- **Thử nghiệm bổ sung (khoảng cách người bán–khách):** Từng ghi nhận **ROC-AUC = 0,658** so với **0,663** và **PR-AUC = 0,138** không đổi, nhưng **chưa tái hiện được** trong repo hiện tại (không có script độc lập). Không dùng số này trong kết luận.
-
-## 6) Impact of negative times
+## 5) Impact of negative times
 **Fact-level counts (from `cleaned_fact_orders.csv`):**
 - `seller_prep_time_days` negative: **1542** rows
 - `carrier_transit_time_days` negative: **50** rows
@@ -362,14 +303,14 @@ Không đổi mô hình. So sánh với baseline hằng số (dự báo tỷ l�
 
 **Conclusion:** Removing negative-time rows changes magnitudes of excess slightly but **does not change bottleneck identification** (all three remain transit bottleneck) in this dataset. The values look plausible as data quality artifacts (small fraction of rows). The model as written treats stage times as given; filtering is a data-cleaning choice but the core diagnosis holds.
 
-## 7) Parameters chosen and rationale
+## 6) Parameters chosen and rationale
 - **route_priority production defaults kept:** `red=2.0, amber=1.5, min_orders=100, top=10`, với `ensure_red=True` (red-first) để không che tuyến đỏ.
 - **Backtest min_orders = 30:** chosen for monthly evaluation only. At `min_orders=100`, 6/19 periods have no flagged route (only 13 evaluable); at 50, 2/19. `30` gives 19/19 coverage while still requiring at least 30 orders per route per month; 16/19 periods flagged group has higher next-period late rate, weighted +8.14 pp. The production default remains 100 because it runs on the full dataset.
 - **Backtest window:** start from 2017 (drop 2016 sparse months), require `min_period_orders>=500` in t and t+1, use next calendar month.
 - **Baseline lịch sử (đối chứng):** cùng số tuyến K như DSS; **so sánh chính là "through"** (dùng lịch sử đến hết kỳ t, gồm cả t), còn "prior" (chỉ các kỳ trước t) là đối chứng phụ. Cả hai chỉ xét tuyến đủ `min_orders` đơn trong kỳ t và có ít nhất một dòng lịch sử. Baseline "through" sát DSS hơn (tốt hơn ở 5/19 kỳ, hòa 3) nhưng vẫn thấp hơn DSS ở cả 3 cách trung bình **(điểm ước lượng; CI chứa 0)**; baseline "prior" thấp hơn DSS về tổng thể nhưng tốt hơn ở 7/19 kỳ.
 - **Top routes:** bảng chi tiết top 3 (`ensure_red=False`) vẫn là SP->RJ/BA/ES, đều có bottleneck transit. Danh sách cảnh báo mặc định (`route_priority()` top 10) trả đủ 6 tuyến đỏ trước rồi 4 tuyến vàng, không còn che `SP->SE`, `MA->SP`, `PR->BA`.
 
-## 8) Limitations observed
+## 7) Limitations observed
 - **Early months sparse:** 2016 has tiny counts; several periods have 0 flagged routes when using stricter `min_orders` (e.g. 201701-201704 at 100). Backtest explicitly excludes/marks these.
 - **Monthly granularity limits sample size:** even with `min_orders=30` we get small flagged sets in some months.
 - **Negative stage times exist:** ~1.4k (order,route) rows affected; diagnosis remains consistent after removal but magnitudes shift.
@@ -379,7 +320,7 @@ Không đổi mô hình. So sánh với baseline hằng số (dự báo tỷ l�
 - **Bootstrap CI vs through chứa 0:** Pair CI `[−0.58; +2.35]` và Block CI `[−0.40; +2.20]` đều chứa 0 — không thể nói DSS "vượt" baseline through có ý nghĩa thống kê.
 - **Model is descriptive/what-if:** Backtest shows flagged routes tend to have higher late rate in next period (supportive in most evaluated periods) but is not a causal proof.
 
-## 9) Commands run (for reproducibility)
+## 8) Commands run (for reproducibility)
 ```bash
 # Model/base checks
 .\backend\env\Scripts\python.exe -c "from etl import dss_models as M; o=M.load_orders(); print(len(o), o.is_late.mean())"

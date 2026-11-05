@@ -94,11 +94,6 @@ hoặc kéo thả file vào trình duyệt. Giao diện gọi `http://localhost:
 > - Tab **Dashboard**, **OLAP**, **ETL Monitor** hiển thị **dữ liệu mẫu** (mock
 >   data, do thành viên khác phát triển bằng Flask, chưa nối Django thật). Số
 >   liệu trên các tab này **không phản ánh dữ liệu Olist thực tế**.
-> - Khối **At-Risk** (tab DSS) hiển thị **điểm nguy cơ (`risk_score`)** — đây
->   là điểm xếp hạng từ mô hình ML chưa hiệu chỉnh, **không phải xác suất trễ
->   thực tế**. Điểm trung bình ~0,412 trong khi tỷ lệ trễ thật chỉ ~5,98%
->   (miscalibrated). Dùng để **xếp thứ tự ưu tiên rà soát**, không dùng làm
->   ngưỡng tuyệt đối.
 
 ---
 
@@ -111,7 +106,7 @@ hoặc kéo thả file vào trình duyệt. Giao diện gọi `http://localhost:
 .\backend\env\Scripts\python.exe -m pytest -q
 ```
 
-Kết quả kỳ vọng: **16 passed** (~5–7 giây).
+Kết quả kỳ vọng: **26 passed** (~5–7 giây).
 
 Chạy verbose hơn:
 
@@ -120,8 +115,8 @@ Chạy verbose hơn:
 ```
 
 Danh sách test:
-- `tests/test_dss_models.py` — 11 test kiểm tra hợp đồng dữ liệu các hàm mô hình
-- `tests/test_dss_eval.py` — 5 test kiểm tra backtest, threshold sensitivity, top routes, negative time
+- `tests/test_dss_models.py` — 19 test kiểm tra hợp đồng dữ liệu các hàm mô hình
+- `tests/test_dss_eval.py` — 7 test kiểm tra backtest, threshold sensitivity, top routes, negative time
 
 ### 4.2 Django test (`manage.py test dss`) — cần PostgreSQL
 
@@ -136,7 +131,7 @@ hoặc với output chi tiết:
 .\env\Scripts\python.exe manage.py test dss -v 2
 ```
 
-Kết quả kỳ vọng: **12 tests OK** (~10–30 giây do phải tạo/xóa test database).
+Kết quả kỳ vọng: **16 tests OK** (~10–30 giây do phải tạo/xóa test database).
 
 > Django test tạo một database tạm (`test_Brazillian`) trên PostgreSQL, chạy xong tự xóa. Cần PostgreSQL đang chạy và user có quyền `CREATEDB`.
 

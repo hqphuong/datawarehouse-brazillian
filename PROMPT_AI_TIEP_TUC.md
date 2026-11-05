@@ -6,7 +6,7 @@
 Bạn tiếp nhận một dự án dở dang từ AI khác (đã hết token). Hãy làm việc cẩn thận, KHÔNG làm lại những phần đã xong, KHÔNG bịa số liệu. Trả lời bằng tiếng Việt.
 
 ## 1. Dự án
-Bài tập lớn môn Kho dữ liệu và Hệ hỗ trợ Quyết định (CO4031, HK261, hạn nộp 23:59 ngày 15/11/2026). Đề tài: DSS phân tích điểm nghẽn và tối ưu quy trình hoàn tất đơn hàng, dữ liệu Olist Brazilian E-Commerce. Người dùng DSS: Giám đốc Vận hành. DSS có 4 khối: (1) Route Priority, (2) Root Cause, (3) Scenario/What-if, (4) Recommendation & Action. Phần cốt lõi dùng mô hình phân tích/mô phỏng theo luật. Phần ML là TUỲ CHỌN và chỉ làm khi nhóm đưa prompt ML (`PROMPT_AI_ML.md`); khi có prompt đó thì nhóm đã quyết định làm ML, nên làm theo prompt ML, không coi là mâu thuẫn.
+Bài tập lớn môn Kho dữ liệu và Hệ hỗ trợ Quyết định (CO4031, HK261, hạn nộp 23:59 ngày 15/11/2026). Đề tài: DSS phân tích điểm nghẽn và tối ưu quy trình hoàn tất đơn hàng, dữ liệu Olist Brazilian E-Commerce. Người dùng DSS: Giám đốc Vận hành. DSS có 4 khối: (1) Route Priority, (2) Root Cause, (3) Scenario/What-if, (4) Recommendation & Action. Mô hình phân tích/mô phỏng hoàn toàn theo luật.
 
 ## 2. Môi trường và cấu trúc repo (Windows, PostgreSQL)
 - Thư mục gốc: `Brazillian/`. Python: `.\backend\env\Scripts\python.exe`.
@@ -32,13 +32,13 @@ Bài tập lớn môn Kho dữ liệu và Hệ hỗ trợ Quyết định (CO403
   - Dữ liệu: seller_prep_time_days âm 1542 dòng, carrier_transit_time_days âm 50 dòng, review_score rỗng 827 dòng; loại các dòng âm không đổi kết luận nghẽn (SP->RJ transit excess 3,603→3,620).
 
 ## 4. Việc còn lại
-Mọi việc bắt buộc của DSS đã xong (Giai đoạn 1, 2, 4, 5, tài liệu, sửa độ nhạy). Việc tiếp theo do nhóm chỉ định ở cuối prompt này. Việc tuỳ chọn có sẵn prompt riêng: `PROMPT_AI_ML.md` (mô hình dự báo đơn trễ) và baseline đơn giản cho backtest (đã quyết định bỏ qua). Nếu không có yêu cầu cụ thể: chỉ chạy lại `pytest -q` và `manage.py test dss`, báo kết quả, rồi dừng.
+Mọi việc bắt buộc của DSS đã xong (Giai đoạn 1, 2, 4, 5, tài liệu, sửa độ nhạy). Việc tiếp theo do nhóm chỉ định ở cuối prompt này; baseline đơn giản cho backtest đã quyết định bỏ qua. Nếu không có yêu cầu cụ thể: chỉ chạy lại `pytest -q` và `manage.py test dss`, báo kết quả, rồi dừng.
 
 ## 5. Quy tắc bắt buộc
 - Đọc trạng thái hiện tại trước (git status/diff, reports/dss_results.md, tests) và nêu ngắn gọn điểm nào lệch so với mô tả ở mục 2–3 trước khi làm.
 - KHÔNG sửa: phần Flask (OLAP/Dashboard của người khác), `backend/analytics/models.py`, `frontend/`, các script ETL, và không đổi giao diện trừ khi phát hiện lỗi (báo trước). KHÔNG commit/push git trừ khi được yêu cầu.
 - Mọi con số phải đến từ lần chạy thật kèm lệnh đã chạy; nếu kết quả khác mục 3, báo chênh lệch thay vì chỉnh cho khớp.
-- Không cài thêm thư viện ngoài pandas, numpy, scikit-learn, django, django-cors-headers, pytest, psycopg2-binary.
+- Không cài thêm thư viện ngoài pandas, numpy, django, django-cors-headers, pytest, psycopg2-binary.
 - Nếu gặp điểm mơ hồ, hỏi lại hoặc nêu giả định rõ ràng.
 
 ## 6. Cách báo cáo sau mỗi mục

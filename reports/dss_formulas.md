@@ -98,8 +98,6 @@ $$\text{uncertain}(r) = \begin{cases}
 
 Nghĩa: cận dưới Wilson của tuyến nằm **dưới ngưỡng phân loại** của chính nó → khoảng tin cậy **chứa** ngưỡng → nhãn đỏ/vàng chưa được xác nhận chắc chắn. Với dữ liệu hiện tại ($\bar{L} \approx 8{,}07\%$, ngưỡng đỏ ≈ 16,14%, ngưỡng vàng ≈ 12,11%): **7/14 tuyến gắn cờ** có `uncertain=True` (SP→PI, SP→SE, PR→BA, PR→RJ, SP→PA, SP→MS, SP→TO). Chỉ để hiển thị cảnh báo — không đổi `level`, thứ tự, `stage`, `has_bottleneck`; cờ **độc lập với `low_sample`** (có tuyến mẫu nhỏ nhưng `uncertain=False` và ngược lại).
 
-**Lưu ý:** `uncertain` dùng $\bar{L}$ tính trên **toàn bộ dữ liệu** (~8,07%); không dùng tỷ lệ trễ của tập kiểm tra ML (~5,98%).
-
 ---
 
 ## 3. Phân tích nguyên nhân gốc — `root_cause(O, r)` và `excess_ratio`
@@ -280,13 +278,12 @@ Kỳ không có tuyến nào gắn cờ được ghi lại trong `periods` với
 
 5. **Backtest là quan hệ liên quan, không phải nhân quả:** Việc gắn cờ ở kỳ $t$ có tương quan với tỷ lệ trễ cao ở kỳ $t+1$ (16/19 kỳ), nhưng không chứng minh rằng can thiệp vào tuyến đó sẽ giảm trễ.
 
-6. **Mô hình tĩnh:** Dữ liệu huấn luyện và đánh giá đều từ cùng một bộ dữ liệu lịch sử (Olist 2016–2018); mô hình không tự cập nhật khi có dữ liệu mới.
+6. **Mô hình tĩnh:** Dữ liệu phân tích và đánh giá đều từ cùng một bộ dữ liệu lịch sử (Olist 2016–2018); mô hình không tự cập nhật khi có dữ liệu mới.
 
 ### Hạn chế đã quan sát
 
 > **⚠️ Nhãn cảnh báo giao diện:**
 > - Tab **Dashboard**, **OLAP**, **ETL Monitor** trong `web/Olist_Logistics_DSS_v3.html` hiển thị **dữ liệu mẫu** (mock data, Flask, chưa nối Django). Số liệu trên các tab đó **không phản ánh dữ liệu Olist thực tế**.
-> - Khối **At-Risk** hiển thị **điểm nguy cơ (`risk_score`)** — điểm xếp hạng từ mô hình ML chưa hiệu chỉnh, **không phải xác suất trễ thực tế**. Điểm trung bình ~0,412 trong khi tỷ lệ trễ thật chỉ ~5,98% (miscalibrated). Dùng để **xếp thứ tự ưu tiên rà soát**, không dùng làm ngưỡng tuyệt đối.
 
 | Hạn chế | Số liệu | Ảnh hưởng |
 | --- | --- | --- |
@@ -295,8 +292,7 @@ Kỳ không có tuyến nào gắn cờ được ghi lại trong `periods` với
 | `review_score` rỗng | 827 dòng | Không ảnh hưởng mô hình chính (không dùng review score); ảnh hưởng cột `has_logistics_complaint` |
 | Backtest so sánh với baseline đơn giản — kết quả hỗn hợp | DSS tốt hơn 11/19 kỳ vs baseline "through"; **pair CI vs through = [−0,58; +2,35] pp chứa 0** (điểm ước lượng +0,8 pp) | Tín hiệu DSS có giá trị nhưng không vượt trội rõ rệt về mặt thống kê so với baseline dùng cùng thông tin |
 | `goal_seek_cut` (transit, target=5%) với 3 tuyến top | SP→BA = 10 ngày, SP→ES = 9 ngày; chỉ SP→RJ = None | **SP→BA:** mức cắt tối thiểu theo giả định 1:1 là 10 ngày, trùng biên `max_days=10`. **SP→ES:** 9 ngày, gần biên nhưng chưa chạm. Cả hai đều vượt xa excess transit của tuyến (SP→BA ~7,2 ngày; SP→ES ~3,1 ngày) — không nên trình bày như phương án khả thi |
-| `risk_score` trong khối At-Risk không phải xác suất đã hiệu chỉnh | Điểm TB ~0,412 trong khi tỷ lệ trễ thật ~5,98% (tập kiểm tra ML, khác $\bar{L} \approx 8{,}07\%$ toàn bộ data) | Khối at-risk dùng để xếp hạng ưu tiên rà soát; không dùng `risk_score` làm ngưỡng tuyệt đối |
-| DSS chính rule-based; ML chỉ ở khối At-Risk | Thiết kế chủ ý | 4 khối DSS chính không dùng ML; khối At-Risk endpoint `/api/dss/at-risk` dùng mô hình ML riêng (`late_risk.joblib`) |
+| Mô hình hoàn toàn theo luật và mô phỏng, chủ ý để dễ giải thích | Thiết kế chủ ý | 4 khối DSS dùng luật và mô phỏng |
 
 ---
 

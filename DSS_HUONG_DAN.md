@@ -1,6 +1,6 @@
 # Hướng dẫn xây dựng phần DSS – Đề tài Olist Delivery SLA (CO4031)
 
-Tài liệu gồm **Phần A (lý thuyết ứng với đề tài)** và **Phần B (10 bước thực hiện)**. Cấu trúc thư mục bám theo repo hiện có: các script ETL nằm trong gói `etl/` (chạy bằng `python -m etl.<tên_script>`) và import `from .config import PROCESSED_DIR`.
+Tài liệu gồm **Phần A (lý thuyết ứng với đề tài)** và **Phần B (9 bước thực hiện)**. Cấu trúc thư mục bám theo repo hiện có: các script ETL nằm trong gói `etl/` (chạy bằng `python -m etl.<tên_script>`) và import `from .config import PROCESSED_DIR`.
 
 ---
 
@@ -11,7 +11,7 @@ Tài liệu gồm **Phần A (lý thuyết ứng với đề tài)** và **Phầ
 | Lý thuyết | Trong đề tài |
 |---|---|
 | Data Layer / Phân hệ quản lý dữ liệu | Kho dữ liệu: `Fact_Delivery_SLA` + `Dim_Product`, `Dim_Time`, `Dim_Location` (các file `cleaned_*.csv` hoặc CSDL) |
-| Model Layer / Phân hệ quản lý mô hình (Model Base) | `route_priority`, `root_cause`, mô hình dự báo đơn có nguy cơ trễ |
+| Model Layer / Phân hệ quản lý mô hình (Model Base) | `route_priority`, `root_cause` và bảng luật khuyến nghị |
 | MBMS Tools | `scenario` (What-if), `sensitivity` (độ nhạy), `goal_seek_*` (tìm mục tiêu) |
 | User Interface Layer / UIMS | Giao diện web: Dashboard, DSS Action Center, OLAP |
 | Knowledge Layer (tuỳ chọn) | Bảng luật khuyến nghị: giai đoạn nghẽn → hành động |
@@ -28,28 +28,27 @@ Tài liệu gồm **Phần A (lý thuyết ứng với đề tài)** và **Phầ
 | **Intelligence** | *Phân loại bài toán:* bán cấu trúc (có quy tắc SLA rõ nhưng cần phán đoán để chọn hành động). *Phân rã:* 3 giai đoạn của đơn hàng (duyệt thanh toán, người bán đóng gói, vận chuyển). *Quyền sở hữu:* Giám đốc Vận hành. | 1. Route Priority, 2. Root Cause |
 | **Design** | Mô hình: `ngày trễ mới = ngày trễ cũ − tổng thời gian cắt giảm`. *Nguyên tắc lựa chọn:* tỷ lệ trễ ≤ mục tiêu (mặc định 5%). | 3. Scenario (What-if) |
 | **Choice** | So sánh kịch bản (sensitivity), chọn phương án nhỏ nhất đạt mục tiêu (goal seek). | 3. Scenario, 4. Recommendation |
-| **Implementation & Evaluation** | Nút Apply ghi log; đánh giá bằng kiểm thử mô hình, backtest, chỉ số ML. | 4. Recommendation & Action |
+| **Implementation & Evaluation** | Nút Apply ghi log; đánh giá bằng kiểm thử mô hình và backtest. | 4. Recommendation & Action |
 
 ---
 
-## Phần B. 10 bước thực hiện
+## Phần B. 9 bước thực hiện
 
 ### Bước 1. Cấu trúc dự án
 
 ```
 etl/                      # gói hiện có (config.py, dim_*.py, fact_delivery_sla.py, __init__.py)
   dss_models.py           # Model Base (Bước 3)
-  dss_ml.py               # mô hình dự báo (Bước 6, tuỳ chọn)
-manage.py                 # Django, chỉ phục vụ DSS (Bước 7)
+manage.py                 # Django, chỉ phục vụ DSS (Bước 6)
 dss_project/              # settings.py, urls.py của Django
 dss/                      # app DSS: views.py, urls.py, models.py
 tests/test_dss_models.py  # Bước 4
 web/Olist_Logistics_DSS_v3.html
 data/                     # dữ liệu đã xử lý, action_log.jsonl
-reports/dss_results.md    # kết quả đánh giá (Bước 9)
+reports/dss_results.md    # kết quả đánh giá (Bước 8)
 ```
 
-Cài đặt: `pip install pandas numpy scikit-learn django django-cors-headers pytest`
+Cài đặt: `pip install pandas numpy django django-cors-headers pytest`
 
 ### Bước 2. Tầng dữ liệu: kiểm tra Fact (đã có `delay_days`)
 
@@ -211,71 +210,14 @@ Chạy: `pytest -q`. Đối chiếu thêm: tỷ lệ trễ của một tuyến t
 
 Đã nằm trong `RULES` ở Bước 3. Khuyến nghị cho một tuyến = `RULES[root_cause(...)["stage"]]` kèm số ngày điều chỉnh từ `goal_seek_promise`.
 
-### Bước 6. Mô hình dự báo đơn có nguy cơ trễ (tuỳ chọn, `etl/dss_ml.py`)
-
-Khớp lý thuyết học máy trong học phần (Logistic Regression, Random Forest, Accuracy/Precision/Recall/F1/Confusion Matrix/ROC-AUC).
-
-**Quy tắc bắt buộc:** chỉ dùng đặc trưng biết được **trước khi giao hàng**. Cấm dùng `transit`, `delay_days`, `review_score` (rò rỉ dữ liệu). Chia train/test **theo thời gian**, không chia ngẫu nhiên.
-
-```python
-from sklearn.base import clone
-from sklearn.compose import ColumnTransformer
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
-
-from . import dss_models as M
-
-CAT = ["seller_state", "cust_state", "category", "payment_type"]
-NUM = ["approval", "prep", "freight", "weight", "volume", "n_items"]
-
-
-def train_and_eval():
-    o = M.load_orders()
-    d = o.dropna(subset=CAT + NUM).copy()
-    ps = sorted(d.period.unique())
-    cut = ps[int(len(ps) * 0.8)]
-    tr, te = d[d.period <= cut], d[d.period > cut]
-    pre = ColumnTransformer([("c", OneHotEncoder(handle_unknown="ignore"), CAT), ("n", StandardScaler(), NUM)])
-    models = {
-        "logreg": LogisticRegression(max_iter=1000, class_weight="balanced"),
-        "rf": RandomForestClassifier(n_estimators=200, min_samples_leaf=20, class_weight="balanced", n_jobs=-1, random_state=42),
-    }
-    fitted, report = {}, {}
-    for name, m in models.items():
-        p = Pipeline([("pre", clone(pre)), ("m", m)]).fit(tr[CAT + NUM], tr.is_late)
-        proba = p.predict_proba(te[CAT + NUM])[:, 1]
-        pred = proba >= 0.5
-        fitted[name] = p
-        report[name] = {"roc_auc": roc_auc_score(te.is_late, proba),
-                        "report": classification_report(te.is_late, pred, output_dict=True),
-                        "confusion": confusion_matrix(te.is_late, pred).tolist()}
-    return fitted, report, te
-
-
-if __name__ == "__main__":
-    _, rep, _ = train_and_eval()
-    for k, v in rep.items():
-        print(k, "ROC-AUC:", round(v["roc_auc"], 3), "confusion:", v["confusion"])
-```
-
-- Đơn trễ là thiểu số nên **không chỉ báo cáo Accuracy**; báo cáo cả Precision, Recall, F1, Confusion Matrix, ROC-AUC.
-- Chọn mô hình có Recall/F1 tốt hơn; Logistic Regression dễ giải thích hơn.
-- Dùng trong DSS: endpoint `/api/dss/at-risk` trả top-N đơn có xác suất trễ cao nhất (minh hoạ, vì dữ liệu lịch sử).
-- Hạn chế cần ghi: Fact chỉ chứa đơn đã giao, mô hình chưa thấy đơn huỷ/thất lạc.
-
-**Xong khi:** có bảng so sánh 2 mô hình trên tập kiểm tra.
-
-### Bước 7. API: Flask cho OLAP/dữ liệu, Django cho DSS
+### Bước 6. API: Flask cho OLAP/dữ liệu, Django cho DSS
 
 **Chia việc giữa hai service** (cùng đọc một kho dữ liệu, chạy ở hai cổng khác nhau):
 
 | Service | Cổng | Endpoint |
 |---|---|---|
 | **Flask** (OLAP và dữ liệu) | 5000 | `/api/filters`, `/api/kpis`, `/api/charts/*` (Dashboard); `/api/olap/meta`, `/api/olap/query`; `/api/etl/*` (ETL Monitor) |
-| **Django** (DSS) | 8000 | `/api/dss/routes`, `/api/dss/scenario`, `/api/dss/promise`, `/api/dss/actions`, (tuỳ chọn) `/api/dss/at-risk` |
+| **Django** (DSS) | 8000 | `/api/dss/routes`, `/api/dss/scenario`, `/api/dss/promise`, `/api/dss/actions` |
 
 **Hợp đồng chung giữa hai bên** (để số liệu không lệch nhau):
 - Đơn trễ khi `delay_days > 0`.
@@ -405,11 +347,11 @@ python manage.py makemigrations dss && python manage.py migrate
 python manage.py runserver 8000          # DSS (Django)
 flask --app <module_flask> run --port 5000   # OLAP và dữ liệu (Flask, bật flask-cors)
 ```
-Tuyến trong URL dùng dạng `SP->RJ`; tham số `route` nên được mã hoá khi gọi từ trình duyệt (`encodeURIComponent`). Nếu làm Bước 6, thêm view `at_risk` tương tự.
+Tuyến trong URL dùng dạng `SP->RJ`; tham số `route` nên được mã hoá khi gọi từ trình duyệt (`encodeURIComponent`).
 
 **Lưu ý khi demo:** phải chạy cả hai server; nên viết sẵn một file hướng dẫn hoặc script khởi động. Trong báo cáo (Chương 6) mô tả kiến trúc hai service cùng đọc kho dữ liệu.
 
-### Bước 8. Nối giao diện
+### Bước 7. Nối giao diện
 
 Trong hàm `DSS()` của `web/Olist_Logistics_DSS_v3.html`, thay các hàm tính trên dữ liệu mẫu `DS_ORD` bằng gọi API:
 
@@ -433,9 +375,8 @@ useEffect(() => {
 
 > **⚠️ Nhãn cảnh báo bắt buộc trên giao diện:**
 > - Tab **Dashboard**, **OLAP**, **ETL Monitor** phải hiển thị nhãn **"Dữ liệu mẫu — không phản ánh Olist thực tế"** (do thành viên khác làm bằng Flask, chưa nối Django). Nếu trình bày trước giảng viên, nhắc rõ điều này.
-> - Khối **At-Risk** phải hiển thị chú thích: **"Điểm nguy cơ (`risk_score`) dùng để xếp hạng ưu tiên, không phải xác suất trễ thực tế. Điểm trung bình ~0,412 trong khi tỷ lệ trễ thật ~5,98% (miscalibrated)."**
 
-### Bước 9. Đánh giá (số liệu đưa vào báo cáo)
+### Bước 8. Đánh giá (số liệu đưa vào báo cáo)
 
 1. **Kiểm thử mô hình:** kết quả các test ở Bước 4.
 2. **Backtest cảnh báo:** tuyến bị gắn đỏ/vàng ở kỳ *t* có thực sự trễ nhiều hơn ở kỳ *t+1* không?
@@ -456,12 +397,12 @@ def backtest(o, min_orders=50):
     return pd.DataFrame(res)
 ```
 
-3. **Chỉ số ML:** bảng so sánh ở Bước 6.
+3. **Chỉ số mô hình:** bảng backtest và kết quả kiểm thử.
 4. **Ảnh chụp giao diện:** 4 khối của DSS Action Center.
 
 Ghi tất cả kết quả vào `reports/dss_results.md`.
 
-### Bước 10. Viết vào báo cáo
+### Bước 9. Viết vào báo cáo
 
 | Nội dung | Chỗ viết |
 |---|---|
@@ -469,10 +410,10 @@ Ghi tất cả kết quả vào `reports/dss_results.md`.
 | Công thức các hàm mô hình + giả định (giảm thời gian chuyển 1:1 sang ngày giao) | Mục 5.2.1 (đã có công thức What-if; bổ sung các quy tắc còn lại) |
 | Kiến trúc DSS theo bảng ở A.1 | Đầu Chương 5 |
 | Cài đặt, API, ảnh chụp màn hình | Chương 6 |
-| Kết quả backtest, ML, hạn chế | Chương 7 |
+| Kết quả backtest, hạn chế | Chương 7 |
 | Chuẩn đầu ra | Cột "Minh chứng": L.O.3.2 (4 giai đoạn), L.O.3.3 (mô hình hoá), L.O.4.2 (hiện thực DSS) |
 
-**Hạn chế nên ghi:** dữ liệu lịch sử nên cảnh báo mang tính mô phỏng; What-if giả định cắt giảm chuyển 1:1; nguyên nhân gốc chỉ đến mức giai đoạn vì Fact chưa có `seller_id`; mô hình ML chỉ huấn luyện trên đơn đã giao; **tab Dashboard/OLAP/ETL Monitor hiển thị dữ liệu mẫu, không phải Olist thực tế**; **`risk_score` không phải xác suất đã hiệu chỉnh** (điểm TB ~0,412 vs tỷ lệ trễ thật ~5,98%).
+**Hạn chế nên ghi:** dữ liệu lịch sử nên cảnh báo mang tính mô phỏng; What-if giả định cắt giảm chuyển 1:1; nguyên nhân gốc chỉ đến mức giai đoạn vì Fact chưa có `seller_id`; **mô hình hoàn toàn theo luật và mô phỏng, chủ ý để dễ giải thích**; **tab Dashboard/OLAP/ETL Monitor hiển thị dữ liệu mẫu, không phải Olist thực tế**.
 
 ---
 
@@ -482,9 +423,9 @@ Ghi tất cả kết quả vào `reports/dss_results.md`.
 |---|---|
 | 1–2 | Bước 1–2 (`delay_days`, chạy lại ETL) |
 | 3–5 | Bước 3–5 và kiểm thử |
-| 6–7 | Bước 6 (ML), nếu kịp thời gian |
-| 8–9 | Bước 7–8 (API và giao diện) |
-| 10–11 | Bước 9 (đánh giá, chụp ảnh) |
-| 12–14 | Bước 10 (viết báo cáo, quay video, đóng gói mã nguồn (thư mục `src/` theo quy định nộp bài) và `data/`) |
+| 6–7 | Bước 6 (API Django) |
+| 8–9 | Bước 7 (giao diện) |
+| 10–11 | Bước 8 (đánh giá, chụp ảnh) |
+| 12–14 | Bước 9 (viết báo cáo, quay video, đóng gói mã nguồn (thư mục `src/` theo quy định nộp bài) và `data/`) |
 
-Nếu thiếu thời gian: bỏ Bước 5 và 6. Phần cốt lõi là Bước 2–4 và 7–8.
+Nếu thiếu thời gian: bỏ Bước 5. Phần cốt lõi là Bước 2–4 và 6–7.

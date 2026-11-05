@@ -2,10 +2,7 @@
 
 import json
 import math
-from pathlib import Path
 
-import numpy as np
-from django.conf import settings
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
@@ -100,90 +97,6 @@ def scenario(request):
         "series": M.sensitivity(d, route, bottleneck, base_cut=base_cut),
     }
     return JsonResponse(_clean(result))
-
-
-@require_GET
-def at_risk(request):
-    """Top đơn có điểm nguy cơ trễ cao nhất trong giai đoạn kiểm tra của mô hình."""
-    raw_limit = request.GET.get("limit", "20")
-    try:
-        limit = int(raw_limit)
-    except (TypeError, ValueError):
-        return _bad("limit phải là số nguyên trong khoảng 1..100")
-    if limit < 1 or limit > 100:
-        return _bad("limit phải là số nguyên trong khoảng 1..100")
-
-    # Nạp mô hình lười: chỉ import etl.dss_ml khi endpoint được gọi.
-    from etl import dss_ml as ML
-
-    # Cho phép test/khai thác cấu hình đường dẫn khác mà không đụng file thật.
-    configured = getattr(settings, "DSS_ML_MODEL_PATH", None)
-    model_path = Path(configured) if configured else ML.MODEL_PATH
-
-    try:
-        # load_model cache theo đường dẫn, không nạp lại mỗi yêu cầu.
-        bundle = ML.load_model(model_path)
-    except FileNotFoundError:
-        return _bad(
-            f"Chưa có mô hình dự báo tại {model_path}. "
-            "Hãy chạy: .\\backend\\env\\Scripts\\python.exe etl\\dss_ml.py",
-            status=503,
-        )
-
-    split = bundle.get("split") or {}
-    test_periods = [int(p) for p in split.get("test_periods") or []]
-    if not test_periods:
-        return _bad("Mô hình thiếu thông tin kỳ kiểm tra", status=503)
-
-    test = O[O["period"].isin(test_periods)]
-    if test.empty:
-        return _bad("Không có đơn hàng trong giai đoạn kiểm tra", status=503)
-
-    # Dùng đúng predict_orders để bảo đảm xác suất trùng với mô hình đã lưu.
-    probabilities = ML.predict_orders(test, path=model_path)
-    order = np.argsort(-probabilities, kind="stable")[:limit]
-    top = test.iloc[order]
-
-    rows = [
-        {
-            "order_id": str(order_id),
-            "route": str(route),
-            "risk_score": float(risk_score),
-            "actual_late": bool(actual_late),
-        }
-        for order_id, route, risk_score, actual_late in zip(
-            top["order_id"],
-            top["route"],
-            probabilities[order],
-            top["is_late"],
-        )
-    ]
-
-    metrics = bundle.get("metrics") or {}
-    threshold = bundle.get("threshold")
-    meta = {
-        "cutoff_period": split.get("cutoff_period"),
-        "test_periods": test_periods,
-        "test_rows": int(len(test)),
-        "test_late_rate": float(test["is_late"].mean()),
-        "model_name": bundle.get("model_name"),
-        "threshold": float(threshold) if threshold is not None else None,
-        "threshold_selected_on": (
-            (bundle.get("threshold_selection") or {}).get("selected_on")
-        ),
-        "roc_auc": metrics.get("roc_auc"),
-        "pr_auc": metrics.get("pr_auc"),
-        "precision": metrics.get("precision"),
-        "recall": metrics.get("recall"),
-        "f1": metrics.get("f1"),
-        "precision_at_k": metrics.get("precision_at_k") or [],
-        "score_note": (
-            "Điểm nguy cơ dùng để xếp hạng, không phải xác suất đã hiệu chỉnh; "
-            "chưa phản ánh tỷ lệ trễ thật."
-        ),
-        "note": "Mô phỏng trên dữ liệu lịch sử, không phụ thuộc bộ lọc năm.",
-    }
-    return JsonResponse(_clean({"orders": rows, "meta": meta}))
 
 
 @require_GET

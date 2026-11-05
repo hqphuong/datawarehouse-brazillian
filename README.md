@@ -26,16 +26,12 @@ Hệ thống gồm 4 phần:
   mockup).
 - **Mockup UI**: `Olist Logistics DSS.html` — mở trực tiếp bằng trình duyệt.
 - **Prisma**: schema mô tả DW và Prisma Client (dùng cho tooling/Node).
+- **Kiểm thử**: 26 pytest, 16 Django test (`manage.py test dss`).
 
 > **⚠️ Nhãn cảnh báo giao diện:**
 > - Tab **Dashboard**, **OLAP**, **ETL Monitor** hiển thị **dữ liệu mẫu** (mock
 >   data, do thành viên khác phát triển bằng Flask, chưa nối Django thật). Số
 >   liệu trên các tab này **không phản ánh dữ liệu Olist thực tế**.
-> - Khối **At-Risk** (tab DSS) hiển thị **điểm nguy cơ (`risk_score`)** — đây
->   là điểm xếp hạng từ mô hình ML chưa hiệu chỉnh, **không phải xác suất trễ
->   thực tế**. Điểm trung bình ~0,412 trong khi tỷ lệ trễ thật chỉ ~5,98%
->   (miscalibrated). Dùng để **xếp thứ tự ưu tiên rà soát**, không dùng làm
->   ngưỡng tuyệt đối.
 
 ---
 

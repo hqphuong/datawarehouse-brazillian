@@ -24,7 +24,7 @@ def test_wilson_interval_known_values():
     assert hi == pytest.approx(0.3329, abs=5e-4)
 
 
-# Tỷ lệ trễ của giai đoạn kiểm tra mô hình ML (~5,98%). Không được dùng làm
+# Tỷ lệ trễ của giai đoạn kiểm tra cũ (~5,98%). Không được dùng làm
 # ngưỡng đỏ/vàng: route_priority nhân red/amber với tỷ lệ trễ chung (~8,07%).
 TEST_PREVALENCE = 0.05979368707146828
 
