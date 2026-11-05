@@ -63,9 +63,9 @@ $$\text{level}(r) = \begin{cases}
 
 với $\theta_{\text{red}} = 2.0$, $\theta_{\text{amber}} = 1.5$ (mặc định).
 
-Chỉ xét tuyến $r$ nếu $N_r \geq \text{min\_orders}$ (mặc định 100). Kết quả sắp xếp giảm dần theo số đơn trễ, trả về `top` tuyến đầu.
+Chỉ xét tuyến $r$ nếu $N_r \geq \text{min\_orders}$ (mặc định 100). Kết quả mặc định dùng **red-first** (`ensure_red=True`): trả tất cả tuyến đỏ trước, sắp giảm dần theo `late_orders`, rồi thêm tuyến vàng cho đủ `top` (chi tiết 2a).
 
-**Tham số sản xuất mặc định:** `red=2.0, amber=1.5, min_orders=100, top=10`.
+**Tham số sản xuất mặc định:** `red=2.0, amber=1.5, min_orders=100, top=10, ensure_red=True`.
 
 ### 2a. Sắp xếp red-first (`ensure_red=True`)
 
@@ -96,7 +96,7 @@ $$\text{uncertain}(r) = \begin{cases}
 \mathbb{1}\!\left[\text{ci\_low}(r) < \bar{L} \cdot \theta_{\text{amber}}\right] & \text{nếu level}(r) = \text{amber}
 \end{cases}$$
 
-Nghĩa: cận dưới Wilson của tuyến nằm **dưới ngưỡng phân loại** của chính nó → khoảng tin cậy **chứa** ngưỡng → nhãn đỏ/vàng chưa được xác nhận chắc chắn. Với dữ liệu hiện tại ($\bar{L} \approx 8{,}07\%$, ngưỡng đỏ ≈ 16,14%, ngưỡng vàng ≈ 12,11%): **7/14 tuyến gắn cờ** có `uncertain=True` (SP→PI, SP→SE, PR→BA, PR→RJ, SP→PA, SP→MS, SP→TO). Chỉ để hiển thị cảnh báo — không đổi `level`, thứ tự, `stage`, `has_bottleneck`.
+Nghĩa: cận dưới Wilson của tuyến nằm **dưới ngưỡng phân loại** của chính nó → khoảng tin cậy **chứa** ngưỡng → nhãn đỏ/vàng chưa được xác nhận chắc chắn. Với dữ liệu hiện tại ($\bar{L} \approx 8{,}07\%$, ngưỡng đỏ ≈ 16,14%, ngưỡng vàng ≈ 12,11%): **7/14 tuyến gắn cờ** có `uncertain=True` (SP→PI, SP→SE, PR→BA, PR→RJ, SP→PA, SP→MS, SP→TO). Chỉ để hiển thị cảnh báo — không đổi `level`, thứ tự, `stage`, `has_bottleneck`; cờ **độc lập với `low_sample`** (có tuyến mẫu nhỏ nhưng `uncertain=False` và ngược lại).
 
 **Lưu ý:** `uncertain` dùng $\bar{L}$ tính trên **toàn bộ dữ liệu** (~8,07%); không dùng tỷ lệ trễ của tập kiểm tra ML (~5,98%).
 
@@ -128,7 +128,7 @@ Nếu `has_bottleneck = False` thì tất cả giai đoạn của tuyến đều
 
 $$\rho_s(r) = \frac{e_s(r)}{|\mu_s|}$$
 
-Chuẩn hóa excess theo độ lớn trung bình hệ thống, cho phép so sánh tương đối giữa các giai đoạn khi $\mu_s$ chênh lệch lớn. Với 14 tuyến gắn cờ: `stage` theo $e_s$ và `stage` theo $\rho_s$ **trùng nhau ở tất cả 14 tuyến** (transit vẫn dẫn đầu cả hai cách, ngoại trừ MA→SP có $e_{\text{prep}} = 2{,}10 > e_{\text{transit}} = 1{,}43$, và cả $\rho_{\text{prep}} = 0{,}75 > \rho_{\text{transit}} = 0{,}15$ → cũng prep). `stage` và `has_bottleneck` trong DSS luôn xác định theo $e_s$ tuyệt đối; `excess_ratio` chỉ báo cáo để tham khảo, không đổi logic.
+Chuẩn hóa excess theo độ lớn trung bình hệ thống, cho phép so sánh tương đối giữa các giai đoạn khi $\mu_s$ chênh lệch lớn. Với 14 tuyến gắn cờ: `stage` theo $e_s$ và `stage` theo $\rho_s$ **trùng nhau ở tất cả 14 tuyến** (transit dẫn đầu ở 13/14; MA→SP có $e_{\text{prep}} = 2{,}10 > e_{\text{transit}} = 1{,}43$ và $\rho_{\text{prep}} = 0{,}75 > \rho_{\text{transit}} = 0{,}15$ → cũng prep). Tức **0/14 tuyến đổi stage**; SP→TO (transit 0,53 vs approval 0,38) và PR→BA (transit 0,91 vs approval 0,33) là hai tuyến sát nhất. `stage` và `has_bottleneck` trong DSS luôn xác định theo $e_s$ tuyệt đối; `excess_ratio` chỉ báo cáo để tham khảo, không đổi logic.
 
 ---
 
@@ -244,13 +244,21 @@ $$\hat{\delta}^{*(b)} = \frac{\sum_{t \in T^{*(b)}} \text{diff}_t \cdot N_{t+1}}
 
 **Block bootstrap** (circular, block_size = 3 tháng, để tính tự tương quan giữa các kỳ liền kề):
 
-Chọn $\lceil |T|/3 \rceil$ vị trí bắt đầu ngẫu nhiên, mỗi block lấy 3 kỳ liên tiếp (circular), cắt bớt về đúng $|T|$ kỳ; tính `weighted_diff` trên mẫu đó.
+Chọn $\lceil |T|/3 \rceil$ vị trí bắt đầu ngẫu nhiên, mỗi block lấy 3 kỳ liên tiếp; vì là circular nên kỳ cuối được nối với kỳ đầu. Cắt bớt về đúng $|T|$ kỳ rồi tính `weighted_diff` trên mẫu đó.
 
 **CI 95%** (percentile method): $[\hat{\delta}^{*}_{0{,}025},\, \hat{\delta}^{*}_{0{,}975}]$.
 
-Tham số cố định: $B = 10\,000$, seed = 42, weight\_col = `total_orders`.
+Tham số cố định: $B = 10\,000$, seed = 42, weight\_col = `total_orders`. Kết quả báo cáo theo **đơn vị điểm phần trăm (pp)**.
 
-**So sánh chính** là **vs through** (baseline through dùng cùng lượng thông tin với DSS). Chỉ nói "vượt" khi CI không chứa 0.
+Bootstrap so sánh DSS với **0**, với **prior** và với **through**; **through là so sánh chính** (baseline through dùng cùng lượng thông tin với DSS). Kết quả pair bootstrap:
+
+| So sánh | CI 95% (pp) | Kết luận |
+| --- | --- | --- |
+| vs 0 | [+3,68; +12,40] | Không chứa 0 → có thể nói "vượt 0" |
+| vs prior | [+0,45; +5,79] | Không chứa 0 → có thể nói "vượt prior" |
+| vs through (chính) | [−0,58; +2,35] | Chứa 0 → không dùng chữ "vượt" |
+
+Chỉ dùng chữ "vượt" khi CI không chứa 0.
 
 Kỳ không có tuyến nào gắn cờ được ghi lại trong `periods` với `diff = NaN` và **không** tính vào `periods_evaluated`.
 
@@ -262,7 +270,7 @@ Kỳ không có tuyến nào gắn cờ được ghi lại trong `periods` với
 
 1. **Cắt giảm thời gian giai đoạn chuyển 1:1 sang ngày giao:** Giảm $c$ ngày ở bất kỳ giai đoạn nào làm ngày giao sớm hơn đúng $c$ ngày. Không mô hình hóa buffer, lịch cố định của carrier, hay hiệu ứng nghẽn cổ chai thực tế.
 
-   **Hệ quả của giả định 1:1 đối với `transit_goal_cut` và `promise_days`:** Dưới giả định này, cắt $c$ ngày transit tương đương kéo dài cam kết $c$ ngày (trừ phần chặn bởi `transit_i < c`). Do đó `transit_goal_cut` (kết quả của `goal_seek_cut`) thường xấp xỉ `promise_days` (kết quả của `goal_seek_promise`). Ví dụ với SP->BA: cả hai đều cho 10 ngày. **Lưu ý quan trọng:** 10 ngày transit cut vượt quá excess transit trung bình của SP->BA (~7,2 ngày), nghĩa là yêu cầu cắt nhiều hơn tổng phần vượt mức — không phải phương án khả thi trong thực tế. `transit_goal_cut=10` chỉ là giới hạn trên trong lưới tìm kiếm, **không nên trình bày như phương án can thiệp cụ thể**.
+   **Hệ quả của giả định 1:1 đối với `transit_goal_cut` và `promise_days`:** Dưới giả định này, cắt $c$ ngày transit tương đương kéo dài cam kết $c$ ngày (trừ phần chặn bởi `transit_i < c`). Do đó `transit_goal_cut` (kết quả của `goal_seek_cut`) thường xấp xỉ `promise_days` (kết quả của `goal_seek_promise`). Ví dụ với SP->BA: cả hai đều cho 10 ngày. **Lưu ý quan trọng:** **SP->BA:** mức cắt tối thiểu theo giả định 1:1 là 10 ngày, trùng biên `max_days=10`. **SP->ES:** 9 ngày, gần biên nhưng chưa chạm. Cả hai đều vượt xa excess transit của tuyến (SP->BA ~7,2 ngày; SP->ES ~3,1 ngày), nên không nên trình bày như phương án khả thi.
 
 2. **Tuyến = (bang người bán → bang khách hàng):** Bỏ qua sự khác biệt giữa các thành phố, mã bưu điện, hay carrier cụ thể trong cùng một tuyến.
 
@@ -286,9 +294,9 @@ Kỳ không có tuyến nào gắn cờ được ghi lại trong `periods` với
 | `carrier_transit_time_days` âm | 50 dòng | Tương tự trên |
 | `review_score` rỗng | 827 dòng | Không ảnh hưởng mô hình chính (không dùng review score); ảnh hưởng cột `has_logistics_complaint` |
 | Backtest so sánh với baseline đơn giản — kết quả hỗn hợp | DSS tốt hơn 11/19 kỳ vs baseline "through"; **pair CI vs through = [−0,58; +2,35] pp chứa 0** (điểm ước lượng +0,8 pp) | Tín hiệu DSS có giá trị nhưng không vượt trội rõ rệt về mặt thống kê so với baseline dùng cùng thông tin |
-| `goal_seek_cut` (transit, target=5%) đạt được ở một số tuyến trong lưới 10 ngày | SP→BA = 10 ngày, SP→ES = 9 ngày, SP→MS = 9 ngày, SP→TO = 7 ngày; SP→RJ và phần lớn tuyến còn lại = None | Các tuyến đạt được (`SP->BA=10`) thực ra ở **mức tối thiểu theo giả định 1:1, trùng biên `max_days`** — cắt nhiều hơn excess thực tế; không phải phương án thực tế. SP→RJ (`None`) và nhiều tuyến khác cần giải pháp khác |
+| `goal_seek_cut` (transit, target=5%) với 3 tuyến top | SP→BA = 10 ngày, SP→ES = 9 ngày; chỉ SP→RJ = None | **SP→BA:** mức cắt tối thiểu theo giả định 1:1 là 10 ngày, trùng biên `max_days=10`. **SP→ES:** 9 ngày, gần biên nhưng chưa chạm. Cả hai đều vượt xa excess transit của tuyến (SP→BA ~7,2 ngày; SP→ES ~3,1 ngày) — không nên trình bày như phương án khả thi |
 | `risk_score` trong khối At-Risk không phải xác suất đã hiệu chỉnh | Điểm TB ~0,412 trong khi tỷ lệ trễ thật ~5,98% (tập kiểm tra ML, khác $\bar{L} \approx 8{,}07\%$ toàn bộ data) | Khối at-risk dùng để xếp hạng ưu tiên rà soát; không dùng `risk_score` làm ngưỡng tuyệt đối |
-| Mô hình DSS chính hoàn toàn là rule-based; `dss_ml` là tùy chọn phụ | Thiết kế chủ ý | Mô hình dễ giải thích nhưng không học từ dữ liệu mới; khối At-Risk endpoint `/api/dss/at-risk` dùng mô hình ML riêng (`late_risk.joblib`) |
+| DSS chính rule-based; ML chỉ ở khối At-Risk | Thiết kế chủ ý | 4 khối DSS chính không dùng ML; khối At-Risk endpoint `/api/dss/at-risk` dùng mô hình ML riêng (`late_risk.joblib`) |
 
 ---
 
@@ -300,6 +308,7 @@ Kỳ không có tuyến nào gắn cờ được ghi lại trong `periods` với
 | `route_priority` | `amber` | 1.5 | Bội số $\bar{L}$ để phân loại vàng |
 | `route_priority` | `min_orders` | 100 | Ngưỡng tối thiểu đơn trên tuyến |
 | `route_priority` | `top` | 10 | Số tuyến trả về |
+| `route_priority` | `ensure_red` | `True` | Red-first: trả tất cả tuyến đỏ trước; `False` xếp thuần theo `late_orders` và cắt đúng `top` |
 | `goal_seek_promise` | `target` | 0.05 | Tỷ lệ trễ mục tiêu (5%) |
 | `goal_seek_cut` | `target` | 0.05 | Tỷ lệ trễ mục tiêu |
 | `goal_seek_cut` | `step` | 0.5 | Bước tìm kiếm (ngày) |
