@@ -5,7 +5,7 @@
 ```bash
 .\backend\env\Scripts\python.exe -m pytest -q
 ```
-Result: **26 passed** (full repo suite). Targeted DSS model + eval run: **26 passed** (`pytest tests/test_dss_models.py tests/test_dss_eval.py -q`).
+Result: **38 passed** (full repo suite, cập nhật 06/11/2026 sau Checkpoint A). Số liệu DSS mới nhất nằm trong `reports/dss_eval_raw.txt`.
 
 **Django API tests (dss app):**
 ```bash
