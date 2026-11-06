@@ -13,6 +13,7 @@ try:  # chạy như package:  python -m src.fact_delivery_sla
         RAW_SELLERS,
         ensure_dirs,
     )
+    from .transform_rules import select_latest_reviews, select_payment_type
 except ImportError:  # chạy trực tiếp: python src/fact_delivery_sla.py
     from config import (
         PROCESSED_DIR,
@@ -24,6 +25,7 @@ except ImportError:  # chạy trực tiếp: python src/fact_delivery_sla.py
         RAW_SELLERS,
         ensure_dirs,
     )
+    from transform_rules import select_latest_reviews, select_payment_type
 
 ensure_dirs()
 OUTPUT_FILE = PROCESSED_DIR / "cleaned_fact_orders.csv"
@@ -63,7 +65,10 @@ df_cleaned["delay_days"] = (df_cleaned["order_delivered_customer_date"] - df_cle
 df_cleaned["time_id"] = df_cleaned["order_purchase_timestamp"].dt.strftime("%Y%m%d").astype(int)
 
 # 2. XỬ LÝ REVIEWS (Text Mining - DSS)
-df_reviews = df_reviews.sort_values("review_creation_date").drop_duplicates("order_id", keep="last")
+# Quy tắc: mỗi đơn giữ đúng 1 review mới nhất theo review_creation_date;
+# hòa thì theo review_answer_timestamp, rồi review_id (lớn hơn = mới hơn).
+n_reviews_per_order = df_reviews.groupby("order_id").size()
+df_reviews = select_latest_reviews(df_reviews)
 logistics_keywords = [
     "atraso",
     "demora",
@@ -93,7 +98,10 @@ df_reviews["has_logistics_keyword"] = df_reviews["review_comment_message"].apply
 df_reviews["has_logistics_complaint"] = (df_reviews["review_score"] <= 2) & (df_reviews["has_logistics_keyword"])
 
 # 3. XỬ LÝ PAYMENTS (Chiều suy biến)
-main_payments = df_payments.sort_values("payment_value", ascending=False).drop_duplicates("order_id", keep="first")
+# Quy tắc: payment_type của đơn = loại có TỔNG payment_value lớn nhất;
+# hòa thì chọn loại có payment_sequential nhỏ nhất (rồi theo tên loại).
+n_payment_types_per_order = df_payments.groupby("order_id")["payment_type"].nunique()
+main_payments = select_payment_type(df_payments)
 
 print("Đang kết nối các bảng (Merge)...")
 # Nối bảng chi tiết hàng hóa
@@ -148,4 +156,14 @@ fact_orders = fact_df[fact_cols].copy()
 fact_orders.to_csv(OUTPUT_FILE, index=False)
 
 print(f"Xuất ra: {OUTPUT_FILE}")
+print(
+    "Đơn có >1 payment_type: "
+    f"{int((n_payment_types_per_order > 1).sum())}/{len(n_payment_types_per_order)} "
+    f"({(n_payment_types_per_order > 1).mean():.4%})"
+)
+print(
+    "Đơn có >1 review: "
+    f"{int((n_reviews_per_order > 1).sum())}/{len(n_reviews_per_order)} "
+    f"({(n_reviews_per_order > 1).mean():.4%})"
+)
 print(f"Xử lý hoàn tất Fact_Delivery_SLA! Tổng dòng: {len(fact_orders)}")
