@@ -69,6 +69,7 @@ WAREHOUSE_TABLES: dict[str, Path] = {
     "Dim_Time": PROCESSED_DIR / "cleaned_dim_time.csv",
     "Dim_Location": PROCESSED_DIR / "cleaned_dim_location.csv",
     "Dim_Product": PROCESSED_DIR / "cleaned_dim_product.csv",
+    "Dim_Seller": PROCESSED_DIR / "cleaned_dim_seller.csv",
     "Fact_Delivery_SLA": PROCESSED_DIR / "cleaned_fact_orders.csv",
 }
 

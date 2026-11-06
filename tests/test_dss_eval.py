@@ -82,7 +82,7 @@ def test_backtest_historical_baseline_through_contract(o):
     )
     # Số kỳ đã kiểm chứng độc lập với dữ liệu hiện tại.
     assert summary["baseline_through_higher_periods"] == 14
-    assert summary["baseline_through_better_periods"] == 5
+    assert summary["baseline_through_better_periods"] == 4
     assert summary["tied_vs_through_periods"] == 3
 
 

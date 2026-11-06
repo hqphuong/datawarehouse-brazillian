@@ -1,6 +1,7 @@
 """ETL - Fact Delivery SLA: sinh bảng fact đo lường chuỗi cung ứng & chất lượng giao hàng."""
 
 import pandas as pd
+import numpy as np
 
 try:  # chạy như package:  python -m src.fact_delivery_sla
     from .config import (
@@ -60,6 +61,12 @@ df_cleaned["seller_prep_time_days"] = (df_cleaned["order_delivered_carrier_date"
 df_cleaned["carrier_transit_time_days"] = (df_cleaned["order_delivered_customer_date"] - df_cleaned["order_delivered_carrier_date"]).dt.total_seconds() / 86400.0
 # delay_days > 0: giao muộn so với cam kết; < 0: giao sớm; = 0: đúng hạn
 df_cleaned["delay_days"] = (df_cleaned["order_delivered_customer_date"] - df_cleaned["order_estimated_delivery_date"]).dt.total_seconds() / 86400.0
+# Thời gian giao thực tế và độ dài cam kết (ngày). promise_days = total_lead_days − delay_days,
+# đúng bằng (estimated_delivery − purchase); giữ riêng để không phải suy lại từ 2 cột khác.
+df_cleaned["total_lead_days"] = (
+    df_cleaned["order_delivered_customer_date"] - df_cleaned["order_purchase_timestamp"]
+).dt.total_seconds() / 86400.0
+df_cleaned["promise_days"] = df_cleaned["total_lead_days"] - df_cleaned["delay_days"]
 
 # Đảm bảo time_id là số nguyên INT
 df_cleaned["time_id"] = df_cleaned["order_purchase_timestamp"].dt.strftime("%Y%m%d").astype(int)
@@ -104,6 +111,7 @@ n_payment_types_per_order = df_payments.groupby("order_id")["payment_type"].nuni
 main_payments = select_payment_type(df_payments)
 
 print("Đang kết nối các bảng (Merge)...")
+df_items["shipping_limit_date"] = pd.to_datetime(df_items["shipping_limit_date"])
 # Nối bảng chi tiết hàng hóa
 fact_df = df_cleaned.merge(df_items, on="order_id", how="inner")
 
@@ -129,6 +137,51 @@ for col in ("customer_location_id", "seller_location_id"):
 fact_df = fact_df.merge(df_reviews[["order_id", "review_score", "has_logistics_complaint"]], on="order_id", how="left")
 fact_df = fact_df.merge(main_payments[["order_id", "payment_type"]], on="order_id", how="left")
 
+# Khoảng cách seller↔customer (haversine, km). Lấy tâm geolocation của mỗi
+# location từ Dim_Location; thiếu tọa độ → NaN (không tự lấp bằng 0).
+dim_loc = pd.read_csv(
+    PROCESSED_DIR / "cleaned_dim_location.csv",
+    dtype={"location_id": str},
+    usecols=["location_id", "latitude", "longitude"],
+)
+fact_df = fact_df.merge(
+    dim_loc.rename(
+        columns={
+            "location_id": "customer_location_id",
+            "latitude": "customer_lat",
+            "longitude": "customer_lng",
+        }
+    ),
+    on="customer_location_id",
+    how="left",
+)
+fact_df = fact_df.merge(
+    dim_loc.rename(
+        columns={
+            "location_id": "seller_location_id",
+            "latitude": "seller_lat",
+            "longitude": "seller_lng",
+        }
+    ),
+    on="seller_location_id",
+    how="left",
+)
+
+lat1 = np.radians(fact_df["seller_lat"])
+lng1 = np.radians(fact_df["seller_lng"])
+lat2 = np.radians(fact_df["customer_lat"])
+lng2 = np.radians(fact_df["customer_lng"])
+dlat = lat2 - lat1
+dlng = lng2 - lng1
+a = np.sin(dlat / 2.0) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlng / 2.0) ** 2
+fact_df["distance_km"] = 2.0 * 6371.0088 * np.arcsin(np.sqrt(a.clip(0.0, 1.0)))
+
+# handoff_slack_days: carrier nhận hàng muộn hơn shipping_limit bao nhiêu ngày.
+# Đây là giá trị cấp item; cấp đơn lấy max trong load_orders().
+fact_df["handoff_slack_days"] = (
+    fact_df["order_delivered_carrier_date"] - fact_df["shipping_limit_date"]
+).dt.total_seconds() / 86400.0
+
 # Lấp đầy giá trị Boolean khuyết để tránh báo lỗi NULL khi Copy
 # (delay_days đã được đảm bảo đủ dữ liệu bởi dropna ở trên; giữ NULL nếu thiếu
 # thay vì gán 0 để không làm sai lệch thống kê giao hàng)
@@ -139,16 +192,23 @@ fact_cols = [
     "order_id",
     "order_item_id",
     "product_id",
+    "seller_id",
     "customer_location_id",
     "seller_location_id",
     "time_id",
     "payment_type",
+    "price",
+    "freight_value",
+    "shipping_limit_date",
     "approval_time_days",
     "seller_prep_time_days",
     "carrier_transit_time_days",
-    "freight_value",
-    "review_score",
     "delay_days",
+    "total_lead_days",
+    "promise_days",
+    "handoff_slack_days",
+    "distance_km",
+    "review_score",
     "has_logistics_complaint",
 ]
 

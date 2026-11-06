@@ -51,7 +51,7 @@ class DssApiTests(TestCase):
         test_prevalence = 0.05979368707146828
         orders = M.load_orders()
         overall = float(orders["is_late"].mean())
-        self.assertEqual(round(overall * 100, 2), 8.07)
+        self.assertEqual(round(overall * 100, 2), 8.16)
         self.assertEqual(round(test_prevalence * 100, 2), 5.98)
         self.assertGreater(abs(overall - test_prevalence), 0.02)
 
@@ -137,8 +137,8 @@ class DssApiTests(TestCase):
         res = self.client.get("/api/dss/scenario?" + urlencode({"route": "SP->RJ"}))
         self.assertEqual(res.status_code, 200)
         body = res.json()
-        self.assertEqual(body["orders"], 8108)
-        self.assertAlmostEqual(body["baseline"], 0.155772, places=5)
+        self.assertEqual(body["orders"], 8016)
+        self.assertAlmostEqual(body["baseline"], 0.157061, places=5)
         self.assertAlmostEqual(body["projected"], body["baseline"], places=12)
         self.assertEqual(body["bottleneck"], "transit")
         self.assertIs(body["has_bottleneck"], True)

@@ -13,8 +13,64 @@ import pandas as pd
 
 try:  # chạy như package: python -m etl.dss_eval
     from . import dss_models as M
+    from .config import (
+        RAW_ORDER_ITEMS,
+        RAW_ORDER_PAYMENTS,
+        RAW_ORDER_REVIEWS,
+        RAW_ORDERS,
+    )
 except ImportError:  # chạy trực tiếp: python etl/dss_eval.py
     import dss_models as M
+    from config import (
+        RAW_ORDER_ITEMS,
+        RAW_ORDER_PAYMENTS,
+        RAW_ORDER_REVIEWS,
+        RAW_ORDERS,
+    )
+
+
+def raw_data_summary() -> dict:
+    """Đếm đơn bị loại và share bản ghi suy biến từ dữ liệu gốc."""
+    orders = pd.read_csv(RAW_ORDERS)
+    items = pd.read_csv(RAW_ORDER_ITEMS)
+    payments = pd.read_csv(RAW_ORDER_PAYMENTS)
+    reviews = pd.read_csv(RAW_ORDER_REVIEWS)
+
+    status = orders["order_status"].value_counts(dropna=False).to_dict()
+    delivered = orders[orders["order_status"] == "delivered"].copy()
+    time_cols = [
+        "order_purchase_timestamp",
+        "order_approved_at",
+        "order_delivered_carrier_date",
+        "order_delivered_customer_date",
+        "order_estimated_delivery_date",
+    ]
+    for col in time_cols:
+        delivered[col] = pd.to_datetime(delivered[col])
+    delivered_clean = delivered.dropna(subset=time_cols)
+
+    payment_rows = payments.groupby("order_id").agg(
+        n_rows=("payment_sequential", "size"),
+        n_types=("payment_type", "nunique"),
+    )
+    review_rows = reviews.groupby("order_id").size()
+
+    return {
+        "orders": int(len(orders)),
+        "status": {str(k): int(v) for k, v in status.items()},
+        "non_delivered": int(len(orders) - len(delivered)),
+        "delivered": int(len(delivered)),
+        "delivered_dropna": int(len(delivered_clean)),
+        "delivered_dropped_nan_time": int(len(delivered) - len(delivered_clean)),
+        "item_rows": int(len(items)),
+        "item_orders": int(items["order_id"].nunique()),
+        "delivered_item_rows": int(items["order_id"].isin(delivered_clean["order_id"]).sum()),
+        "payment_orders": int(len(payment_rows)),
+        "payment_multi_row_share": float((payment_rows["n_rows"] > 1).mean()),
+        "payment_multi_type_share": float((payment_rows["n_types"] > 1).mean()),
+        "review_orders": int(len(review_rows)),
+        "review_multi_share": float((review_rows > 1).mean()),
+    }
 
 
 def _next_period(period: int) -> int:
@@ -525,13 +581,14 @@ def top_routes_report(
 
 def negative_rows_summary(o: pd.DataFrame) -> dict:
     """Đếm dòng thời gian âm ở cấp (đơn, tuyến) đang dùng cho mô hình."""
-    any_negative = (o[["prep", "transit"]] < 0).any(axis=1)
+    any_negative = (o[["approval", "prep", "transit"]] < 0).any(axis=1)
     return {
         "order_route_rows": int(len(o)),
+        "approval_negative": int((o["approval"] < 0).sum()),
         "prep_negative": int((o["prep"] < 0).sum()),
         "transit_negative": int((o["transit"] < 0).sum()),
         "any_negative": int(any_negative.sum()),
-        "removed_rows": int(any_negative.sum()),
+        "nan_stage": int(o[["approval", "prep", "transit"]].isna().any(axis=1).sum()),
     }
 
 
@@ -546,9 +603,9 @@ def negative_time_comparison(
     thực hiện trên toàn bộ dữ liệu, nên cả trung bình hệ thống (mẫu số của
     ``excess``) cũng thay đổi, không chỉ trung bình riêng tuyến.
     """
-    routes = list(M.route_priority(o, top=n, ensure_red=False)["route"])
-    clean = o[(o["prep"] >= 0) & (o["transit"] >= 0)].copy()
-    removed = (o[["prep", "transit"]] < 0).any(axis=1)
+    routes = list(M.route_priority(o[o["stage_valid"]], top=n, ensure_red=False)["route"])
+    clean = o[o["stage_valid"]].copy()
+    removed = ~o["stage_valid"]
 
     rows = []
     for route in routes:
@@ -727,11 +784,39 @@ def bootstrap_ci(
 
 
 def main() -> None:
+    raw = M.load_orders(include_invalid=True)
     o = M.load_orders()
 
     print("## Thông tin dữ liệu")
-    print(f"- Số dòng (đơn, tuyến): {len(o)}")
-    print(f"- Tỷ lệ trễ toàn hệ thống: {o.is_late.mean():.6f}")
+    print("- Tóm tắt dữ liệu gốc:", raw_data_summary())
+    print(f"- Số dòng (đơn, tuyến) dùng cho DSS: {len(o)}")
+    print(f"- Số đơn duy nhất: {o.order_id.nunique()}")
+    print(
+        "- Tỷ lệ trễ trên đơn-tuyến: "
+        f"{o.is_late.mean():.6f} ({o.is_late.mean() * 100:.4f}%)"
+    )
+    print(
+        "- Tỷ lệ trễ trên đơn đã giao (unique order_id): "
+        f"{o.attrs['late_rate_order']:.6f} ({o.attrs['late_rate_order'] * 100:.4f}%)"
+    )
+    print(
+        "- Loại do giai đoạn âm/NaN: "
+        f"{o.attrs['excluded_stage_invalid_rows']} order-route "
+        f"({o.attrs['excluded_stage_invalid_share']:.4%}), "
+        f"prep<0={o.attrs['excluded_prep_negative']}, "
+        f"transit<0={o.attrs['excluded_transit_negative']}, "
+        f"nan={o.attrs['excluded_nan_stage']}"
+    )
+    print(
+        "- promise_days − (total_lead_days − delay_days) max abs: "
+        f"{o.attrs['promise_gap_max']:.3g}"
+    )
+    multi_route = int((o.groupby("order_id").size() > 1).sum())
+    multi_seller = int((o.groupby("order_id").seller_id.nunique() > 1).sum())
+    print(f"- Đơn nằm trên >1 tuyến: {multi_route}")
+    print(f"- Đơn có >1 người bán: {multi_seller}")
+    print(f"- GMV (tổng price trong đơn-tuyến): {o.gmv.sum():.2f}")
+    print(f"- Số order-route trước khi loại (gồm dòng không hợp lệ): {len(raw)}")
 
     print("\n## Backtest theo min_orders")
     main_frame = None
@@ -792,8 +877,9 @@ def main() -> None:
     print(_md_table(top_routes_report(o, n=3)))
 
     print("\n## Thời gian âm")
-    print("Thống kê cấp (đơn, tuyến):", negative_rows_summary(o))
-    print(_md_table(negative_time_comparison(o, n=3)))
+    print("Thống kê cấp (đơn, tuyến):", negative_rows_summary(raw))
+    print("Đã loại khỏi DSS:", o.attrs["excluded_stage_invalid_rows"], "order-route")
+    print(_md_table(negative_time_comparison(raw, n=3)))
 
 
 if __name__ == "__main__":

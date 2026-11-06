@@ -24,15 +24,23 @@ RULES = {
 }
 
 
-def load_orders() -> pd.DataFrame:
+def load_orders(include_invalid: bool = False) -> pd.DataFrame:
     """Đọc Fact + 3 Dim, trả về bảng 1 dòng = 1 (đơn hàng, tuyến).
 
     Lưu ý: Fact có hạt là item nên phải gộp về cấp đơn hàng. Một đơn có thể
     phát sinh từ nhiều bang người bán, khi đó đơn xuất hiện ở nhiều tuyến
     (khóa là cặp order_id + route, không phải order_id đơn thuần).
+
+    Dòng có bất kỳ giai đoạn nào < 0 hoặc NaN bị loại khỏi mọi thống kê DSS
+    (không clip ngầm); số dòng bị loại lưu ở ``o.attrs``.
     """
-    f = pd.read_csv(PROCESSED_DIR / "cleaned_fact_orders.csv")
-    loc = pd.read_csv(PROCESSED_DIR / "cleaned_dim_location.csv")[["location_id", "state"]]
+    f = pd.read_csv(
+        PROCESSED_DIR / "cleaned_fact_orders.csv",
+        dtype={"customer_location_id": str, "seller_location_id": str},
+    )
+    loc = pd.read_csv(
+        PROCESSED_DIR / "cleaned_dim_location.csv", dtype={"location_id": str}
+    )[["location_id", "state"]]
     t = pd.read_csv(PROCESSED_DIR / "cleaned_dim_time.csv")[["time_id", "year", "month"]]
     p = pd.read_csv(PROCESSED_DIR / "cleaned_dim_product.csv")
 
@@ -56,16 +64,23 @@ def load_orders() -> pd.DataFrame:
     f["route"] = f["seller_state"] + "->" + f["cust_state"]
     f["period"] = f["year"] * 100 + f["month"]
 
-    return f.groupby(["order_id", "route"], as_index=False).agg(
+    o = f.groupby(["order_id", "route"], as_index=False).agg(
         period=("period", "first"),
         seller_state=("seller_state", "first"),
         cust_state=("cust_state", "first"),
+        seller_id=("seller_id", "first"),
+        n_sellers=("seller_id", "nunique"),
         is_late=("is_late", "max"),
         delay_days=("delay_days", "first"),
+        promise_days=("promise_days", "first"),
+        total_lead_days=("total_lead_days", "first"),
+        handoff_slack_days=("handoff_slack_days", "max"),
+        distance_km=("distance_km", "first"),
         complaint=("has_logistics_complaint", "max"),
         approval=("approval_time_days", "first"),
         prep=("seller_prep_time_days", "first"),
         transit=("carrier_transit_time_days", "first"),
+        price=("price", "sum"),
         freight=("freight_value", "sum"),
         n_items=("order_item_id", "count"),
         payment_type=("payment_type", "first"),
@@ -74,6 +89,50 @@ def load_orders() -> pd.DataFrame:
         weight=("weight_g", "sum"),
         volume=("volume_cm3", "sum"),
     )
+    o = o.rename(columns={"price": "gmv"})
+
+    # F5: loại order-route có giai đoạn âm/NaN, báo share thay vì clip.
+    invalid = (o[STAGES] < 0).any(axis=1) | o[STAGES].isna().any(axis=1)
+    n_all = len(o)
+    o["stage_valid"] = ~invalid
+    o.attrs["excluded_prep_negative"] = int((o["prep"] < 0).sum())
+    o.attrs["excluded_transit_negative"] = int((o["transit"] < 0).sum())
+    o.attrs["excluded_any_negative"] = int(
+        (o[["approval", "prep", "transit"]] < 0).any(axis=1).sum()
+    )
+    o.attrs["excluded_nan_stage"] = int(o[STAGES].isna().any(axis=1).sum())
+    if not include_invalid:
+        o = o.loc[~invalid].copy()
+
+    # F6: promise_days phải bằng total_lead_days − delay_days (sai số số học).
+    gap = (o["promise_days"] - (o["total_lead_days"] - o["delay_days"])).abs()
+    o.attrs["promise_gap_max"] = float(gap.max()) if len(gap) else 0.0
+    o.attrs["excluded_stage_invalid_rows"] = int(invalid.sum())
+    o.attrs["excluded_stage_invalid_share"] = (
+        float(invalid.sum() / n_all) if n_all else 0.0
+    )
+    o.attrs["n_order_route"] = int(len(o))
+    o.attrs["n_orders"] = int(o["order_id"].nunique())
+    o.attrs["late_rate_order_route"] = float(o["is_late"].mean()) if len(o) else float("nan")
+    # Tỷ lệ trễ cấp đơn: mỗi order_id chỉ tính 1 lần (đơn nhiều tuyến không nhân đôi).
+    order_late = o.groupby("order_id")["is_late"].max()
+    o.attrs["late_rate_order"] = float(order_late.mean()) if len(order_late) else float("nan")
+
+    # weight_band: qcut 4 phần bằng nhau trên weight_g ở runtime.
+    try:
+        bands = pd.qcut(
+            o["weight"], q=4, labels=["Q1", "Q2", "Q3", "Q4"], duplicates="drop"
+        )
+    except ValueError:
+        bands = pd.Series(pd.NA, index=o.index, dtype="object")
+    if bands.isna().any() or bands.nunique(dropna=True) != 4:
+        # Nhiều weight trùng (ví dụ 0) làm qcut gộp bin: chia theo rank để vẫn đủ 4 nhóm.
+        bands = pd.qcut(
+            o["weight"].rank(method="first"), q=4, labels=["Q1", "Q2", "Q3", "Q4"]
+        )
+    o["weight_band"] = bands.astype(str)
+
+    return o
 
 
 def wilson_interval(late_orders, orders, z=1.96):

@@ -20,6 +20,7 @@ files = [
     "dim_time.py",
     "dim_location.py",
     "dim_product.py",
+    "dim_seller.py",
     "fact_delivery_sla.py",
 ]
 

@@ -8,7 +8,7 @@ CREATE TABLE Dim_Time (
 );
 
 CREATE TABLE Dim_Location (
-    location_id VARCHAR(50) PRIMARY KEY,
+    location_id VARCHAR(5) PRIMARY KEY,
     zip_code_prefix VARCHAR(5),
     city VARCHAR(100),
     state VARCHAR(5),
@@ -23,41 +23,59 @@ CREATE TABLE Dim_Product (
     volume_cm3 DOUBLE PRECISION
 );
 
+CREATE TABLE Dim_Seller (
+    seller_id VARCHAR(50) PRIMARY KEY,
+    location_id VARCHAR(5),
+    city VARCHAR(100),
+    state VARCHAR(5),
+    CONSTRAINT fk_seller_dim_location
+        FOREIGN KEY (location_id) REFERENCES Dim_Location(location_id)
+);
+
 CREATE TABLE Fact_Delivery_SLA (
     -- Khóa chính kết hợp
     order_id VARCHAR(50),
     order_item_id INT,
-    
+
     -- Các khóa ngoại (Foreign Keys)
     product_id VARCHAR(50),
-    customer_location_id VARCHAR(50),
-    seller_location_id VARCHAR(50),
+    seller_id VARCHAR(50),
+    customer_location_id VARCHAR(5),
+    seller_location_id VARCHAR(5),
     time_id INT,
-    
+
     -- Chiều suy biến (Degenerate Dimension)
     payment_type VARCHAR(50),
-    
+
     -- Các Độ đo (Measures)
+    price DOUBLE PRECISION,
+    freight_value DOUBLE PRECISION,
+    shipping_limit_date TIMESTAMP,
     approval_time_days DOUBLE PRECISION,
     seller_prep_time_days DOUBLE PRECISION,
     carrier_transit_time_days DOUBLE PRECISION,
-    freight_value DOUBLE PRECISION,
-    review_score INT,
     delay_days DOUBLE PRECISION,
+    total_lead_days DOUBLE PRECISION,
+    promise_days DOUBLE PRECISION,
+    handoff_slack_days DOUBLE PRECISION,
+    distance_km DOUBLE PRECISION,
+    review_score INT,
 
     -- Các cờ phân loại (Flags)
     has_logistics_complaint BOOLEAN,
 
     -- Ràng buộc Khóa chính
     PRIMARY KEY (order_id, order_item_id),
-    
+
     -- Ràng buộc Khóa ngoại
-    CONSTRAINT fk_product 
+    CONSTRAINT fk_product
         FOREIGN KEY (product_id) REFERENCES Dim_Product(product_id),
-    CONSTRAINT fk_customer_location 
+    CONSTRAINT fk_seller
+        FOREIGN KEY (seller_id) REFERENCES Dim_Seller(seller_id),
+    CONSTRAINT fk_customer_location
         FOREIGN KEY (customer_location_id) REFERENCES Dim_Location(location_id),
-    CONSTRAINT fk_seller_location 
+    CONSTRAINT fk_seller_location
         FOREIGN KEY (seller_location_id) REFERENCES Dim_Location(location_id),
-    CONSTRAINT fk_time 
+    CONSTRAINT fk_time
         FOREIGN KEY (time_id) REFERENCES Dim_Time(time_id)
 );

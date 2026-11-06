@@ -148,9 +148,9 @@ def test_uncertain_does_not_change_order_stage_or_bottleneck():
 
 
 def test_uncertain_on_warehouse_uses_overall_rate_not_test_prevalence(o):
-    """Ngưỡng trên kho thật là red/amber × tỷ lệ trễ chung ≈ 8,07%, không phải 5,98%."""
+    """Ngưỡng trên kho thật là red/amber × tỷ lệ trễ chung ≈ 8,16%, không phải 5,98%."""
     overall = float(o["is_late"].mean())
-    assert round(overall * 100, 2) == 8.07
+    assert round(overall * 100, 2) == 8.16
     assert round(TEST_PREVALENCE * 100, 2) == 5.98
     assert abs(overall - TEST_PREVALENCE) > 0.02
 
@@ -158,9 +158,9 @@ def test_uncertain_on_warehouse_uses_overall_rate_not_test_prevalence(o):
     red_thr = overall * 2.0
     amber_thr = overall * 1.5
     # Khóa cứng các mốc đã xác nhận (dung sai 4 chữ số thập phân).
-    assert overall == pytest.approx(0.0807, abs=1e-4)
-    assert red_thr == pytest.approx(0.1615, abs=1e-4)
-    assert amber_thr == pytest.approx(0.1211, abs=1e-4)
+    assert overall == pytest.approx(0.0816, abs=1e-4)
+    assert red_thr == pytest.approx(0.1631, abs=1e-4)
+    assert amber_thr == pytest.approx(0.1223, abs=1e-4)
     wrong_red = TEST_PREVALENCE * 2.0
     wrong_amber = TEST_PREVALENCE * 1.5
 
@@ -256,6 +256,25 @@ def test_default_top_contains_all_red_routes(o):
 def test_delay_days_valid(o):
     assert o.delay_days.notna().all()
     assert ((o.delay_days > 0) == o.is_late).all()
+
+
+def test_d2_fields_and_weight_band(o):
+    assert o.gmv.notna().all() and (o.gmv >= 0).all()
+    assert o.promise_days.notna().all()
+    assert o.seller_id.notna().all()
+    assert o.attrs["promise_gap_max"] < 1e-9
+    assert set(o.weight_band.unique()) == {"Q1", "Q2", "Q3", "Q4"}
+    assert o.distance_km.notna().mean() > 0.99
+
+
+def test_stage_invalid_excluded_from_stats():
+    raw = M.load_orders(include_invalid=True)
+    clean = M.load_orders()
+    assert (clean[["approval", "prep", "transit"]] >= 0).all().all()
+    assert not clean[["approval", "prep", "transit"]].isna().any().any()
+    assert len(clean) + raw.attrs["excluded_stage_invalid_rows"] == len(raw)
+    assert raw.attrs["excluded_stage_invalid_rows"] > 0
+    assert raw.attrs["late_rate_order"] != raw.attrs["late_rate_order_route"]
 
 
 def test_zero_cut_is_baseline(o):

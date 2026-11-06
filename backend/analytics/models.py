@@ -78,7 +78,7 @@ class AuthUserUserPermissions(models.Model):
 
 
 class DimLocation(models.Model):
-    location_id = models.CharField(primary_key=True, max_length=50)
+    location_id = models.CharField(primary_key=True, max_length=5)
     zip_code_prefix = models.CharField(max_length=5, blank=True, null=True)
     city = models.CharField(max_length=100, blank=True, null=True)
     state = models.CharField(max_length=5, blank=True, null=True)
@@ -88,6 +88,17 @@ class DimLocation(models.Model):
     class Meta:
         managed = False
         db_table = 'dim_location'
+
+
+class DimSeller(models.Model):
+    seller_id = models.CharField(primary_key=True, max_length=50)
+    location = models.ForeignKey(DimLocation, models.DO_NOTHING, blank=True, null=True)
+    city = models.CharField(max_length=100, blank=True, null=True)
+    state = models.CharField(max_length=5, blank=True, null=True)
+
+    class Meta:
+        managed = False
+        db_table = 'dim_seller'
 
 
 class DimProduct(models.Model):
@@ -164,16 +175,23 @@ class FactDeliverySla(models.Model):
     order_id = models.CharField(max_length=50)
     order_item_id = models.IntegerField()
     product = models.ForeignKey(DimProduct, models.DO_NOTHING, blank=True, null=True)
+    seller = models.ForeignKey(DimSeller, models.DO_NOTHING, blank=True, null=True)
     customer_location = models.ForeignKey(DimLocation, models.DO_NOTHING, blank=True, null=True)
     seller_location = models.ForeignKey(DimLocation, models.DO_NOTHING, related_name='factdeliverysla_seller_location_set', blank=True, null=True)
     time = models.ForeignKey(DimTime, models.DO_NOTHING, blank=True, null=True)
     payment_type = models.CharField(max_length=50, blank=True, null=True)
+    price = models.FloatField(blank=True, null=True)
+    freight_value = models.FloatField(blank=True, null=True)
+    shipping_limit_date = models.DateTimeField(blank=True, null=True)
     approval_time_days = models.FloatField(blank=True, null=True)
     seller_prep_time_days = models.FloatField(blank=True, null=True)
     carrier_transit_time_days = models.FloatField(blank=True, null=True)
-    freight_value = models.FloatField(blank=True, null=True)
-    review_score = models.IntegerField(blank=True, null=True)
     delay_days = models.FloatField(blank=True, null=True)
+    total_lead_days = models.FloatField(blank=True, null=True)
+    promise_days = models.FloatField(blank=True, null=True)
+    handoff_slack_days = models.FloatField(blank=True, null=True)
+    distance_km = models.FloatField(blank=True, null=True)
+    review_score = models.IntegerField(blank=True, null=True)
     has_logistics_complaint = models.BooleanField(blank=True, null=True)
 
     class Meta:
