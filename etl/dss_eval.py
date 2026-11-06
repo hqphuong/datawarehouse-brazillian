@@ -811,6 +811,8 @@ def main() -> None:
         "- promise_days − (total_lead_days − delay_days) max abs: "
         f"{o.attrs['promise_gap_max']:.3g}"
     )
+    mismatch = int((o.is_late != (o.total_lead_days > o.promise_days)).sum())
+    print(f"- late0 != (delay_days > 0): {mismatch} dòng")
     multi_route = int((o.groupby("order_id").size() > 1).sum())
     multi_seller = int((o.groupby("order_id").seller_id.nunique() > 1).sum())
     print(f"- Đơn nằm trên >1 tuyến: {multi_route}")
