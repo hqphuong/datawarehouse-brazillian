@@ -32,8 +32,10 @@ print("Đang đọc dữ liệu cho Fact_Delivery_SLA...")
 df_orders = pd.read_csv(RAW_ORDERS)
 df_items = pd.read_csv(RAW_ORDER_ITEMS)
 df_reviews = pd.read_csv(RAW_ORDER_REVIEWS)
-df_customers = pd.read_csv(RAW_CUSTOMERS)
-df_sellers = pd.read_csv(RAW_SELLERS)
+df_customers = pd.read_csv(
+    RAW_CUSTOMERS, dtype={"customer_zip_code_prefix": str}
+)
+df_sellers = pd.read_csv(RAW_SELLERS, dtype={"seller_zip_code_prefix": str})
 df_payments = pd.read_csv(RAW_ORDER_PAYMENTS)
 
 print("Đang biến đổi và tính toán (Transform)...")
@@ -104,6 +106,16 @@ fact_df = fact_df.rename(columns={"customer_zip_code_prefix": "customer_location
 # Nối địa điểm người bán
 fact_df = fact_df.merge(df_sellers[["seller_id", "seller_zip_code_prefix"]], on="seller_id", how="left")
 fact_df = fact_df.rename(columns={"seller_zip_code_prefix": "seller_location_id"})
+
+# Chuẩn hóa khóa địa điểm về đúng 5 ký tự, khớp Dim_Location.
+for col in ("customer_location_id", "seller_location_id"):
+    fact_df[col] = fact_df[col].astype(str).str.zfill(5)
+    bad = fact_df[col].str.len() != 5
+    if bad.any():
+        raise ValueError(
+            f"{col} không đủ 5 ký tự: {int(bad.sum())} dòng "
+            f"{fact_df.loc[bad, col].head(5).tolist()}"
+        )
 
 # Nối Đánh giá & Thanh toán
 fact_df = fact_df.merge(df_reviews[["order_id", "review_score", "has_logistics_complaint"]], on="order_id", how="left")

@@ -11,9 +11,11 @@ ensure_dirs()
 OUTPUT_FILE = PROCESSED_DIR / "cleaned_dim_location.csv"
 
 print("Đang đọc dữ liệu gốc...")
-df_customers = pd.read_csv(RAW_CUSTOMERS)
-df_sellers = pd.read_csv(RAW_SELLERS)
-df_geo = pd.read_csv(RAW_GEOLOCATION)
+df_customers = pd.read_csv(
+    RAW_CUSTOMERS, dtype={"customer_zip_code_prefix": str}
+)
+df_sellers = pd.read_csv(RAW_SELLERS, dtype={"seller_zip_code_prefix": str})
+df_geo = pd.read_csv(RAW_GEOLOCATION, dtype={"geolocation_zip_code_prefix": str})
 
 print("Đang xử lý Tọa độ địa lý (Geolocation)...")
 # Gom nhóm để lấy tọa độ trung tâm (mean) của từng mã bưu điện
@@ -41,8 +43,18 @@ loc_seller.columns = ["location_id", "city", "state"]
 
 # Gộp danh sách
 dim_location = pd.concat([loc_customer, loc_seller], ignore_index=True)
+dim_location["location_id"] = dim_location["location_id"].astype(str).str.zfill(5)
 dim_location = dim_location.drop_duplicates(subset=["location_id"], keep="first")
-dim_location["zip_code_prefix"] = dim_location["location_id"].astype(str).str.zfill(5)
+dim_location["zip_code_prefix"] = dim_location["location_id"]
+
+# Khóa địa điểm phải luôn đủ 5 ký tự (mã bưu điện Brazil). Sai độ dài sẽ làm
+# hỏng join FK ở Fact, nên dừng pipeline thay vì âm thầm nạp dữ liệu sai.
+bad_len = dim_location["location_id"].str.len() != 5
+if bad_len.any():
+    raise ValueError(
+        f"location_id không đủ 5 ký tự: {int(bad_len.sum())} dòng "
+        f"{dim_location.loc[bad_len, 'location_id'].head(5).tolist()}"
+    )
 
 # Kết nối (Merge) Bảng địa điểm với Bảng tọa độ
 dim_location = dim_location.merge(
