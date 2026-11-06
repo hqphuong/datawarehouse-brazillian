@@ -20,10 +20,11 @@ Hệ thống gồm 4 phần:
   PostgreSQL.
 - **DW**: 4 bảng `Dim_Time`, `Dim_Location`, `Dim_Product`, `Fact_Delivery_SLA`
   đã được tạo và nạp dữ liệu.
-- **Backend**: khung Django + app `analytics`, các model ánh xạ trực tiếp DW
-  (`managed = False`). Hiện mới có route `/admin/`, **chưa có API endpoint**.
-- **Frontend**: khung Vite + React (chưa nối API, giao diện DSS còn ở dạng
-  mockup).
+- **Backend**: Django + app `analytics` (model ánh xạ DW, `managed = False`) và
+  app `dss`. API DSS tại `/api/dss/` gồm `routes`, `scenario`, `promise`,
+  `actions`; tài liệu: `reports/api_dss.md`.
+- **Frontend**: `web/Olist_Logistics_DSS_v3.html` — tab **DSS** gọi API Django
+  thật; 3 tab còn lại vẫn là mock (xem cảnh báo bên dưới).
 - **Mockup UI**: `Olist Logistics DSS.html` — mở trực tiếp bằng trình duyệt.
 - **Prisma**: schema mô tả DW và Prisma Client (dùng cho tooling/Node).
 - **Kiểm thử**: 26 pytest, 16 Django test (`manage.py test dss`).
