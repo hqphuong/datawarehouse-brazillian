@@ -10,26 +10,34 @@ except ImportError:  # chạy trực tiếp: python src/load_data.py
     from config import WAREHOUSE_TABLES, ensure_dirs, get_db_config
 
 
-def load_data_warehouse():
+def load_data_warehouse() -> None:
+    """Nạp toàn bộ kho trong MỘT transaction.
+
+    TRUNCATE và mọi COPY nằm trong cùng transaction; chỉ commit khi tất cả
+    bảng đã nạp xong. Nếu bất kỳ bước nào lỗi → rollback toàn bộ và raise để
+    người chạy thấy lỗi (không để kho ở trạng thái nửa vời).
+    """
     ensure_dirs()
     db_config = get_db_config()
-    print(f"Đang kết nối đến PostgreSQL: {db_config['user']}@{db_config['host']}:{db_config['port']}/{db_config['dbname']}...")
+    print(
+        f"Đang kết nối đến PostgreSQL: {db_config['user']}@"
+        f"{db_config['host']}:{db_config['port']}/{db_config['dbname']}..."
+    )
 
-    conn = None
+    conn = psycopg2.connect(**db_config)
     try:
-        conn = psycopg2.connect(**db_config)
         cur = conn.cursor()
 
-        # --- BƯỚC MỚI: DỌN DẸP SẠCH SẼ DATABASE TRƯỚC KHI NẠP ---
+        # TRUNCATE + COPY trong cùng transaction. Không commit giữa chừng.
+        tables = ", ".join(WAREHOUSE_TABLES)
         print("Đang dọn dẹp dữ liệu cũ để tránh lỗi trùng lặp...")
-        cur.execute("TRUNCATE TABLE Fact_Delivery_SLA, Dim_Product, Dim_Location, Dim_Time CASCADE;")
-        conn.commit()
-        print("Đã dọn dẹp xong!")
-        # --------------------------------------------------------
+        cur.execute(f"TRUNCATE TABLE {tables} CASCADE;")
 
         for table_name, file_path in WAREHOUSE_TABLES.items():
             if not file_path.is_file():
-                raise FileNotFoundError(f"Thiếu file dữ liệu: {file_path}\nHãy chạy các script ETL trước.")
+                raise FileNotFoundError(
+                    f"Thiếu file dữ liệu: {file_path}\nHãy chạy các script ETL trước."
+                )
 
             print(f"Đang nạp dữ liệu vào bảng {table_name} (từ {file_path.name})...")
 
@@ -46,18 +54,18 @@ def load_data_warehouse():
                 )
                 cur.copy_expert(copy_sql, f)
 
-            conn.commit()
             print(f"-> Nạp thành công {table_name}!")
 
+        conn.commit()
         cur.close()
-        conn.close()
         print("\nHOÀN TẤT! Toàn bộ dữ liệu đã nằm gọn trong Data Warehouse.")
 
-    except Exception as e:
-        print(f"\n❌ LỖI: {e}")
-        if conn is not None:
-            conn.rollback()
-            conn.close()
+    except Exception:
+        conn.rollback()
+        print("\n❌ LỖI: đã rollback toàn bộ, kho giữ nguyên trạng thái trước khi nạp.")
+        raise
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":
