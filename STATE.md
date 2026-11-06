@@ -39,7 +39,7 @@ Việc 1 (test uncertain), việc 2 (bảng 14 tuyến), base\_cut, bootstrap, W
 
 \## Còn lại
 
-- Lesson 9 + bộ `reports/defense/` (CHEAT_SHEET, QA_BANK, DEMO_SCRIPT).
+- Đã tạo `reports/defense/CHEAT_SHEET.md`, `QA_BANK.md` (57 câu), `DEMO_SCRIPT.md` (10 phút + phương án dự phòng).
 - 6 huy hiệu giao diện (chờ tôi).
 - `README.md:24` còn ghi "chưa có API endpoint" — cần sửa.
 - `PROMPT_AI_TIEP_TUC.md` đang bị xoá ở worktree (chưa stage) — người dùng quyết định.
