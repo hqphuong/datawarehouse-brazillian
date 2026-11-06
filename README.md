@@ -104,12 +104,12 @@ Ví dụ với user `brazillian_admin` (đổi thông tin cho khớp `.env` củ
 psql -U postgres -c "CREATE USER brazillian_admin WITH PASSWORD '123456789';"
 psql -U postgres -c "CREATE DATABASE ""Brazillian"" OWNER brazillian_admin;"
 
-# Tạo 4 bảng DW
+# Tạo 5 bảng DW
 psql -U brazillian_admin -d Brazillian -f sql\create_tables.sql
 ```
 
 > Nếu database/user đã tồn tại, bỏ qua bước `CREATE` tương ứng. `create_tables.sql`
-> không dùng `IF NOT EXISTS`, nên nếu 4 bảng đã có thì cần drop trước khi tạo lại.
+> không dùng `IF NOT EXISTS`, nên nếu 5 bảng đã có thì cần drop trước khi tạo lại.
 
 ### 2. Môi trường Python cho ETL
 
@@ -157,7 +157,7 @@ python manage.py runserver
 ```
 
 Backend chạy tại `http://127.0.0.1:8000/`. Các model DW dùng
-`managed = False` nên **không cần migrate cho 4 bảng DW**. Nếu muốn dùng
+`managed = False` nên **không cần migrate cho 5 bảng DW**. Nếu muốn dùng
 Django Admin:
 
 ```powershell
@@ -218,7 +218,7 @@ python etl\config.py
 
 - Toàn bộ đường dẫn được tính bằng `pathlib` trong `etl/config.py`, nên chạy
   được từ bất kỳ thư mục nào.
-- `load_data.py` sẽ `TRUNCATE` cả 4 bảng DW rồi nạp lại toàn bộ, nên chạy lại
+- `load_data.py` sẽ `TRUNCATE` cả 5 bảng DW rồi nạp lại toàn bộ, nên chạy lại
   nhiều lần vẫn không bị trùng dữ liệu.
 - `data/processed/` nằm trong `.gitignore` vì có thể sinh lại từ `data/raw/`.
 - Lệnh `COPY` chỉ định rõ danh sách cột theo header CSV để tránh lệch thứ tự
