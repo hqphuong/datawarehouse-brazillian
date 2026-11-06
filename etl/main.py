@@ -2,8 +2,8 @@
 Điểm khởi chạy pipeline ETL.
 
 Cách chạy:
-    python src/main.py            # chỉ Transform (sinh file CSV trong data/processed)
-    python src/main.py --load     # Transform + Load (nạp vào PostgreSQL)
+    python -m etl.main            # chỉ Transform (sinh file CSV trong data/processed)
+    python -m etl.main --load     # Transform + Load (nạp vào PostgreSQL)
 """
 
 import subprocess

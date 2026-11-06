@@ -16,18 +16,18 @@ Hệ thống gồm 4 phần:
 
 ## Trạng thái hiện tại
 
-- **ETL**: hoàn chỉnh, sinh 4 file CSV trong `data/processed/` và nạp được vào
+- **ETL**: hoàn chỉnh, sinh 5 file CSV trong `data/processed/` và nạp được vào
   PostgreSQL.
-- **DW**: 4 bảng `Dim_Time`, `Dim_Location`, `Dim_Product`, `Fact_Delivery_SLA`
-  đã được tạo và nạp dữ liệu.
+- **DW**: 5 bảng `Dim_Time`, `Dim_Location`, `Dim_Product`, `Dim_Seller`,
+  `Fact_Delivery_SLA` đã được tạo và nạp dữ liệu.
 - **Backend**: Django + app `analytics` (model ánh xạ DW, `managed = False`) và
   app `dss`. API DSS tại `/api/dss/` gồm `routes`, `scenario`, `promise`,
   `actions`; tài liệu: `reports/api_dss.md`.
 - **Frontend**: `web/Olist_Logistics_DSS_v3.html` — tab **DSS** gọi API Django
   thật; 3 tab còn lại vẫn là mock (xem cảnh báo bên dưới).
-- **Mockup UI**: `Olist Logistics DSS.html` — mở trực tiếp bằng trình duyệt.
+- **Mockup UI**: `web/Olist_Logistics_DSS_v3.html` — mở trực tiếp bằng trình duyệt.
 - **Prisma**: schema mô tả DW và Prisma Client (dùng cho tooling/Node).
-- **Kiểm thử**: 26 pytest, 16 Django test (`manage.py test dss`).
+- **Kiểm thử**: 38 pytest, 16 Django test (`manage.py test dss`).
 
 > **⚠️ Nhãn cảnh báo giao diện:**
 > - Tab **Dashboard**, **OLAP**, **ETL Monitor** hiển thị **dữ liệu mẫu** (mock
@@ -46,7 +46,7 @@ Brazillian/
 ├── package.json                # Prisma & tiện ích Node ở thư mục gốc
 ├── prisma.config.ts
 ├── Assignment.code-workspace   # Mở project bằng VS Code
-├── Olist Logistics DSS.html    # Mockup giao diện DSS
+├── web/Olist_Logistics_DSS_v3.html  # Giao diện DSS (tab DSS gọi API thật)
 │
 ├── data/
 │   ├── raw/                    # 9 file CSV gốc Olist — KHÔNG sửa
@@ -58,11 +58,12 @@ Brazillian/
 │   ├── dim_time.py             # Sinh Dim_Time
 │   ├── dim_location.py         # Sinh Dim_Location
 │   ├── dim_product.py          # Sinh Dim_Product
+│   ├── dim_seller.py           # Sinh Dim_Seller
 │   ├── fact_delivery_sla.py    # Sinh Fact_Delivery_SLA
-│   └── load_data.py            # Nạp CSV vào PostgreSQL
+│   └── load_data.py            # Nạp CSV vào PostgreSQL (1 transaction)
 │
 ├── sql/
-│   └── create_tables.sql       # DDL tạo 4 bảng DW
+│   └── create_tables.sql       # DDL tạo 5 bảng DW
 │
 ├── prisma/
 │   └── schema.prisma           # Mô hình DW cho Prisma Client

@@ -10,7 +10,7 @@ bất kỳ thư mục nào mà vẫn tìm đúng data.
     │   ├── raw/              <- dữ liệu gốc từ Olist
     │   └── processed/        <- dữ liệu sau khi làm sạch
     ├── sql/create_tables.sql <- DDL tạo bảng
-    └── src/                  <- code ETL (file này)
+    └── etl/                  <- code ETL (file này)
 """
 
 from __future__ import annotations
