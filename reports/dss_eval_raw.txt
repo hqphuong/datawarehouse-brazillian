@@ -154,3 +154,14 @@ Thống kê cấp (đơn, tuyến): {'order_route_rows': 96981, 'approval_negati
 | SP->RJ | 92 | 8108 | 8016 | 0.155772 | 0.157061 | transit | transit | True | True | -0.0365295 | -0.0319286 | 0.21257 | 0.204748 | 3.60283 | 3.61952 |
 | SP->BA | 28 | 2295 | 2267 | 0.149891 | 0.149978 | transit | transit | True | True | 0.0640323 | 0.0643073 | 0.0172637 | 0.0135438 | 7.20337 | 7.16929 |
 | SP->ES | 16 | 1459 | 1443 | 0.141193 | 0.142065 | transit | transit | True | True | 0.0215265 | 0.0267526 | 0.0911328 | 0.0848606 | 3.11442 | 3.10232 |
+
+## Attribution (benchmark decile khoảng cách + Shapley)
+- Bất biến: {'n_orders': 95591, 'l1_row_efficiency': True, 'l1_max_error': 1.1102230246251565e-16, 'l2_aggregate_efficiency': True, 'l2_error': 0.0, 'l3_validity': True, 'passed': True}
+| route | orders | late_rate | residual_late_rate | residual_promise_days | phi_approval | phi_prep | phi_transit | phi_total | top_stage |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| SP->SP | 30178 | 0.062927 | 0.014812 | -11.7656 | 0.005048 | 0.014061 | 0.029006 | 0.048115 | transit |
+| SP->RJ | 8016 | 0.157061 | 0.007236 | -15.259 | 0.002807 | 0.011976 | 0.135042 | 0.149825 | transit |
+| SP->MG | 7283 | 0.064259 | 0.002334 | -14.9372 | 0.0027 | 0.008193 | 0.051032 | 0.061925 | transit |
+| SP->RS | 3520 | 0.076989 | 0.006534 | -16.9978 | 0.002415 | 0.007528 | 0.060511 | 0.070455 | transit |
+| SP->PR | 3044 | 0.054862 | 0.004599 | -15.4752 | 0.003066 | 0.006351 | 0.040845 | 0.050263 | transit |
+- Đánh giá xấu (late vs on-time): {'n_reviewed': 94945, 'n_missing_review': 646, 'n_late': 7631, 'n_ontime': 87314, 'bad_review_rate_late': 0.5416066046389726, 'bad_review_rate_ontime': 0.09441784822594315, 'absolute_uplift_pp': 44.718875641302944, 'relative_uplift': 5.736273541660268}

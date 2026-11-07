@@ -12,11 +12,13 @@
 - 14 tuyến gắn cờ ở min_orders=100 / red 2,0 / amber 1,5 (6 đỏ, 8 vàng); GMV 13.043.202,42.
 - Backtest min_orders=30: 16/19 kỳ DSS cao hơn baseline; 201807→201808 n=162, diff −9,40 pp.
 - Bootstrap pair (seed 42): vs 0 [+3,77; +12,55] pp; vs prior [+0,52; +5,92]; vs through [−0,50; +2,52] (chứa 0, không nói "vượt through").
-- Test 06/11/2026: **38 pytest passed**, **16 Django tests OK**.
+- Đơn trễ có review xấu (≤2) 54,16% vs 9,44% đúng hạn (+44,72 pp; liên hệ, không nhân quả).
+- Test 07/11/2026: **48 pytest passed**, **16 Django tests OK**.
 
 ## Đã xong (THẬT, kiểm 06/11/2026)
 
 - Checkpoint A: H1–H15 trong `reports/dss_defect_ledger.md`; F1–F9, D1–D2 `done` trong `reports/dss_requirements.md`.
+- Checkpoint B: `etl/dss_attrib.py` + `tests/test_dss_attrib.py` (benchmark, Shapley, summary, bad review, L1–L3); 10 test mới.
 - DB reload đủ 5 bảng: Dim_Time 612, Dim_Location 15.078, Dim_Product 32.951, Dim_Seller 3.095, Fact_Delivery_SLA 110.173; 0 orphan FK.
 - Fact 21 cột: thêm seller_id, price, shipping_limit_date, promise_days, total_lead_days, handoff_slack_days, distance_km; weight_band qcut 4 lúc chạy.
 - Base DSS hiện có: `route_priority`, `root_cause`, `scenario`, `sensitivity`, `goal_seek_promise`, `goal_seek_cut`, Wilson/red-first/uncertain, bootstrap CI, excess_ratio.
@@ -25,7 +27,7 @@
 
 ## CHƯA có trong repo (đừng dạy/đừng nói là đã có)
 
-`dss_attrib` (Shapley/benchmark/residual), portfolio, promise calibration, seller scorecard, Decision Brief, AUC/time-split/replay, các badge UI v2.
+portfolio, promise calibration, seller scorecard, Decision Brief, AUC/time-split/replay, các badge UI v2.
 
 ## Còn lại
 
@@ -40,12 +42,12 @@ Branch: `dss-v2` (tag `before-optimize` tại 32a34ca). Deadline 15/11/2026 23:5
 
 - [x] F1 [x] F2 [x] F3 [x] F4 [x] F5 [x] F6 [x] F7 [x] F8 [x] F9
 - [x] D1 [x] D2
-- [ ] S1 [ ] S2 [ ] S3 [ ] S4 [ ] S5 [ ] S6 [ ] S7 [ ] S8
+- [x] S1 [x] S2 [ ] S3 [ ] S4 [ ] S5 [ ] S6 [ ] S7 [ ] S8
 - [ ] V1 [ ] V2 [ ] V3 [ ] V4
 - [ ] A1 [ ] U1 [ ] U2
 - [ ] X1 [ ] X2
 
-NEXT: Checkpoint B (S1, S2) — chờ duyệt G1.
+NEXT: Checkpoint C (S3, S4) — chờ duyệt G2.
 
 Schema facts đã xác minh (06/11/2026):
 - `data/processed/`: 5 CSV gồm dim_time, dim_location, dim_product, dim_seller, fact_delivery_sla.

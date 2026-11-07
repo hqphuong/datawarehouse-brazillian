@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 try:  # chạy như package: python -m etl.dss_eval
+    from . import dss_attrib as ATTRIB
     from . import dss_models as M
     from .config import (
         RAW_ORDER_ITEMS,
@@ -20,6 +21,7 @@ try:  # chạy như package: python -m etl.dss_eval
         RAW_ORDERS,
     )
 except ImportError:  # chạy trực tiếp: python etl/dss_eval.py
+    import dss_attrib as ATTRIB
     import dss_models as M
     from config import (
         RAW_ORDER_ITEMS,
@@ -882,6 +884,31 @@ def main() -> None:
     print("Thống kê cấp (đơn, tuyến):", negative_rows_summary(raw))
     print("Đã loại khỏi DSS:", o.attrs["excluded_stage_invalid_rows"], "order-route")
     print(_md_table(negative_time_comparison(raw, n=3)))
+
+    print("\n## Attribution (benchmark decile khoảng cách + Shapley)")
+    bench = ATTRIB.fit_benchmarks(o)
+    att = ATTRIB.attribute(o, bench)
+    print("- Bất biến:", ATTRIB.check_attrib(att))
+    summary = ATTRIB.attribution_summary(att, min_orders=30)
+    view = summary.sort_values("orders", ascending=False).head(5)[
+        [
+            "route",
+            "orders",
+            "late_rate",
+            "residual_late_rate",
+            "residual_promise_days",
+            "phi_approval",
+            "phi_prep",
+            "phi_transit",
+            "phi_total",
+            "top_stage",
+        ]
+    ].copy()
+    for col in view.columns:
+        if col not in {"route", "orders", "top_stage"}:
+            view[col] = view[col].round(6)
+    print(_md_table(view))
+    print("- Đánh giá xấu (late vs on-time):", ATTRIB.bad_review_uplift(att))
 
 
 if __name__ == "__main__":

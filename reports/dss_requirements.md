@@ -28,8 +28,8 @@ Mọi thay đổi trạng thái phải kèm evidence (lệnh chạy/file). Khôn
 
 | ID | Ưu tiên | Trạng thái | Evidence |
 |---|---|---|---|
-| S1 | P0 | todo | fit_benchmarks/attribute: Shapley 3 stage, phi_*, residual_promise, invariants |
-| S2 | P0 | todo | attribution_summary + bad_review_uplift + check_attrib L1–L3 |
+| S1 | P0 | done | `etl/dss_attrib.py`: `fit_benchmarks` (tuyến×decile khoảng cách, fallback route/global), `attribute` (Shapley 3 stage, `phi_*`, `residual_promise_days`); test ví dụ tay, symmetry, null player. |
+| S2 | P0 | done | `attribution_summary`, `bad_review_uplift`, `check_attrib` L1–L3; 10 test mới; raw eval mục "Attribution" (95.591 đơn, invariant pass). |
 | S3 | P0 | todo | promise calibration route×weight_band, min 100; tight/loose/ok; avoidable items |
 | S4 | P0 | todo | feasible_max_cut, status, bootstrap 300× CI, marginal_cut_table |
 | S5 | P1 | todo | seller_scorecard + portfolio; chỉ đơn single-seller, báo share loại |
