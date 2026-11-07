@@ -533,3 +533,49 @@ def test_seller_scorecard_rejects_bad_input():
         M.seller_portfolio(
             _seller_orders("A", 3, 1), scorecard=card.drop(columns=["level"])
         )
+
+
+def test_low_sample_targets_split_without_changing_route_priority():
+    frame = _orders_from_counts(
+        [
+            ("ZZ->ZZ", 2000, 100),  # nền, tỷ lệ chung ~7,06%
+            ("BIG->OK", 200, 0),  # đúng ngưỡng, không thuộc nhóm mẫu nhỏ
+            ("MA->SP", 118, 30),  # đỏ tạm, thiếu 82 đơn
+            ("PR->BA", 144, 40),  # đỏ tạm, thiếu 56 đơn
+            ("SP->TO", 195, 22),  # vàng tạm, thiếu 5 đơn
+            ("OK->SM", 50, 1),  # mẫu nhỏ nhưng không có tín hiệu
+        ]
+    )
+    low = M.low_sample_targets(frame)
+    assert list(low["route"]) == ["PR->BA", "MA->SP", "SP->TO"]
+    assert list(low["level"]) == ["red", "red", "amber"]
+    assert (low["status"] == "cần thêm dữ liệu").all()
+    assert (low["orders"] < 200).all()
+    assert list(low["needed_orders"]) == [56, 82, 5]
+    assert low.attrs["min_orders"] == 200
+    assert low.attrs["n_routes_total"] == 6
+    assert low.attrs["n_low_sample"] == 4
+    assert low.attrs["n_low_sample_candidates"] == 3
+    assert low.attrs["n_low_sample_late_orders"] == 30 + 40 + 22 + 1
+    assert low.attrs["n_candidate_late_orders"] == 30 + 40 + 22
+
+    # Không đổi route_priority: các tuyến mẫu nhỏ vẫn được gắn cờ như trước,
+    # không bị trộn thêm cột/nhóm "cần thêm dữ liệu".
+    priority = M.route_priority(frame)
+    assert set(priority["route"]) == {"PR->BA", "MA->SP", "SP->TO"}
+    assert "status" not in priority.columns
+    assert priority["low_sample"].all()
+
+    all_low = M.low_sample_targets(frame, include_unflagged=True)
+    assert set(all_low["route"]) == {"MA->SP", "PR->BA", "SP->TO", "OK->SM"}
+    assert len(M.low_sample_targets(frame, top=2)) == 2
+    assert len(M.low_sample_targets(frame, top=0)) == 3
+
+
+def test_low_sample_targets_rejects_bad_input():
+    with pytest.raises(ValueError):
+        M.low_sample_targets(pd.DataFrame())
+    with pytest.raises(ValueError):
+        M.low_sample_targets(_orders_from_counts([("A->B", 10, 1)]), min_orders=0)
+    with pytest.raises(ValueError):
+        M.low_sample_targets(_orders_from_counts([("A->B", 10, 1)]), top=-1)

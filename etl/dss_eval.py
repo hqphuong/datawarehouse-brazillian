@@ -1153,6 +1153,51 @@ def seller_report(o: pd.DataFrame) -> None:
     print(_md_table(view))
 
 
+def low_sample_report(o: pd.DataFrame) -> None:
+    """In S7: nhóm tuyến mẫu nhỏ tách riêng, không trộn vào xếp hạng chính."""
+    low = M.low_sample_targets(o, min_orders=200, top=10)
+    print("\n## Tuyến mẫu nhỏ — nhóm 'cần thêm dữ liệu' (S7)")
+    print(
+        "- `route_priority` GIỮ NGUYÊN hành vi (H7); bảng này chỉ tách riêng "
+        "các tuyến chưa đủ mẫu để không trộn vào danh sách ưu tiên chính."
+    )
+    print(
+        f"- Ngưỡng: orders < {low.attrs['min_orders']}; level là nhãn TẠM theo "
+        f"bội số red={low.attrs['red']:g} / amber={low.attrs['amber']:g} so với "
+        f"tỷ lệ trễ chung {low.attrs['overall_late_rate']:.6f}."
+    )
+    print(
+        f"- Tuyến mẫu nhỏ: {low.attrs['n_low_sample']}/"
+        f"{low.attrs['n_routes_total']}; có tín hiệu (red/amber tạm): "
+        f"{low.attrs['n_low_sample_candidates']}; đơn trễ trong nhóm: "
+        f"{low.attrs['n_candidate_late_orders']}/"
+        f"{low.attrs['n_low_sample_late_orders']}."
+    )
+    print(
+        "- `needed_orders` = số đơn còn thiếu để đạt ngưỡng; không kết luận "
+        "nhân quả, chỉ là danh sách cần thu thập thêm dữ liệu."
+    )
+    if len(low) == 0:
+        print("- Không có tuyến mẫu nhỏ nào có tín hiệu.")
+        return
+    cols = [
+        "route",
+        "orders",
+        "late_orders",
+        "late_rate",
+        "ci_low",
+        "ci_high",
+        "level",
+        "needed_orders",
+        "status",
+    ]
+    view = low[cols].copy()
+    for col in ("late_rate", "ci_low", "ci_high"):
+        view[col] = view[col].round(6)
+    print("\n### Top 10 tuyến mẫu nhỏ có tín hiệu")
+    print(_md_table(view))
+
+
 def main() -> None:
     raw = M.load_orders(include_invalid=True)
     o = M.load_orders()
@@ -1247,6 +1292,8 @@ def main() -> None:
 
     print("\n## Top 3 tuyến")
     print(_md_table(top_routes_report(o, n=3)))
+
+    low_sample_report(o)
 
     print("\n## Thời gian âm")
     print("Thống kê cấp (đơn, tuyến):", negative_rows_summary(raw))

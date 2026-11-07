@@ -509,6 +509,86 @@ def route_priority(
     return pd.concat([reds, ambers.head(top - len(reds))])
 
 
+def low_sample_targets(
+    o, min_orders=200, red=2.0, amber=1.5, top=10, include_unflagged=False
+):
+    """S7: tách riêng nhóm tuyến **chưa đủ mẫu** ("cần thêm dữ liệu").
+
+    Hàm này **không thay đổi** :func:`route_priority` (giữ nguyên hành vi theo
+    H7); nó chỉ trả một bảng phụ để UI/báo cáo không trộn tuyến mẫu nhỏ vào
+    danh sách ưu tiên chính.
+
+    Chỉ lấy tuyến có ``orders < min_orders`` (mặc định 200, cùng ngưỡng
+    ``low_sample`` của ``route_priority``). ``level`` là nhãn **tạm** theo cùng
+    luật bội số ``red``/``amber`` so với tỷ lệ trễ chung, nhưng ``status`` luôn
+    là ``"cần thêm dữ liệu"`` và có thêm ``needed_orders`` = số đơn còn thiếu
+    để đạt ngưỡng. Mặc định chỉ giữ tuyến có tín hiệu (level khác ``ok``);
+    đặt ``include_unflagged=True`` để lấy tất cả tuyến mẫu nhỏ.
+
+    Sắp theo ``late_orders`` giảm dần (tác động), rồi ``orders`` giảm dần.
+    Thông tin tổng hợp nằm trong ``.attrs``.
+    """
+    if min_orders < 1:
+        raise ValueError("min_orders phải >= 1")
+    if len(o) == 0:
+        raise ValueError("Không có dòng nào để low_sample_targets")
+    if top < 0:
+        raise ValueError("top phải >= 0")
+
+    overall = float(o.is_late.mean())
+    g = (
+        o.groupby("route")
+        .agg(
+            orders=("order_id", "nunique"),
+            late_orders=("is_late", "sum"),
+            late_rate=("is_late", "mean"),
+        )
+        .reset_index()
+    )
+    low = g[g["orders"] < min_orders].copy()
+    low["level"] = np.where(
+        low["late_rate"] >= overall * red,
+        "red",
+        np.where(low["late_rate"] >= overall * amber, "amber", "ok"),
+    )
+    intervals = [
+        wilson_interval(int(k), int(n))
+        for k, n in zip(low["late_orders"], low["orders"])
+    ]
+    low["ci_low"] = [lo for lo, _ in intervals]
+    low["ci_high"] = [hi for _, hi in intervals]
+    low["status"] = "cần thêm dữ liệu"
+    low["needed_orders"] = (min_orders - low["orders"]).astype(int)
+    low["late_orders_share_of_low"] = np.where(
+        low["late_orders"].sum() > 0,
+        low["late_orders"] / low["late_orders"].sum(),
+        np.nan,
+    )
+
+    n_low = int(len(low))
+    n_candidates = int((low["level"] != "ok").sum())
+    candidates = low if include_unflagged else low[low["level"] != "ok"]
+    out = candidates.sort_values(
+        ["late_orders", "orders"], ascending=False
+    ).reset_index(drop=True)
+    if top > 0:
+        out = out.head(top).reset_index(drop=True)
+
+    out.attrs["min_orders"] = int(min_orders)
+    out.attrs["red"] = float(red)
+    out.attrs["amber"] = float(amber)
+    out.attrs["overall_late_rate"] = overall
+    out.attrs["n_routes_total"] = int(len(g))
+    out.attrs["n_low_sample"] = n_low
+    out.attrs["n_low_sample_candidates"] = n_candidates
+    out.attrs["n_low_sample_late_orders"] = int(low["late_orders"].sum())
+    out.attrs["n_candidate_late_orders"] = int(
+        low.loc[low["level"] != "ok", "late_orders"].sum()
+    )
+    out.attrs["n_returned"] = int(len(out))
+    return out
+
+
 def root_cause(o, route):
     """Khối 2: tìm giai đoạn vượt mức trung bình hệ thống nhiều nhất.
 

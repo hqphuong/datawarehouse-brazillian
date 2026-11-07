@@ -146,6 +146,26 @@ Kết luận pair bootstrap:
 | SP->BA | 2267 | 340 | 0.149978 | amber | transit | True | 0.0643073 | 0.0135438 | 7.16929 | 0.159891 | 0.00475933 | 0.766706 | False | 0.144243 | 0.143361 | 0.14292 |  | 0.132775 | 0.118659 | 0.112925 |  | 0.128805 | 0.105426 | 0.0864579 | 10 | 10 | 0.0471989 |
 | SP->ES | 1443 | 205 | 0.142065 | amber | transit | True | 0.0267526 | 0.0848606 | 3.10232 | 0.0665164 | 0.0298203 | 0.331772 | False | 0.137907 | 0.135828 | 0.135828 |  | 0.126819 | 0.112266 | 0.108801 |  | 0.123354 | 0.0977131 | 0.0790021 | 9 | 9 | 0.045045 |
 
+## Tuyến mẫu nhỏ — nhóm 'cần thêm dữ liệu' (S7)
+- `route_priority` GIỮ NGUYÊN hành vi (H7); bảng này chỉ tách riêng các tuyến chưa đủ mẫu để không trộn vào danh sách ưu tiên chính.
+- Ngưỡng: orders < 200; level là nhãn TẠM theo bội số red=2 / amber=1.5 so với tỷ lệ trễ chung 0.081556.
+- Tuyến mẫu nhỏ: 357/406; có tín hiệu (red/amber tạm): 89; đơn trễ trong nhóm: 382/670.
+- `needed_orders` = số đơn còn thiếu để đạt ngưỡng; không kết luận nhân quả, chỉ là danh sách cần thu thập thêm dữ liệu.
+
+### Top 10 tuyến mẫu nhỏ có tín hiệu
+| route | orders | late_orders | late_rate | ci_low | ci_high | level | needed_orders | status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| MA->SP | 118 | 31 | 0.262712 | 0.191688 | 0.348699 | red | 82 | cần thêm dữ liệu |
+| SP->TO | 195 | 25 | 0.128205 | 0.088367 | 0.182409 | amber | 5 | cần thêm dữ liệu |
+| PR->BA | 144 | 24 | 0.166667 | 0.114632 | 0.236024 | red | 56 | cần thêm dữ liệu |
+| PR->AL | 37 | 13 | 0.351351 | 0.218254 | 0.512413 | red | 163 | cần thêm dữ liệu |
+| RJ->PE | 95 | 12 | 0.126316 | 0.073756 | 0.207923 | amber | 105 | cần thêm dữ liệu |
+| PR->PE | 87 | 12 | 0.137931 | 0.080697 | 0.225788 | amber | 113 | cần thêm dữ liệu |
+| RJ->CE | 57 | 12 | 0.210526 | 0.124744 | 0.332864 | red | 143 | cần thêm dữ liệu |
+| SC->BA | 78 | 10 | 0.128205 | 0.071152 | 0.220161 | amber | 122 | cần thêm dữ liệu |
+| PR->CE | 68 | 10 | 0.147059 | 0.081887 | 0.249976 | amber | 132 | cần thêm dữ liệu |
+| MG->MA | 64 | 10 | 0.15625 | 0.087147 | 0.264283 | amber | 136 | cần thêm dữ liệu |
+
 ## Thời gian âm
 Thống kê cấp (đơn, tuyến): {'order_route_rows': 96981, 'approval_negative': 0, 'prep_negative': 1361, 'transit_negative': 29, 'any_negative': 1390, 'nan_stage': 0}
 Đã loại khỏi DSS: 1390 order-route

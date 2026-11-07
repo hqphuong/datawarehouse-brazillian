@@ -19,7 +19,8 @@
 - S3 promise calibration: 130/1.157 ô route×weight_band đủ mẫu (83.104/95.591 đơn-tuyến); 89 tight / 11 ok / 30 loose; 3.751/6.720 đơn trễ có thể tránh nếu promise = Q95 (đổi định nghĩa trễ, không rút ngắn giao). SP→SP: 4/4 ô tight; `share_promise` 36,02% (q=0,5) vs 3,11% (q=0,25).
 - S4 feasible max cut (peer P25 cùng định nghĩa S1, bootstrap 300× seed 42): 71/406 tuyến đủ 100 đơn-tuyến. Top theo số đơn tránh: SP→SP 1.023 đơn (CI +3,19…+3,61 pp), SP→RJ 659 (+7,52…+8,83 pp), SP→MG 261, SP→BA 231, SP→SC 178; tất cả "có cơ sở". H10: cắt 1 ngày tại SP→RJ → approval 15,36% / prep 14,50% / transit 14,32% (baseline 15,71%).
 - S5 seller scorecard/portfolio (chỉ đơn single-seller): loại 502 đơn nhiều seller (0,5280% đơn / 1,0576% đơn-tuyến); 94.580/95.082 đơn, 2.948 seller, 609 seller đủ mẫu ≥30. Ưu tiên 252 seller / 4.117 đơn trễ (52,86% đơn trễ); ổn định 357 / 2.332 (29,94%); cần thêm dữ liệu 2.339 / 1.339 (17,19%). Top 10 seller = 15,36% đơn trễ, 9,79% GMV.
-- Test 07/11/2026: **62 pytest passed**, **16 Django tests OK**; S1 `5606c08`, S3 `0f84768`, S4 `33d98e8`, S5 commit sẽ ghi sau.
+- S7 low-sample split: 357/406 tuyến có <200 đơn; 89 tuyến có tín hiệu tạm (red/amber) với 382/670 đơn trễ của nhóm. Top: MA→SP 118/31 (thiếu 82 đơn), SP→TO 195/25 (thiếu 5), PR→BA 144/24 (thiếu 56). `route_priority` không đổi.
+- Test 07/11/2026: **64 pytest passed**, **16 Django tests OK**; S1 `5606c08`, S3 `0f84768`, S4 `33d98e8`, S5 `9e6c72f`, S7 commit sẽ ghi sau.
 
 ## Đã xong (THẬT, kiểm 07/11/2026)
 
@@ -54,12 +55,12 @@ Branch: `dss-v2` (tag `before-optimize` tại 32a34ca). Deadline 15/11/2026 23:5
 
 - [x] F1 [x] F2 [x] F3 [x] F4 [x] F5 [x] F6 [x] F7 [x] F8 [x] F9
 - [x] D1 [x] D2
-- [x] S1 [x] S2 [x] S3 [x] S4 [x] S5 [ ] S6 [ ] S7 [ ] S8
+- [x] S1 [x] S2 [x] S3 [x] S4 [x] S5 [x] S6 [ ] S7 [x] S8 [ ]
 - [ ] V1 [ ] V2 [ ] V3 [ ] V4
 - [ ] A1 [ ] U1 [ ] U2
 - [ ] X1 [ ] X2 [ ] X3
 
-NEXT: Checkpoint C — S7 tách nhóm mẫu nhỏ (route_priority giữ nguyên, nhóm "cần thêm dữ liệu" riêng).
+NEXT: Checkpoint C — S8 bảng nhạy ngưỡng min_orders × (red, amber) đủ 4 mức × 6 cặp.
 
 Schema facts đã xác minh (06/11/2026):
 - `data/processed/`: 5 CSV gồm dim_time, dim_location, dim_product, dim_seller, fact_delivery_sla.
