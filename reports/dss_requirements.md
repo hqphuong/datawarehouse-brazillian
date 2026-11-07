@@ -60,4 +60,4 @@ Mọi thay đổi trạng thái phải kèm evidence (lệnh chạy/file). Khôn
 |---|---|---|---|
 | X1 | P0 | todo | append mục tiếng Việt vào dss_formulas.md + dss_results.md (số từ raw eval) |
 | X2 | P1 | todo | refresh CHEAT_SHEET.md, QA_BANK.md (≥57 Q), DEMO_SCRIPT.md |
-| X3 | P1 | todo | Deviation đã duyệt (G2): đồng bộ số cũ (README, run_guide, TOM_TAT, dss_results.md, defense files) MỘT LẦN sau Checkpoint D, dùng số cuối từ `dss_eval_raw.txt` (test hiện tại 48/16). Ưu tiên nếu hết giờ: README, run_guide, TOM_TAT, QA_BANK. Không done khi chưa evidence. |
+| X3 | P1 | todo | Deviation đã duyệt (G2): đồng bộ số cũ (README, run_guide, TOM_TAT, dss_results.md, defense files) MỘT LẦN sau Checkpoint D, dùng số cuối từ `dss_eval_raw.txt` (test hiện tại 49/16). Ưu tiên nếu hết giờ: README, run_guide, TOM_TAT, QA_BANK. Không done khi chưa evidence. |

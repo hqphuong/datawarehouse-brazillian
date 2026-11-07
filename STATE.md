@@ -13,7 +13,7 @@
 - Backtest min_orders=30: 16/19 kỳ DSS cao hơn baseline; 201807→201808 n=162, diff −9,40 pp.
 - Bootstrap pair (seed 42): vs 0 [+3,77; +12,55] pp; vs prior [+0,52; +5,92]; vs through [−0,50; +2,52] (chứa 0, không nói "vượt through").
 - Đơn trễ có review xấu (≤2) 54,16% vs 9,44% đúng hạn (+44,72 pp; liên hệ, không nhân quả).
-- Test 07/11/2026: **48 pytest passed**, **16 Django tests OK**.
+- Test 07/11/2026: **49 pytest passed**, **16 Django tests OK**.
 
 ## Đã xong (THẬT, kiểm 07/11/2026)
 
