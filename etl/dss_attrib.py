@@ -38,15 +38,16 @@ tổng hợp; L3 kiểm tra miền giá trị/dữ liệu hữu hạn.
 
 from __future__ import annotations
 
+import math
 from itertools import permutations
 
 import numpy as np
 import pandas as pd
 
 try:  # chạy như package: python -m etl.dss_attrib
-    from .dss_models import STAGES, load_orders
+    from .dss_models import STAGES, load_orders, scenario
 except ImportError:  # chạy trực tiếp: python etl/dss_attrib.py
-    from dss_models import STAGES, load_orders
+    from dss_models import STAGES, load_orders, scenario
 
 PHI_COLS = [f"phi_{s}" for s in STAGES]
 EXCESS_COLS = [f"excess_{s}" for s in STAGES]
@@ -353,6 +354,137 @@ def attribution_summary(
     if min_orders > 0:
         out = out[~out["low_sample"]].copy()
     return out.sort_values("phi_total", ascending=False).reset_index(drop=True)
+
+
+PROMISE_LABELS = ("tight", "ok", "loose")
+
+
+def promise_calibration(
+    o: pd.DataFrame,
+    min_orders: int = 100,
+    quantile: float = 0.95,
+    tolerance_days: float = 1.0,
+) -> pd.DataFrame:
+    """Hiệu chỉnh cam kết giao hàng theo ô ``route × weight_band`` (S3).
+
+    Đơn vị là **đơn-tuyến** (một dòng = một cặp ``order_id`` + ``route``). Mỗi ô
+    cần tối thiểu ``min_orders`` đơn-tuyến để đủ tin cậy; ô nhỏ hơn bị loại khỏi
+    bảng và được đếm trong ``.attrs`` (không âm thầm bỏ).
+
+    Ý tưởng: cam kết hiện tại (``promise_days``) là một con số nghiệp vụ, còn
+    ``needed_days = ceil(Q95 total_lead_days)`` là số ngày cần để 95% đơn trong
+    ô giao đúng hạn theo **thời gian giao thực tế**. So sánh hai giá trị:
+
+    - ``gap_days = median_promise_days − needed_days``.
+    - ``tight``: gap < −``tolerance_days`` → cam kết chặt hơn mức giao thực tế.
+    - ``loose``: gap > +``tolerance_days`` → cam kết lỏng hơn mức giao thực tế.
+    - ``ok``: phần còn lại (trong khoảng ±``tolerance_days``).
+
+    ``avoidable_orders`` = số đơn **đang trễ nhưng sẽ đúng hạn nếu cam kết bằng
+    ``needed_days``** (``total_lead_days ≤ needed_days``). Đây chỉ là thay đổi
+    **định nghĩa trễ**, không rút ngắn thời gian giao thực tế; vì vậy không được
+    diễn giải là "giảm trễ" theo nghĩa vận hành.
+
+    Trả về DataFrame một dòng / ô đủ mẫu, sắp theo ``avoidable_orders`` giảm dần.
+    Các thông tin tổng hợp nằm trong ``.attrs``: số ô giữ/loại, số đơn-tuyến,
+    tổng ``avoidable_orders``, phân bố nhãn và tham số.
+
+    Tham số:
+        o: bảng đơn-tuyến từ :func:`etl.dss_models.load_orders`.
+        min_orders: ngưỡng mẫu tối thiểu cho mỗi ô (mặc định 100).
+        quantile: phân vị thời gian giao dùng làm cam kết mục tiêu (mặc định 0,95).
+        tolerance_days: dung sai ± ngày để coi là ``ok`` (mặc định 1,0).
+    """
+    required = [
+        "order_id",
+        "route",
+        "weight_band",
+        "promise_days",
+        "total_lead_days",
+        "is_late",
+    ]
+    missing = [c for c in required if c not in o.columns]
+    if missing:
+        raise ValueError(f"Thiếu cột để promise_calibration: {missing}")
+    if len(o) == 0:
+        raise ValueError("Không có dòng nào để promise_calibration")
+    if min_orders < 1:
+        raise ValueError("min_orders phải >= 1")
+    if not 0 < quantile < 1:
+        raise ValueError("quantile phải trong (0, 1)")
+    if tolerance_days < 0:
+        raise ValueError("tolerance_days phải >= 0")
+
+    d = o.copy()
+    d["weight_band"] = d["weight_band"].fillna("NA").astype(str)
+
+    def needed_days(series: pd.Series) -> int:
+        return int(math.ceil(float(series.quantile(quantile))))
+
+    cells = d.groupby(["route", "weight_band"], as_index=False).agg(
+        n_orders=("order_id", "size"),
+        late_orders=("is_late", "sum"),
+        median_promise_days=("promise_days", "median"),
+        needed_days=("total_lead_days", needed_days),
+    )
+    cells["current_late_rate"] = cells["late_orders"] / cells["n_orders"]
+    cells["gap_days"] = cells["median_promise_days"] - cells["needed_days"]
+    cells["label"] = np.select(
+        [
+            cells["gap_days"] < -float(tolerance_days),
+            cells["gap_days"] > float(tolerance_days),
+        ],
+        ["tight", "loose"],
+        default="ok",
+    )
+
+    # Đánh giá từng đơn-tuyến dưới cam kết hiệu chỉnh = needed_days của ô.
+    m = d.merge(
+        cells[["route", "weight_band", "needed_days"]],
+        on=["route", "weight_band"],
+        how="left",
+    )
+    currently_late = m["is_late"].astype(bool)
+    calibrated_late = m["total_lead_days"] > m["needed_days"]
+    m["avoidable_order"] = currently_late & ~calibrated_late
+    m["calibrated_late"] = calibrated_late
+    per_order = m.groupby(["route", "weight_band"], as_index=False).agg(
+        avoidable_orders=("avoidable_order", "sum"),
+        calibrated_late_orders=("calibrated_late", "sum"),
+    )
+    cells = cells.merge(per_order, on=["route", "weight_band"], how="left")
+    cells["calibrated_late_rate"] = (
+        cells["calibrated_late_orders"] / cells["n_orders"]
+    )
+    cells["avoidable_share_of_late"] = np.where(
+        cells["late_orders"] > 0,
+        cells["avoidable_orders"] / cells["late_orders"],
+        np.nan,
+    )
+
+    small = cells[cells["n_orders"] < min_orders]
+    out = (
+        cells[cells["n_orders"] >= min_orders]
+        .sort_values(["avoidable_orders", "n_orders"], ascending=False)
+        .reset_index(drop=True)
+    )
+
+    out.attrs["min_orders"] = int(min_orders)
+    out.attrs["quantile"] = float(quantile)
+    out.attrs["tolerance_days"] = float(tolerance_days)
+    out.attrs["n_cells_total"] = int(len(cells))
+    out.attrs["n_cells_kept"] = int(len(out))
+    out.attrs["n_cells_small"] = int(len(small))
+    out.attrs["n_orders_total"] = int(len(d))
+    out.attrs["n_orders_kept"] = int(out["n_orders"].sum())
+    out.attrs["n_orders_small_cells"] = int(small["n_orders"].sum())
+    out.attrs["late_orders_kept"] = int(out["late_orders"].sum())
+    out.attrs["avoidable_orders"] = int(out["avoidable_orders"].sum())
+    out.attrs["calibrated_late_orders"] = int(out["calibrated_late_orders"].sum())
+    out.attrs["label_counts"] = {
+        label: int((out["label"] == label).sum()) for label in PROMISE_LABELS
+    }
+    return out
 
 
 def bad_review_uplift(o_attr: pd.DataFrame) -> dict:

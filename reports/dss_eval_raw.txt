@@ -159,6 +159,9 @@ Thống kê cấp (đơn, tuyến): {'order_route_rows': 96981, 'approval_negati
 - Thiết kế: approval theo payment_type; prep theo weight_band; transit theo distance_band (decile khoảng cách toàn cục, XUYÊN tuyến).
 - Fallback: nhóm < min_orders hoặc khóa "NA" dùng median toàn cục của chính giai đoạn.
 - Sensitivity chỉ q=0,25 và q=0,5. q=0,75 bị loại: benchmark 75th percentile chậm hơn actual, phi âm, phân rã không hợp lệ.
+- NHÃN: `cause_share_*`/`share_promise` là TỶ TRỌNG trong tập ĐƠN TRỄ, KHÔNG phải tỷ lệ trễ. Transit là khâu dài nhất nên chiếm tỷ trọng lớn là điều dễ hiểu.
+- Cột `orders` đếm ĐƠN-TUYẾN (order-route), không phải đơn hàng duy nhất.
+- Giá trị DSS nằm ở so sánh giữa các tuyến + số đơn trễ có thể tránh; phần promise chỉ nêu dạng khoảng theo q (≈1–13% toàn hệ thống ở q=0,25–0,5), không kết luận mạnh.
 
 ### q=0.5
 - Bất biến: {'n_orders': 95591, 'l1_row_efficiency': True, 'l1_max_error': 1.1102230246251565e-16, 'l2_aggregate_efficiency': True, 'l2_error': 0.0, 'l3_validity': True, 'passed': True}
@@ -171,8 +174,8 @@ Thống kê cấp (đơn, tuyến): {'order_route_rows': 96981, 'approval_negati
 | SP->MG | 7283 | 0.064259 | 0.020299 | 0.142094 | 0.801282 | 0.036325 | 0.05149 | transit |
 | SP->RS | 3520 | 0.076989 | 0.0123 | 0.093481 | 0.824108 | 0.070111 | 0.063447 | transit |
 | SP->PR | 3044 | 0.054862 | 0.00998 | 0.129741 | 0.770459 | 0.08982 | 0.042269 | transit |
-- SP->RJ: phi_transit=0.141051 (14.1051 pp), late_rate=0.157061
-- SP->SP: phi_transit=0.024598 (2.4598 pp), late_rate=0.062927
+- SP->RJ: phi_transit=0.141051 (14.1051 pp), late_rate=0.157061, share_promise (tỷ trọng trong đơn trễ)=0.024623
+- SP->SP: phi_transit=0.024598 (2.4598 pp), late_rate=0.062927, share_promise (tỷ trọng trong đơn trễ)=0.360190
 
 ### q=0.25
 - Bất biến: {'n_orders': 95591, 'l1_row_efficiency': True, 'l1_max_error': 1.1102230246251565e-16, 'l2_aggregate_efficiency': True, 'l2_error': 1.3877787807814457e-17, 'l3_validity': True, 'passed': True}
@@ -186,3 +189,41 @@ Thống kê cấp (đơn, tuyến): {'order_route_rows': 96981, 'approval_negati
 | SP->RS | 3520 | 0.076989 | 0.02706 | 0.130381 | 0.842558 | 0 | 0.064867 | transit |
 | SP->PR | 3044 | 0.054862 | 0.022954 | 0.199601 | 0.777445 | 0 | 0.042652 | transit |
 - Đánh giá xấu (late vs on-time): {'n_reviewed': 94945, 'n_missing_review': 646, 'n_late': 7631, 'n_ontime': 87314, 'bad_review_rate_late': 0.5416066046389726, 'bad_review_rate_ontime': 0.09441784822594315, 'absolute_uplift_pp': 44.718875641302944, 'relative_uplift': 5.736273541660268}
+
+## Promise calibration (S3: route × weight_band, Q95)
+- Đơn vị: ĐƠN-TUYẾN (order-route). Nhóm route × weight_band; ô < 100 đơn-tuyến bị loại khỏi bảng.
+- needed_days = ceil(Q95 total_lead_days); gap_days = median promise_days − needed_days.
+- Nhãn: tight nếu gap < −1 ngày; loose nếu gap > +1 ngày; còn lại ok.
+- avoidable_orders = số đơn ĐANG TRỄ nhưng sẽ đúng hạn nếu đặt promise = needed_days.
+- CẢNH BÁO: đổi promise = đổi ĐỊNH NGHĨA trễ, KHÔNG rút ngắn thời gian giao thực tế; không đọc là 'giảm trễ' vận hành.
+- Ô giữ/loại: 130/1157 (loại 1027 ô nhỏ = 12487 đơn-tuyến).
+- Đơn-tuyến trong ô đủ mẫu: 83104/95591.
+- Số ô tight/ok/loose: 89/11/30.
+- Tổng đơn trễ có thể tránh (đổi định nghĩa): 3751/6720 đơn-tuyến trễ.
+- Tỷ lệ trễ hiện tại (ô đủ mẫu): 0.080863; nếu promise = needed_days: 0.046364.
+
+### Top 10 ô theo số đơn trễ có thể tránh
+| route | weight_band | n_orders | median_promise_days | needed_days | gap_days | label | late_orders | avoidable_orders | calibrated_late_rate |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| SP->SP | Q4 | 7174 | 18.2648 | 22 | -3.73516 | tight | 499 | 283 | 0.042933 |
+| SP->SP | Q1 | 8567 | 15.3651 | 17 | -1.63486 | tight | 520 | 277 | 0.042839 |
+| SP->RJ | Q3 | 2166 | 24.139 | 40 | -15.861 | tight | 357 | 255 | 0.047553 |
+| SP->RJ | Q4 | 2109 | 25.3647 | 43 | -17.6353 | tight | 346 | 249 | 0.046942 |
+| SP->SP | Q3 | 7233 | 17.6608 | 19 | -1.33916 | tight | 471 | 220 | 0.047975 |
+| SP->SP | Q2 | 7204 | 16.3826 | 18 | -1.61743 | tight | 409 | 218 | 0.042199 |
+| SP->RJ | Q2 | 1861 | 24.4225 | 40 | -15.5775 | tight | 304 | 214 | 0.049436 |
+| SP->RJ | Q1 | 1880 | 24.0929 | 38 | -13.9071 | tight | 252 | 166 | 0.046277 |
+| SP->BA | Q1 | 651 | 29.2853 | 35 | -5.71468 | tight | 91 | 67 | 0.046083 |
+| SP->BA | Q4 | 573 | 30.48 | 40 | -9.52002 | tight | 87 | 65 | 0.048866 |
+
+### SP->SP (kiểm riêng)
+| route | weight_band | n_orders | median_promise_days | needed_days | gap_days | label | late_orders | avoidable_orders | calibrated_late_rate |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| SP->SP | Q4 | 7174 | 18.2648 | 22 | -3.73516 | tight | 499 | 283 | 0.042933 |
+| SP->SP | Q1 | 8567 | 15.3651 | 17 | -1.63486 | tight | 520 | 277 | 0.042839 |
+| SP->SP | Q3 | 7233 | 17.6608 | 19 | -1.33916 | tight | 471 | 220 | 0.047975 |
+| SP->SP | Q2 | 7204 | 16.3826 | 18 | -1.61743 | tight | 409 | 218 | 0.042199 |
+- share_promise SP->SP (tỷ trọng trong đơn trễ): q=0,5 = 0.360190 (36.0190%); q=0,25 = 0.031069 (3.1069%).
+- Nhãn S3 tại SP->SP: {'tight': 4}.
+- S3 (Q95 lead time) ủng hộ 'cam kết chặt' tại SP->SP: mọi ô đủ mẫu có promise < Q95.
+- Lưu ý: share_promise phụ thuộc mạnh vào q của benchmark; q=0,5 và q=0,25 cho hai bức tranh khác nhau. S3 dùng Q95 nên là lát cắt 'mức phục vụ 95%', không đồng nhất với benchmark q=0,5.

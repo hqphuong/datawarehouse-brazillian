@@ -30,7 +30,7 @@ Mọi thay đổi trạng thái phải kèm evidence (lệnh chạy/file). Khôn
 |---|---|---|---|
 | S1 | P0 | changed | Đã đổi theo G2 phương án (2): `fit_benchmarks` dùng peer group riêng từng giai đoạn — approval theo `payment_type`, prep theo `weight_band`, transit theo `distance_band` (decile khoảng cách toàn cục, **xuyên tuyến**); fallback median toàn cục khi nhóm < `min_orders` hoặc khóa `"NA"`. `attribute` giữ `benchmark_level_<stage>`; sensitivity q=0,25/0,5. Evidence: `reports/dss_eval_raw.txt` mục "Attribution" (95.591 đơn, L1–L3 pass); commit `5606c08` (`dss-opt: S1 cross-route peer benchmarks + q sensitivity`). |
 | S2 | P0 | done | `attribution_summary` (thêm `cause_share_*`, `share_promise`), `bad_review_uplift`, `check_attrib` L1–L3; 12 test attribution; raw eval mục "Attribution" (95.591 đơn, invariant pass). |
-| S3 | P0 | todo | promise calibration route×weight_band, min 100; tight/loose/ok; avoidable items |
+| S3 | P0 | done | `promise_calibration` (route×weight_band, min 100 đơn-tuyến, `needed_days=ceil(Q95 total_lead_days)`, nhãn tight/loose/ok ±1 ngày, `avoidable_orders`). Kết quả: 130/1.157 ô đủ mẫu (83.104/95.591 đơn-tuyến); 89 tight/11 ok/30 loose; 3.751/6.720 đơn trễ có thể tránh nếu đặt promise = Q95 (chỉ đổi định nghĩa trễ, không rút ngắn giao). SP->SP: 4/4 ô tight; `share_promise` q=0,5 = 36,02% vs q=0,25 = 3,11% (tỷ trọng trong đơn trễ). Evidence: `reports/dss_eval_raw.txt` mục "Promise calibration"; 53 pytest / 16 Django. |
 | S4 | P0 | todo | feasible_max_cut, status, bootstrap 300× CI, marginal_cut_table |
 | S5 | P1 | todo | seller_scorecard + portfolio; chỉ đơn single-seller, báo share loại |
 | S6 | P0 | todo | /brief: actions route/payment/promise (+seller), owner, CI, Vietnamese text |

@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -232,6 +234,84 @@ def test_bad_review_uplift_contract():
     o.loc[len(o)] = [1, np.nan]
     r = A.bad_review_uplift(o)
     assert r["n_missing_review"] == 1
+
+
+def _calibration_cell(route, weight_band, leads, promise):
+    return pd.DataFrame(
+        {
+            "order_id": [f"{route}-{weight_band}-{i}" for i in range(len(leads))],
+            "route": route,
+            "weight_band": weight_band,
+            "promise_days": promise,
+            "total_lead_days": leads,
+            "is_late": [lead > promise for lead in leads],
+        }
+    )
+
+
+def test_promise_calibration_labels_and_avoidable():
+    # 95 đơn lead=3, 5 đơn lead=10 -> Q95=3.35, needed=ceil=4.
+    # tight: promise=2 -> gap=-2 < -0.5; 95 đơn trễ 3 ngày tránh được.
+    tight = _calibration_cell("T->X", "Q1", [3] * 95 + [10] * 5, promise=2)
+    # loose: promise=5 -> gap=+3 > +0.5; các đơn trễ đều lead=10 > needed.
+    loose = _calibration_cell("L->X", "Q1", [1] * 95 + [10] * 5, promise=5)
+    # ok: promise=4 = needed -> gap=0.
+    ok = _calibration_cell("O->X", "Q1", [3] * 95 + [10] * 5, promise=4)
+    small = _calibration_cell("S->X", "Q1", [1] * 50, promise=1)
+    o = pd.concat([tight, loose, ok, small], ignore_index=True)
+
+    c = A.promise_calibration(o, min_orders=100, tolerance_days=0.5)
+    labels = c.set_index("route")["label"].to_dict()
+    assert labels == {"T->X": "tight", "L->X": "loose", "O->X": "ok"}
+    assert c.set_index("route").loc["T->X", "needed_days"] == 4
+    assert c.set_index("route").loc["T->X", "gap_days"] == pytest.approx(-2)
+    assert c.set_index("route").loc["T->X", "avoidable_orders"] == 95
+    assert c.set_index("route").loc["L->X", "avoidable_orders"] == 0
+    assert c.set_index("route").loc["O->X", "avoidable_orders"] == 0
+
+    assert c.attrs["n_cells_total"] == 4
+    assert c.attrs["n_cells_kept"] == 3
+    assert c.attrs["n_cells_small"] == 1
+    assert c.attrs["n_orders_small_cells"] == 50
+    assert c.attrs["avoidable_orders"] == 95
+    assert c.attrs["label_counts"] == {"tight": 1, "ok": 1, "loose": 1}
+
+
+def test_promise_calibration_real_data(o):
+    c = A.promise_calibration(o)
+    assert len(c) > 0
+    assert (c["n_orders"] >= 100).all()
+    assert set(c["label"]).issubset(set(A.PROMISE_LABELS))
+    assert (c["avoidable_orders"] <= c["late_orders"]).all()
+    assert c["avoidable_orders"].sum() == c.attrs["avoidable_orders"]
+    assert c.attrs["n_orders_kept"] == c["n_orders"].sum()
+    assert sum(c.attrs["label_counts"].values()) == len(c)
+    assert (c.loc[c["label"] == "tight", "gap_days"] < -c.attrs["tolerance_days"]).all()
+    assert (c.loc[c["label"] == "loose", "gap_days"] > c.attrs["tolerance_days"]).all()
+    assert (
+        c.loc[c["label"] == "ok", "gap_days"].abs() <= c.attrs["tolerance_days"]
+    ).all()
+    row = c.iloc[0]
+    sub = o[
+        (o["route"] == row["route"])
+        & (o["weight_band"].astype(str) == row["weight_band"])
+    ]
+    assert row["needed_days"] == math.ceil(sub["total_lead_days"].quantile(0.95))
+
+
+def test_promise_calibration_rejects_bad_input():
+    with pytest.raises(ValueError):
+        A.promise_calibration(pd.DataFrame({"order_id": ["x"]}))
+    with pytest.raises(ValueError):
+        A.promise_calibration(pd.DataFrame())
+    with pytest.raises(ValueError):
+        A.promise_calibration(_calibration_cell("A->B", "Q1", [1] * 5, 1), min_orders=0)
+    with pytest.raises(ValueError):
+        A.promise_calibration(_calibration_cell("A->B", "Q1", [1] * 5, 1), quantile=1.0)
+    with pytest.raises(ValueError):
+        A.promise_calibration(
+            _calibration_cell("A->B", "Q1", [1] * 5, 1), tolerance_days=-1
+        )
 
 
 def test_attribute_rejects_missing_columns():

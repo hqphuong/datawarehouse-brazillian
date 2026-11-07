@@ -13,10 +13,11 @@
 - Backtest min_orders=30: 16/19 kỳ DSS cao hơn baseline; 201807→201808 n=162, diff −9,40 pp.
 - Bootstrap pair (seed 42): vs 0 [+3,77; +12,55] pp; vs prior [+0,52; +5,92]; vs through [−0,50; +2,52] (chứa 0, không nói "vượt through").
 - Đơn trễ có review xấu (≤2) 54,16% vs 9,44% đúng hạn (+44,72 pp; liên hệ, không nhân quả).
-- Attribution cross-route peer (q=0,5): toàn hệ thống approval 1,58% / prep 15,15% / transit 69,88% / promise 13,39%; q=0,25: 2,53 / 20,08 / 76,33 / 1,06.
+- Attribution cross-route peer (q=0,5): toàn hệ thống approval 1,58% / prep 15,15% / transit 69,88% / promise 13,39%; q=0,25: 2,53 / 20,08 / 76,33 / 1,06. Đây là **tỷ trọng trong đơn trễ**, không phải tỷ lệ trễ.
 - Fallback global: transit 0,4959% (chỉ đơn thiếu `distance_km`); approval 0,001% (1 đơn thiếu `payment_type`); prep 0%.
 - `phi_transit` q=0,5: SP→RJ 14,11 pp (trước 13,50), SP→SP 2,46 pp (trước 2,90); hạng nguyên nhân không đổi (transit đứng đầu).
-- Test 07/11/2026: **50 pytest passed**, **16 Django tests OK**; S1 cross-route peer commit `5606c08`.
+- S3 promise calibration: 130/1.157 ô route×weight_band đủ mẫu (83.104/95.591 đơn-tuyến); 89 tight / 11 ok / 30 loose; 3.751/6.720 đơn trễ có thể tránh nếu promise = Q95 (đổi định nghĩa trễ, không rút ngắn giao). SP→SP: 4/4 ô tight; `share_promise` 36,02% (q=0,5) vs 3,11% (q=0,25).
+- Test 07/11/2026: **53 pytest passed**, **16 Django tests OK**; S1 cross-route peer commit `5606c08`, S3 commit sẽ ghi sau.
 
 ## Đã xong (THẬT, kiểm 07/11/2026)
 
@@ -30,7 +31,7 @@
 
 ## CHƯA có trong repo (đừng dạy/đừng nói là đã có)
 
-portfolio, promise calibration, seller scorecard, Decision Brief, AUC/time-split/replay, các badge UI v2.
+portfolio, seller scorecard, Decision Brief, AUC/time-split/replay, các badge UI v2.
 
 ## Deviation đã duyệt (G1/G2)
 
@@ -51,12 +52,12 @@ Branch: `dss-v2` (tag `before-optimize` tại 32a34ca). Deadline 15/11/2026 23:5
 
 - [x] F1 [x] F2 [x] F3 [x] F4 [x] F5 [x] F6 [x] F7 [x] F8 [x] F9
 - [x] D1 [x] D2
-- [x] S1 [x] S2 [ ] S3 [ ] S4 [ ] S5 [ ] S6 [ ] S7 [ ] S8
+- [x] S1 [x] S2 [x] S3 [ ] S4 [ ] S5 [ ] S6 [ ] S7 [ ] S8
 - [ ] V1 [ ] V2 [ ] V3 [ ] V4
 - [ ] A1 [ ] U1 [ ] U2
 - [ ] X1 [ ] X2 [ ] X3
 
-NEXT: DỪNG chờ duyệt báo cáo 4a–4d (S1 cross-route peer) trước Checkpoint C (S3).
+NEXT: Checkpoint C — S4 `feasible_max_cut` + bootstrap 300× (seed 42) + `marginal_cut_table`, dùng peer P25 cùng định nghĩa S1.
 
 Schema facts đã xác minh (06/11/2026):
 - `data/processed/`: 5 CSV gồm dim_time, dim_location, dim_product, dim_seller, fact_delivery_sla.

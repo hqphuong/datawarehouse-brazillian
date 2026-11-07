@@ -812,6 +812,19 @@ def attribution_report(o: pd.DataFrame) -> None:
         "- Sensitivity chỉ q=0,25 và q=0,5. q=0,75 bị loại: benchmark 75th "
         "percentile chậm hơn actual, phi âm, phân rã không hợp lệ."
     )
+    print(
+        "- NHÃN: `cause_share_*`/`share_promise` là TỶ TRỌNG trong tập ĐƠN TRỄ, "
+        "KHÔNG phải tỷ lệ trễ. Transit là khâu dài nhất nên chiếm tỷ trọng lớn "
+        "là điều dễ hiểu."
+    )
+    print(
+        "- Cột `orders` đếm ĐƠN-TUYẾN (order-route), không phải đơn hàng duy nhất."
+    )
+    print(
+        "- Giá trị DSS nằm ở so sánh giữa các tuyến + số đơn trễ có thể tránh; "
+        "phần promise chỉ nêu dạng khoảng theo q (≈1–13% toàn hệ thống ở "
+        "q=0,25–0,5), không kết luận mạnh."
+    )
 
     att_reference = None
     for q in (0.5, 0.25):
@@ -852,10 +865,15 @@ def attribution_report(o: pd.DataFrame) -> None:
         if q == 0.5:
             for route in ("SP->RJ", "SP->SP"):
                 sub = att[att["route"] == route]
+                late = float(sub["late_actual"].mean())
+                promise_share = (
+                    float(sub["late_benchmark"].mean()) / late if late > 0 else float("nan")
+                )
                 print(
                     f"- {route}: phi_transit={sub['phi_transit'].mean():.6f} "
                     f"({sub['phi_transit'].mean() * 100:.4f} pp), "
-                    f"late_rate={sub['late_actual'].mean():.6f}"
+                    f"late_rate={late:.6f}, "
+                    f"share_promise (tỷ trọng trong đơn trễ)={promise_share:.6f}"
                 )
 
     if att_reference is not None:
@@ -863,6 +881,125 @@ def attribution_report(o: pd.DataFrame) -> None:
             "- Đánh giá xấu (late vs on-time):",
             ATTRIB.bad_review_uplift(att_reference),
         )
+
+
+def _promise_share(o: pd.DataFrame, route: str, quantile: float) -> float:
+    """Tỷ trọng residual promise trong đơn trễ của một tuyến, tại một q."""
+    bench = ATTRIB.fit_benchmarks(o, quantile=quantile)
+    att = ATTRIB.attribute(o, bench)
+    sub = att[att["route"] == route]
+    late = float(sub["late_actual"].mean())
+    return float(sub["late_benchmark"].mean()) / late if late > 0 else float("nan")
+
+
+def promise_policy_report(o: pd.DataFrame) -> None:
+    """In S3: hiệu chỉnh cam kết theo ô route×weight_band bằng Q95 lead time."""
+    c = ATTRIB.promise_calibration(o)
+    print("\n## Promise calibration (S3: route × weight_band, Q95)")
+    print(
+        "- Đơn vị: ĐƠN-TUYẾN (order-route). Nhóm route × weight_band; "
+        f"ô < {c.attrs['min_orders']} đơn-tuyến bị loại khỏi bảng."
+    )
+    print(
+        "- needed_days = ceil(Q95 total_lead_days); "
+        "gap_days = median promise_days − needed_days."
+    )
+    print(
+        f"- Nhãn: tight nếu gap < −{c.attrs['tolerance_days']:g} ngày; "
+        f"loose nếu gap > +{c.attrs['tolerance_days']:g} ngày; còn lại ok."
+    )
+    print(
+        "- avoidable_orders = số đơn ĐANG TRỄ nhưng sẽ đúng hạn nếu đặt "
+        "promise = needed_days."
+    )
+    print(
+        "- CẢNH BÁO: đổi promise = đổi ĐỊNH NGHĨA trễ, KHÔNG rút ngắn thời "
+        "gian giao thực tế; không đọc là 'giảm trễ' vận hành."
+    )
+    print(
+        f"- Ô giữ/loại: {c.attrs['n_cells_kept']}/{c.attrs['n_cells_total']} "
+        f"(loại {c.attrs['n_cells_small']} ô nhỏ = "
+        f"{c.attrs['n_orders_small_cells']} đơn-tuyến)."
+    )
+    print(
+        f"- Đơn-tuyến trong ô đủ mẫu: {c.attrs['n_orders_kept']}/"
+        f"{c.attrs['n_orders_total']}."
+    )
+    counts = c.attrs["label_counts"]
+    print(
+        f"- Số ô tight/ok/loose: "
+        f"{counts.get('tight', 0)}/{counts.get('ok', 0)}/{counts.get('loose', 0)}."
+    )
+    kept = c.attrs["n_orders_kept"]
+    late = c.attrs["late_orders_kept"]
+    avoidable = c.attrs["avoidable_orders"]
+    cal_late = c.attrs["calibrated_late_orders"]
+    print(
+        f"- Tổng đơn trễ có thể tránh (đổi định nghĩa): {avoidable}/{late} "
+        f"đơn-tuyến trễ."
+    )
+    if kept:
+        print(
+            f"- Tỷ lệ trễ hiện tại (ô đủ mẫu): {late / kept:.6f}; "
+            f"nếu promise = needed_days: {cal_late / kept:.6f}."
+        )
+
+    cols = [
+        "route",
+        "weight_band",
+        "n_orders",
+        "median_promise_days",
+        "needed_days",
+        "gap_days",
+        "label",
+        "late_orders",
+        "avoidable_orders",
+        "calibrated_late_rate",
+    ]
+    view = c.head(10)[cols].copy()
+    for col in ("median_promise_days", "needed_days", "gap_days", "calibrated_late_rate"):
+        view[col] = view[col].round(6)
+    print("\n### Top 10 ô theo số đơn trễ có thể tránh")
+    print(_md_table(view))
+
+    print("\n### SP->SP (kiểm riêng)")
+    sp = c[c["route"] == "SP->SP"][cols].copy()
+    if len(sp):
+        for col in ("median_promise_days", "needed_days", "gap_days", "calibrated_late_rate"):
+            sp[col] = sp[col].round(6)
+        print(_md_table(sp))
+    else:
+        print("- Không có ô SP->SP đủ mẫu.")
+    s50 = _promise_share(o, "SP->SP", 0.5)
+    s25 = _promise_share(o, "SP->SP", 0.25)
+    print(
+        f"- share_promise SP->SP (tỷ trọng trong đơn trễ): "
+        f"q=0,5 = {s50:.6f} ({s50 * 100:.4f}%); "
+        f"q=0,25 = {s25:.6f} ({s25 * 100:.4f}%)."
+    )
+    if len(sp):
+        labels = sp["label"].value_counts().to_dict()
+        print(f"- Nhãn S3 tại SP->SP: {labels}.")
+        if bool((sp["label"] == "tight").all()):
+            print(
+                "- S3 (Q95 lead time) ủng hộ 'cam kết chặt' tại SP->SP: "
+                "mọi ô đủ mẫu có promise < Q95."
+            )
+        elif bool((sp["label"] == "tight").any()):
+            print(
+                "- S3 chỉ ủng hộ 'cam kết chặt' ở một phần ô SP->SP; "
+                "không kết luận cho toàn tuyến."
+            )
+        else:
+            print(
+                "- S3 KHÔNG ủng hộ 'cam kết chặt' tại SP->SP "
+                "(không ô đủ mẫu nào tight)."
+            )
+    print(
+        "- Lưu ý: share_promise phụ thuộc mạnh vào q của benchmark; q=0,5 và "
+        "q=0,25 cho hai bức tranh khác nhau. S3 dùng Q95 nên là lát cắt "
+        "'mức phục vụ 95%', không đồng nhất với benchmark q=0,5."
+    )
 
 
 def main() -> None:
@@ -966,6 +1103,8 @@ def main() -> None:
     print(_md_table(negative_time_comparison(raw, n=3)))
 
     attribution_report(o)
+
+    promise_policy_report(o)
 
 
 if __name__ == "__main__":
