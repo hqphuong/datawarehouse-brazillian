@@ -1076,6 +1076,83 @@ def feasible_cut_report(o: pd.DataFrame) -> None:
     print(_md_table(marginal))
 
 
+def seller_report(o: pd.DataFrame) -> None:
+    """In S5: scorecard + portfolio người bán trên đơn single-seller."""
+    card = M.seller_scorecard(o)
+    port = M.seller_portfolio(o, scorecard=card, top=10)
+    summary = port["summary"]
+    print("\n## Seller scorecard (S5: chỉ đơn single-seller)")
+    print(
+        "- Đơn vị: ĐƠN HÀNG (unique order_id), không phải đơn-tuyến. "
+        "Đơn nhiều người bán bị loại vì không quy được trách nhiệm cho một seller."
+    )
+    print(
+        f"- Loại {summary['n_orders_multi_seller']} đơn nhiều seller + "
+        f"{summary['n_orders_missing_seller']} đơn thiếu seller_id = "
+        f"{summary['excluded_order_share']:.4%} số đơn "
+        f"({summary['excluded_order_route_share']:.4%} số đơn-tuyến)."
+    )
+    print(
+        f"- Đơn single-seller dùng được: {summary['orders']}/"
+        f"{summary['n_orders_total']}; {summary['n_sellers']} seller; "
+        f"tỷ lệ trễ chung {summary['late_rate']:.6f}."
+    )
+    print(
+        "- `level`: red nếu Wilson low > tỷ lệ chung; amber nếu điểm ước lượng "
+        "> chung nhưng CI còn chứa chung; ok còn lại. CI Wilson giả định các "
+        "đơn độc lập (V2)."
+    )
+    print(
+        "- `segment`: ưu tiên (đủ mẫu + red/amber), ổn định (đủ mẫu + ok), "
+        "cần thêm dữ liệu (dưới min_orders)."
+    )
+    print(
+        "- `bad_review_rate` (review ≤ 2) chỉ là LIÊN HỆ, không phải nhân quả; "
+        "đơn trễ có review xấu nhiều hơn nhưng không chứng minh trễ gây review xấu."
+    )
+    print(
+        f"- Seller đủ mẫu: {summary['n_sellers_scored']}/{summary['n_sellers']} "
+        f"(min_orders={summary['min_orders']})."
+    )
+
+    if len(port["segments"]):
+        segments = port["segments"].copy()
+        for col in ("late_rate", "late_orders_share", "gmv_share"):
+            segments[col] = segments[col].round(6)
+        print("\n### Phân khúc người bán")
+        print(_md_table(segments))
+
+    print(
+        f"\n### Top 10 seller theo số đơn trễ "
+        f"(chiếm {summary['top_seller_share_late_orders']:.4%} đơn trễ, "
+        f"{summary['top_seller_share_gmv']:.4%} GMV)"
+    )
+    cols = [
+        "seller_id",
+        "orders",
+        "late_orders",
+        "late_rate",
+        "wilson_low",
+        "wilson_high",
+        "late_rate_lift",
+        "level",
+        "segment",
+        "bad_review_rate",
+        "gmv_share",
+    ]
+    view = port["top_sellers"][cols].copy()
+    for col in cols:
+        if col not in {
+            "seller_id",
+            "orders",
+            "late_orders",
+            "level",
+            "segment",
+        }:
+            view[col] = view[col].round(6)
+    print(_md_table(view))
+
+
 def main() -> None:
     raw = M.load_orders(include_invalid=True)
     o = M.load_orders()
@@ -1181,6 +1258,8 @@ def main() -> None:
     promise_policy_report(o)
 
     feasible_cut_report(o)
+
+    seller_report(o)
 
 
 if __name__ == "__main__":

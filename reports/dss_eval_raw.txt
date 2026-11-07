@@ -266,3 +266,33 @@ Thống kê cấp (đơn, tuyến): {'order_route_rows': 96981, 'approval_negati
 | transit | 1 | 0.047021 | 480 | 480 | 480 |
 | transit | 2 | 0.039234 | 715 | 235 | 235 |
 | transit | 2.26856 | 0.038836 | 727 | 12 | 44.6832 |
+
+## Seller scorecard (S5: chỉ đơn single-seller)
+- Đơn vị: ĐƠN HÀNG (unique order_id), không phải đơn-tuyến. Đơn nhiều người bán bị loại vì không quy được trách nhiệm cho một seller.
+- Loại 502 đơn nhiều seller + 0 đơn thiếu seller_id = 0.5280% số đơn (1.0576% số đơn-tuyến).
+- Đơn single-seller dùng được: 94580/95082; 2948 seller; tỷ lệ trễ chung 0.082343.
+- `level`: red nếu Wilson low > tỷ lệ chung; amber nếu điểm ước lượng > chung nhưng CI còn chứa chung; ok còn lại. CI Wilson giả định các đơn độc lập (V2).
+- `segment`: ưu tiên (đủ mẫu + red/amber), ổn định (đủ mẫu + ok), cần thêm dữ liệu (dưới min_orders).
+- `bad_review_rate` (review ≤ 2) chỉ là LIÊN HỆ, không phải nhân quả; đơn trễ có review xấu nhiều hơn nhưng không chứng minh trễ gây review xấu.
+- Seller đủ mẫu: 609/2948 (min_orders=30).
+
+### Phân khúc người bán
+| segment | n_sellers | orders | late_orders | gmv | late_rate | late_orders_share | gmv_share |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| ưu tiên | 252 | 33863 | 4117 | 4.4595e+06 | 0.121578 | 0.528634 | 0.344903 |
+| ổn định | 357 | 44733 | 2332 | 5.44842e+06 | 0.052132 | 0.299435 | 0.421387 |
+| cần thêm dữ liệu | 2339 | 15984 | 1339 | 3.0218e+06 | 0.083771 | 0.171931 | 0.23371 |
+
+### Top 10 seller theo số đơn trễ (chiếm 15.3570% đơn trễ, 9.7920% GMV)
+| seller_id | orders | late_orders | late_rate | wilson_low | wilson_high | late_rate_lift | level | segment | bad_review_rate | gmv_share |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 4a3ca9315b744ce9f8e9374361493884 | 1706 | 194 | 0.113716 | 0.099511 | 0.129657 | 1.38101 | red | ưu tiên | 0.176645 | 0.015162 |
+| 1f50f920176fa81dab994f9023523100 | 1372 | 148 | 0.107872 | 0.092538 | 0.125395 | 1.31003 | red | ưu tiên | 0.134601 | 0.008209 |
+| 4869f7a5dfa277a7dca6462dcf3b52b2 | 1103 | 130 | 0.11786 | 0.100144 | 0.138229 | 1.43134 | red | ưu tiên | 0.125114 | 0.017299 |
+| ea8482cd71df3c1969d7b9473ff13abc | 1099 | 118 | 0.10737 | 0.090415 | 0.127061 | 1.30394 | red | ưu tiên | 0.140897 | 0.002742 |
+| 6560211a19b47992c3666cc44a7e94c0 | 1747 | 114 | 0.065255 | 0.054601 | 0.077817 | 0.792475 | ok | ổn định | 0.154556 | 0.009026 |
+| cc419e0650a3c5ba77189a1882b7556a | 1643 | 101 | 0.061473 | 0.05085 | 0.074142 | 0.746547 | ok | ổn định | 0.127517 | 0.007882 |
+| da8622b14eb17ae2831f4ac5b9dab84a | 1264 | 99 | 0.078323 | 0.064756 | 0.094445 | 0.951177 | ok | ổn định | 0.112083 | 0.012038 |
+| 955fee9216a65b617aa5c0531780ce60 | 1225 | 98 | 0.08 | 0.066088 | 0.096538 | 0.971546 | ok | ổn định | 0.099425 | 0.009906 |
+| 7c67e1448b00f6e969d365cea6b010ab | 966 | 98 | 0.101449 | 0.08396 | 0.122096 | 1.23203 | red | ưu tiên | 0.253125 | 0.014338 |
+| 8b321bb669392f5163d04c59e235e066 | 909 | 96 | 0.105611 | 0.087264 | 0.127277 | 1.28257 | red | ưu tiên | 0.137017 | 0.001319 |

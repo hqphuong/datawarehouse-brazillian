@@ -367,3 +367,169 @@ def test_sensitivity_base_cut_none_unchanged(o):
     for a, b in zip(old, new):
         assert a["cut"] == b["cut"]
         assert a["projected"] == pytest.approx(b["projected"])
+
+
+def _seller_orders(seller, n_orders, n_late, late_review=5, ok_review=5):
+    return pd.DataFrame(
+        {
+            "order_id": [f"{seller}-{i}" for i in range(n_orders)],
+            "seller_id": seller,
+            "route": "A->B",
+            "is_late": [i < n_late for i in range(n_orders)],
+            "gmv": 10.0,
+            "review_score": [
+                late_review if i < n_late else ok_review for i in range(n_orders)
+            ],
+        }
+    )
+
+
+def test_single_seller_filter_and_exclusion_shares():
+    single = pd.concat(
+        [
+            _seller_orders("S1", 4, 1),
+            _seller_orders("S2", 3, 2),
+        ],
+        ignore_index=True,
+    )
+    multi = pd.DataFrame(
+        {
+            "order_id": ["M1", "M1", "M2", "M2"],
+            "seller_id": ["S1", "S2", "S1", "S2"],
+            "route": "A->B",
+            "is_late": [True, True, False, False],
+            "gmv": 10.0,
+            "review_score": 5,
+        }
+    )
+    missing = pd.DataFrame(
+        {
+            "order_id": ["X1"],
+            "seller_id": [float("nan")],
+            "route": "A->B",
+            "is_late": [True],
+            "gmv": 10.0,
+            "review_score": 5,
+        }
+    )
+    frame = pd.concat([single, multi, missing], ignore_index=True)
+
+    order, stats = M._single_seller_orders(frame)
+    assert len(order) == 7
+    assert set(order["order_id"]) == set(single["order_id"])
+    assert stats["n_orders_total"] == 10
+    assert stats["n_orders_single_seller"] == 7
+    assert stats["n_orders_multi_seller"] == 2
+    assert stats["n_orders_missing_seller"] == 1
+    assert stats["excluded_order_share"] == pytest.approx(3 / 10)
+    assert stats["n_order_routes_total"] == 12
+    assert stats["n_order_routes_single_seller"] == 7
+    assert stats["excluded_order_route_share"] == pytest.approx(5 / 12)
+    assert stats["system_late_rate"] == pytest.approx(3 / 7)
+
+
+def test_seller_scorecard_metrics_ci_level_segment():
+    # Hệ thống (single-seller) = 103/420 = 24,52%.
+    frame = pd.concat(
+        [
+            _seller_orders("A", 100, 50, late_review=1),
+            _seller_orders("B", 100, 5),
+            _seller_orders("C", 100, 0),
+            _seller_orders("D", 20, 20),
+            _seller_orders("E", 100, 28),
+        ],
+        ignore_index=True,
+    )
+    card = M.seller_scorecard(frame, min_orders=30)
+    assert len(card) == 5
+    assert card.attrs["n_orders_total"] == 420
+    assert card.attrs["system_late_rate"] == pytest.approx(103 / 420)
+    assert card.attrs["n_sellers_scored"] == 4
+
+    row = card.set_index("seller_id")
+    a = row.loc["A"]
+    assert a["orders"] == 100
+    assert a["late_orders"] == 50
+    assert a["late_rate"] == pytest.approx(0.5)
+    lo, hi = M.wilson_interval(50, 100)
+    assert a["wilson_low"] == pytest.approx(lo)
+    assert a["wilson_high"] == pytest.approx(hi)
+    assert a["level"] == "red"
+    assert a["segment"] == "ưu tiên"
+    assert a["bad_review_rate"] == pytest.approx(0.5)
+
+    # B thấp hơn hệ thống rõ rệt.
+    assert row.loc["B", "level"] == "ok"
+    assert row.loc["B", "segment"] == "ổn định"
+    assert row.loc["B", "ci_status"] == "thấp hơn hệ thống"
+    assert row.loc["B", "bad_review_rate"] == pytest.approx(0.0)
+
+    # E trên hệ thống nhưng CI còn chứa hệ thống -> amber, vẫn ưu tiên.
+    assert row.loc["E", "late_rate"] == pytest.approx(0.28)
+    assert row.loc["E", "wilson_low"] < card.attrs["system_late_rate"]
+    assert row.loc["E", "level"] == "amber"
+    assert row.loc["E", "segment"] == "ưu tiên"
+
+    # D mẫu nhỏ: vẫn có level theo luật nhưng bị tách khỏi nhóm ưu tiên.
+    assert row.loc["D", "orders"] == 20
+    assert bool(row.loc["D", "low_sample"]) is True
+    assert row.loc["D", "level"] == "red"
+    assert row.loc["D", "segment"] == "cần thêm dữ liệu"
+
+    assert card["late_orders"].is_monotonic_decreasing
+    assert card["late_orders_share"].sum() == pytest.approx(1.0)
+    assert card["gmv_share"].sum() == pytest.approx(1.0)
+    assert card.attrs["level_counts"]["red"] == 2
+    assert card.attrs["segment_counts"]["cần thêm dữ liệu"] == 1
+
+
+def test_seller_portfolio_segments_and_top_shares():
+    frame = pd.concat(
+        [
+            _seller_orders("A", 100, 50),
+            _seller_orders("B", 100, 5),
+            _seller_orders("C", 100, 0),
+            _seller_orders("D", 20, 20),
+            _seller_orders("E", 100, 28),
+        ],
+        ignore_index=True,
+    )
+    card = M.seller_scorecard(frame, min_orders=30)
+    port = M.seller_portfolio(frame, min_orders=30, top=2, scorecard=card)
+    summary = port["summary"]
+    assert summary["n_sellers"] == 5
+    assert summary["orders"] == 420
+    assert summary["late_orders"] == 103
+    assert summary["late_rate"] == pytest.approx(103 / 420)
+    assert summary["top_n"] == 2
+    assert summary["top_seller_share_late_orders"] == pytest.approx(78 / 103)
+    assert summary["top_seller_share_gmv"] == pytest.approx(2000 / 4200)
+
+    segments = port["segments"].set_index("segment")
+    assert set(segments.index) == {"ưu tiên", "ổn định", "cần thêm dữ liệu"}
+    assert segments.loc["ưu tiên", "n_sellers"] == 2
+    assert segments.loc["ưu tiên", "late_orders"] == 78
+    assert segments.loc["cần thêm dữ liệu", "orders"] == 20
+    assert segments["orders"].sum() == 420
+    assert segments["late_orders"].sum() == 103
+    assert segments["late_orders_share"].sum() == pytest.approx(1.0)
+
+    top = port["top_sellers"]
+    assert list(top["seller_id"]) == ["A", "E"]
+    assert list(top["late_orders"]) == [50, 28]
+
+
+def test_seller_scorecard_rejects_bad_input():
+    with pytest.raises(ValueError):
+        M.seller_scorecard(pd.DataFrame())
+    with pytest.raises(ValueError):
+        M.seller_scorecard(pd.DataFrame({"order_id": ["x"]}))
+    with pytest.raises(ValueError):
+        M.seller_scorecard(_seller_orders("A", 3, 1), min_orders=0)
+    with pytest.raises(ValueError):
+        M.seller_portfolio(_seller_orders("A", 3, 1), top=0)
+    card = M.seller_scorecard(_seller_orders("A", 3, 1), min_orders=1)
+    with pytest.raises(ValueError):
+        M.seller_portfolio(
+            _seller_orders("A", 3, 1), scorecard=card.drop(columns=["level"])
+        )

@@ -45,15 +45,14 @@ import numpy as np
 import pandas as pd
 
 try:  # chạy như package: python -m etl.dss_attrib
-    from .dss_models import STAGES, load_orders, scenario
+    from .dss_models import BAD_REVIEW_MAX, STAGES, load_orders, scenario
 except ImportError:  # chạy trực tiếp: python etl/dss_attrib.py
-    from dss_models import STAGES, load_orders, scenario
+    from dss_models import BAD_REVIEW_MAX, STAGES, load_orders, scenario
 
 PHI_COLS = [f"phi_{s}" for s in STAGES]
 EXCESS_COLS = [f"excess_{s}" for s in STAGES]
 BENCH_COLS = [f"b_{s}" for s in STAGES]
 PERMUTATIONS = tuple(permutations(STAGES))
-BAD_REVIEW_MAX = 2  # Olist review_score 1..5; 1-2 là đánh giá xấu.
 
 # Mỗi giai đoạn so với peer group riêng (thiết kế v2, G2 phương án 2).
 STAGE_KEYS = {

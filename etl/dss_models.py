@@ -12,6 +12,7 @@ except ImportError:  # chạy trực tiếp: python etl/dss_models.py
 
 # Ba giai đoạn của vòng đời đơn hàng được dùng làm biến giải thích.
 STAGES = ["approval", "prep", "transit"]
+BAD_REVIEW_MAX = 2  # Olist review_score 1..5; 1-2 là đánh giá xấu.
 OWNER = {
     "approval": "Duyệt thanh toán",
     "prep": "Người bán",
@@ -147,6 +148,289 @@ def wilson_interval(late_orders, orders, z=1.96):
         z * math.sqrt(p * (1.0 - p) / n + z * z / (4.0 * n * n)) / denom
     )
     return max(0.0, center - half), min(1.0, center + half)
+
+
+def _single_seller_orders(o: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Gộp về cấp đơn và chỉ giữ đơn do **một người bán** phụ trách.
+
+    Một đơn nhiều người bán không quy được trách nhiệm cho một seller, nên bị
+    loại khỏi scorecard; số đơn và số đơn-tuyến bị loại được trả trong ``stats``
+    để báo cáo minh bạch (không âm thầm bỏ).
+
+    Trả về ``(order_frame, stats)``; ``order_frame`` có 1 dòng / đơn, cột
+    ``is_late`` = max theo các tuyến của đơn, ``gmv`` = tổng, ``review_score`` =
+    first. Đơn thiếu ``seller_id`` cũng bị loại và đếm riêng.
+    """
+    required = ["order_id", "seller_id", "is_late", "gmv", "review_score"]
+    missing = [c for c in required if c not in o.columns]
+    if missing:
+        raise ValueError(f"Thiếu cột cho seller scorecard: {missing}")
+    if len(o) == 0:
+        raise ValueError("Không có dòng nào để seller scorecard")
+
+    sellers_per_order = o.groupby("order_id", dropna=False)["seller_id"].nunique(
+        dropna=False
+    )
+    n_orders_total = int(sellers_per_order.size)
+    single_ids = sellers_per_order[sellers_per_order == 1].index
+    single_rows = o[o["order_id"].isin(single_ids) & o["seller_id"].notna()].copy()
+
+    order = single_rows.groupby(["order_id", "seller_id"], as_index=False).agg(
+        is_late=("is_late", "max"),
+        gmv=("gmv", "sum"),
+        review_score=("review_score", "first"),
+    )
+    n_orders_single = int(len(order))
+    n_multi = int((sellers_per_order > 1).sum())
+    stats = {
+        "n_orders_total": n_orders_total,
+        "n_orders_single_seller": n_orders_single,
+        "n_orders_multi_seller": n_multi,
+        "n_orders_missing_seller": int(n_orders_total - n_orders_single - n_multi),
+        "excluded_order_share": (
+            (n_orders_total - n_orders_single) / n_orders_total
+            if n_orders_total
+            else float("nan")
+        ),
+        "n_order_routes_total": int(len(o)),
+        "n_order_routes_single_seller": int(len(single_rows)),
+        "excluded_order_route_share": (
+            1.0 - len(single_rows) / len(o) if len(o) else float("nan")
+        ),
+        "n_sellers": int(order["seller_id"].nunique()) if len(order) else 0,
+        "system_late_rate": (
+            float(order["is_late"].mean()) if len(order) else float("nan")
+        ),
+    }
+    return order, stats
+
+
+def seller_scorecard(o: pd.DataFrame, min_orders: int = 30) -> pd.DataFrame:
+    """Scorecard cấp người bán, chỉ trên **đơn single-seller** (S5).
+
+    Đơn vị là **đơn hàng** (không phải đơn-tuyến): một đơn nhiều tuyến của cùng
+    một seller chỉ tính một lần; ``is_late`` = max, ``gmv`` = tổng. Đơn nhiều
+    seller bị loại và share loại nằm trong ``.attrs``.
+
+    Cột chính:
+
+    - ``orders``, ``late_orders``, ``late_rate``, Wilson CI 95%.
+    - ``late_rate_lift`` = late_rate / tỷ lệ trễ chung của đơn single-seller.
+    - ``ci_status``: ``"cao hơn hệ thống"`` nếu Wilson low > hệ thống,
+      ``"thấp hơn hệ thống"`` nếu Wilson high < hệ thống, còn lại
+      ``"chưa phân biệt được"``.
+    - ``level``: ``red`` nếu Wilson low > hệ thống; ``amber`` nếu điểm ước lượng
+      > hệ thống nhưng CI còn chứa hệ thống; ``ok`` còn lại.
+    - ``segment``: ``"ưu tiên"`` (đủ mẫu + red/amber), ``"ổn định"`` (đủ mẫu +
+      ok), ``"cần thêm dữ liệu"`` (dưới ``min_orders``).
+    - ``bad_review_rate`` (review_score ≤ 2) **chỉ là liên hệ**, không nhân quả.
+
+    Sắp theo ``late_orders`` giảm dần (tác động), rồi ``orders`` giảm dần.
+    """
+    if min_orders < 1:
+        raise ValueError("min_orders phải >= 1")
+
+    order, stats = _single_seller_orders(o)
+    columns = [
+        "seller_id",
+        "orders",
+        "late_orders",
+        "late_rate",
+        "wilson_low",
+        "wilson_high",
+        "system_late_rate",
+        "late_rate_lift",
+        "ci_status",
+        "level",
+        "segment",
+        "low_sample",
+        "gmv",
+        "gmv_share",
+        "late_orders_share",
+        "n_reviewed",
+        "bad_review_orders",
+        "bad_review_rate",
+    ]
+    if len(order) == 0:
+        out = pd.DataFrame(columns=columns)
+        out.attrs.update(stats)
+        out.attrs["min_orders"] = int(min_orders)
+        out.attrs["n_sellers_scored"] = 0
+        out.attrs["level_counts"] = {}
+        out.attrs["segment_counts"] = {}
+        return out
+
+    order = order.copy()
+    order["bad_review"] = order["review_score"] <= BAD_REVIEW_MAX
+    g = order.groupby("seller_id", as_index=False).agg(
+        orders=("order_id", "nunique"),
+        late_orders=("is_late", "sum"),
+        gmv=("gmv", "sum"),
+        n_reviewed=("review_score", "count"),
+        bad_review_orders=("bad_review", "sum"),
+    )
+    g["late_rate"] = g["late_orders"] / g["orders"]
+    g["bad_review_rate"] = np.where(
+        g["n_reviewed"] > 0, g["bad_review_orders"] / g["n_reviewed"], np.nan
+    )
+
+    system_late = float(stats["system_late_rate"])
+    g["system_late_rate"] = system_late
+    g["late_rate_lift"] = np.where(
+        system_late > 0, g["late_rate"] / system_late, np.nan
+    )
+
+    intervals = [
+        wilson_interval(int(late), int(total))
+        for late, total in zip(g["late_orders"], g["orders"])
+    ]
+    g["wilson_low"] = [interval[0] for interval in intervals]
+    g["wilson_high"] = [interval[1] for interval in intervals]
+    g["ci_status"] = np.select(
+        [
+            g["wilson_low"] > system_late,
+            g["wilson_high"] < system_late,
+        ],
+        ["cao hơn hệ thống", "thấp hơn hệ thống"],
+        default="chưa phân biệt được",
+    )
+    g["level"] = np.select(
+        [g["wilson_low"] > system_late, g["late_rate"] > system_late],
+        ["red", "amber"],
+        default="ok",
+    )
+    g["low_sample"] = g["orders"] < min_orders
+    scored = g["orders"] >= min_orders
+    above = g["level"].isin(["red", "amber"])
+    g["segment"] = np.select(
+        [scored & above, scored & ~above],
+        ["ưu tiên", "ổn định"],
+        default="cần thêm dữ liệu",
+    )
+
+    total_late = int(g["late_orders"].sum())
+    total_gmv = float(g["gmv"].sum())
+    g["late_orders_share"] = (
+        g["late_orders"] / total_late if total_late > 0 else np.nan
+    )
+    g["gmv_share"] = g["gmv"] / total_gmv if total_gmv > 0 else np.nan
+    out = (
+        g[columns]
+        .sort_values(["late_orders", "orders"], ascending=False)
+        .reset_index(drop=True)
+    )
+    out.attrs.update(stats)
+    out.attrs["min_orders"] = int(min_orders)
+    out.attrs["n_sellers_scored"] = int((out["orders"] >= min_orders).sum())
+    out.attrs["level_counts"] = out["level"].value_counts().to_dict()
+    out.attrs["segment_counts"] = out["segment"].value_counts().to_dict()
+    return out
+
+
+def seller_portfolio(
+    o: pd.DataFrame,
+    min_orders: int = 30,
+    top: int = 10,
+    scorecard: pd.DataFrame | None = None,
+) -> dict:
+    """Portfolio người bán: tổng quan, phân khúc và top seller theo tác động (S5).
+
+    Chỉ dùng scorecard single-seller (tự tính nếu ``scorecard=None``). Trả về:
+
+    - ``summary``: tổng số seller/đơn/đơn trễ/GMV, share loại đơn nhiều seller,
+      mức tập trung của ``top`` seller (share đơn trễ và GMV).
+    - ``segments``: bảng theo ``segment`` (ưu tiên / ổn định / cần thêm dữ liệu).
+    - ``top_sellers``: top theo ``late_orders``, kèm CI và cờ mẫu nhỏ.
+
+    Đây là mô tả **liên hệ**, không phải kết luận nhân quả về người bán.
+    """
+    if top < 1:
+        raise ValueError("top phải >= 1")
+    if scorecard is None:
+        scorecard = seller_scorecard(o, min_orders=min_orders)
+    required = [
+        "seller_id",
+        "orders",
+        "late_orders",
+        "gmv",
+        "level",
+        "segment",
+    ]
+    missing = [c for c in required if c not in scorecard.columns]
+    if missing:
+        raise ValueError(f"Thiếu cột scorecard: {missing}")
+
+    if len(scorecard) == 0:
+        return {
+            "summary": dict(scorecard.attrs),
+            "segments": pd.DataFrame(),
+            "top_sellers": pd.DataFrame(),
+        }
+
+    total_orders = int(scorecard["orders"].sum())
+    total_late = int(scorecard["late_orders"].sum())
+    total_gmv = float(scorecard["gmv"].sum())
+    top_sellers = scorecard.sort_values(
+        ["late_orders", "orders"], ascending=False
+    ).head(top).copy()
+
+    segments = (
+        scorecard.groupby("segment", as_index=False)
+        .agg(
+            n_sellers=("seller_id", "nunique"),
+            orders=("orders", "sum"),
+            late_orders=("late_orders", "sum"),
+            gmv=("gmv", "sum"),
+        )
+    )
+    segments["late_rate"] = segments["late_orders"] / segments["orders"]
+    segments["late_orders_share"] = (
+        segments["late_orders"] / total_late if total_late > 0 else np.nan
+    )
+    segments["gmv_share"] = (
+        segments["gmv"] / total_gmv if total_gmv > 0 else np.nan
+    )
+    segment_order = {"ưu tiên": 0, "ổn định": 1, "cần thêm dữ liệu": 2}
+    segments = (
+        segments.assign(
+            _order=segments["segment"].map(segment_order).fillna(99)
+        )
+        .sort_values("_order")
+        .drop(columns="_order")
+        .reset_index(drop=True)
+    )
+
+    summary = dict(scorecard.attrs)
+    summary.update(
+        {
+            "n_sellers": int(scorecard["seller_id"].nunique()),
+            "n_sellers_scored": int((scorecard["orders"] >= min_orders).sum()),
+            "orders": total_orders,
+            "late_orders": total_late,
+            "late_rate": (
+                total_late / total_orders if total_orders else float("nan")
+            ),
+            "gmv": total_gmv,
+            "top_n": int(top),
+            "top_seller_share_late_orders": (
+                float(top_sellers["late_orders"].sum()) / total_late
+                if total_late > 0
+                else float("nan")
+            ),
+            "top_seller_share_gmv": (
+                float(top_sellers["gmv"].sum()) / total_gmv
+                if total_gmv > 0
+                else float("nan")
+            ),
+            "level_counts": scorecard["level"].value_counts().to_dict(),
+            "segment_counts": scorecard["segment"].value_counts().to_dict(),
+        }
+    )
+    return {
+        "summary": summary,
+        "segments": segments,
+        "top_sellers": top_sellers,
+    }
 
 
 def route_priority(
