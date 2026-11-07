@@ -785,6 +785,86 @@ def bootstrap_ci(
     }
 
 
+def _attrib_shares(frame: pd.DataFrame) -> dict:
+    """Tỷ trọng 4 nguyên nhân trên toàn bộ đơn trễ: 3 stage + residual promise."""
+    late = float(frame["late_actual"].mean())
+    out = {"orders": int(len(frame)), "late_rate": late}
+    if late <= 0:
+        return out
+    for stage in ATTRIB.STAGES:
+        out[f"share_{stage}"] = float(frame[f"phi_{stage}"].mean()) / late
+    out["share_promise"] = float(frame["late_benchmark"].mean()) / late
+    return out
+
+
+def attribution_report(o: pd.DataFrame) -> None:
+    """In attribution theo thiết kế peer group từng giai đoạn, q=0,5 và 0,25."""
+    print("\n## Attribution (peer group theo giai đoạn + Shapley)")
+    print(
+        "- Thiết kế: approval theo payment_type; prep theo weight_band; "
+        "transit theo distance_band (decile khoảng cách toàn cục, XUYÊN tuyến)."
+    )
+    print(
+        '- Fallback: nhóm < min_orders hoặc khóa "NA" dùng median toàn cục '
+        "của chính giai đoạn."
+    )
+    print(
+        "- Sensitivity chỉ q=0,25 và q=0,5. q=0,75 bị loại: benchmark 75th "
+        "percentile chậm hơn actual, phi âm, phân rã không hợp lệ."
+    )
+
+    att_reference = None
+    for q in (0.5, 0.25):
+        bench = ATTRIB.fit_benchmarks(o, quantile=q)
+        att = ATTRIB.attribute(o, bench)
+        if q == 0.5:
+            att_reference = att
+        print(f"\n### q={q}")
+        print("- Bất biến:", ATTRIB.check_attrib(att))
+        levels = {
+            stage: att[f"benchmark_level_{stage}"].value_counts(normalize=True).round(6).to_dict()
+            for stage in ATTRIB.STAGES
+        }
+        print("- Fallback theo giai đoạn:", levels)
+        shares = _attrib_shares(att)
+        print(
+            "- Toàn hệ thống:",
+            {k: round(v, 6) for k, v in shares.items()},
+        )
+        summary = ATTRIB.attribution_summary(att, min_orders=30)
+        view = summary.sort_values("orders", ascending=False).head(5)[
+            [
+                "route",
+                "orders",
+                "late_rate",
+                "cause_share_approval",
+                "cause_share_prep",
+                "cause_share_transit",
+                "share_promise",
+                "phi_transit",
+                "top_stage",
+            ]
+        ].copy()
+        for col in view.columns:
+            if col not in {"route", "orders", "top_stage"}:
+                view[col] = view[col].round(6)
+        print(_md_table(view))
+        if q == 0.5:
+            for route in ("SP->RJ", "SP->SP"):
+                sub = att[att["route"] == route]
+                print(
+                    f"- {route}: phi_transit={sub['phi_transit'].mean():.6f} "
+                    f"({sub['phi_transit'].mean() * 100:.4f} pp), "
+                    f"late_rate={sub['late_actual'].mean():.6f}"
+                )
+
+    if att_reference is not None:
+        print(
+            "- Đánh giá xấu (late vs on-time):",
+            ATTRIB.bad_review_uplift(att_reference),
+        )
+
+
 def main() -> None:
     raw = M.load_orders(include_invalid=True)
     o = M.load_orders()
@@ -885,30 +965,7 @@ def main() -> None:
     print("Đã loại khỏi DSS:", o.attrs["excluded_stage_invalid_rows"], "order-route")
     print(_md_table(negative_time_comparison(raw, n=3)))
 
-    print("\n## Attribution (benchmark decile khoảng cách + Shapley)")
-    bench = ATTRIB.fit_benchmarks(o)
-    att = ATTRIB.attribute(o, bench)
-    print("- Bất biến:", ATTRIB.check_attrib(att))
-    summary = ATTRIB.attribution_summary(att, min_orders=30)
-    view = summary.sort_values("orders", ascending=False).head(5)[
-        [
-            "route",
-            "orders",
-            "late_rate",
-            "residual_late_rate",
-            "residual_promise_days",
-            "phi_approval",
-            "phi_prep",
-            "phi_transit",
-            "phi_total",
-            "top_stage",
-        ]
-    ].copy()
-    for col in view.columns:
-        if col not in {"route", "orders", "top_stage"}:
-            view[col] = view[col].round(6)
-    print(_md_table(view))
-    print("- Đánh giá xấu (late vs on-time):", ATTRIB.bad_review_uplift(att))
+    attribution_report(o)
 
 
 if __name__ == "__main__":

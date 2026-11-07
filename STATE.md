@@ -13,12 +13,15 @@
 - Backtest min_orders=30: 16/19 kỳ DSS cao hơn baseline; 201807→201808 n=162, diff −9,40 pp.
 - Bootstrap pair (seed 42): vs 0 [+3,77; +12,55] pp; vs prior [+0,52; +5,92]; vs through [−0,50; +2,52] (chứa 0, không nói "vượt through").
 - Đơn trễ có review xấu (≤2) 54,16% vs 9,44% đúng hạn (+44,72 pp; liên hệ, không nhân quả).
-- Test 07/11/2026: **49 pytest passed**, **16 Django tests OK**.
+- Attribution cross-route peer (q=0,5): toàn hệ thống approval 1,58% / prep 15,15% / transit 69,88% / promise 13,39%; q=0,25: 2,53 / 20,08 / 76,33 / 1,06.
+- Fallback global: transit 0,4959% (chỉ đơn thiếu `distance_km`); approval 0,001% (1 đơn thiếu `payment_type`); prep 0%.
+- `phi_transit` q=0,5: SP→RJ 14,11 pp (trước 13,50), SP→SP 2,46 pp (trước 2,90); hạng nguyên nhân không đổi (transit đứng đầu).
+- Test 07/11/2026: **50 pytest passed**, **16 Django tests OK**.
 
 ## Đã xong (THẬT, kiểm 07/11/2026)
 
 - Checkpoint A: H1–H15 trong `reports/dss_defect_ledger.md`; F1–F9, D1–D2 `done` trong `reports/dss_requirements.md`.
-- Checkpoint B: `etl/dss_attrib.py` + `tests/test_dss_attrib.py` (benchmark, Shapley, summary, bad review, L1–L3); 11 test mới.
+- Checkpoint B: `etl/dss_attrib.py` + `tests/test_dss_attrib.py` (benchmark peer group từng giai đoạn, Shapley, summary, bad review, L1–L3); 12 test attribution.
 - DB reload đủ 5 bảng: Dim_Time 612, Dim_Location 15.078, Dim_Product 32.951, Dim_Seller 3.095, Fact_Delivery_SLA 110.173; 0 orphan FK.
 - Fact 21 cột: thêm seller_id, price, shipping_limit_date, promise_days, total_lead_days, handoff_slack_days, distance_km; weight_band qcut 4 lúc chạy.
 - Base DSS hiện có: `route_priority`, `root_cause`, `scenario`, `sensitivity`, `goal_seek_promise`, `goal_seek_cut`, Wilson/red-first/uncertain, bootstrap CI, excess_ratio.
@@ -33,6 +36,7 @@ portfolio, promise calibration, seller scorecard, Decision Brief, AUC/time-split
 
 - G1: bỏ U2; U1 chỉ 3 thẻ chính; X2 chỉ sửa số headline; V1/V3 hoãn nếu hết giờ. Giữ P0 S3, S4, S6, A1, X1; không cắt S1, S3, S4, S6.
 - G2: thêm X3 (P1): đồng bộ docs còn số cũ MỘT LẦN sau Checkpoint D, dùng số cuối; không sửa rải rác. Không đánh done khi chưa evidence.
+- G2b: đã duyệt phương án (2) và triển khai: transit benchmark xuyên tuyến theo decile khoảng cách; approval theo `payment_type`; prep theo `weight_band`; bỏ within-route dispersion (ghi hạn chế).
 
 ## Còn lại
 
@@ -52,7 +56,7 @@ Branch: `dss-v2` (tag `before-optimize` tại 32a34ca). Deadline 15/11/2026 23:5
 - [ ] A1 [ ] U1 [ ] U2
 - [ ] X1 [ ] X2 [ ] X3
 
-NEXT: DỪNG chờ G2b — xác nhận deviation benchmark "peer group theo distance decile"; chưa sang Checkpoint C (S3).
+NEXT: DỪNG chờ duyệt báo cáo 4a–4d (S1 cross-route peer) trước Checkpoint C (S3).
 
 Schema facts đã xác minh (06/11/2026):
 - `data/processed/`: 5 CSV gồm dim_time, dim_location, dim_product, dim_seller, fact_delivery_sla.

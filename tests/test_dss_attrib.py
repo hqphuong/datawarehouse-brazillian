@@ -16,14 +16,25 @@ def attributed(o):
     return A.attribute(o, A.fit_benchmarks(o))
 
 
-def _orders(n, route="A->B", start_km=1.0, approval=1.0, prep=2.0, transit=3.0, promise=7.0):
+def _orders(
+    n,
+    route="A->B",
+    start_km=1.0,
+    step_km=1.0,
+    approval=1.0,
+    prep=2.0,
+    transit=3.0,
+    promise=7.0,
+    payment_type="credit_card",
+    weight_band="Q1",
+):
     rows = []
     for i in range(n):
         rows.append(
             {
                 "order_id": f"{route}-{i}",
                 "route": route,
-                "distance_km": start_km + i,
+                "distance_km": start_km + i * step_km,
                 "approval": approval,
                 "prep": prep,
                 "transit": transit,
@@ -33,22 +44,35 @@ def _orders(n, route="A->B", start_km=1.0, approval=1.0, prep=2.0, transit=3.0, 
                 "is_late": approval + prep + transit > promise,
                 "review_score": 1 if i % 3 == 0 else 5,
                 "gmv": 100.0,
+                "payment_type": payment_type,
+                "weight_band": weight_band,
             }
         )
     return pd.DataFrame(rows)
 
 
-def _benchmark(route="A->B", band="D1", b=(0.5, 0.5, 1.0)):
+def _benchmark(
+    route="A->B",
+    band="D1",
+    weight_band="Q1",
+    payment_type="credit_card",
+    b=(0.5, 0.5, 1.0),
+):
     return pd.DataFrame(
         [
             {
                 "route": route,
                 "distance_band": band,
+                "weight_band": weight_band,
+                "payment_type": payment_type,
                 "n_orders": 100,
                 "b_approval": b[0],
                 "b_prep": b[1],
                 "b_transit": b[2],
-                "benchmark_level": "route_band",
+                "benchmark_level_approval": "peer",
+                "benchmark_level_prep": "peer",
+                "benchmark_level_transit": "peer",
+                "benchmark_level": "peer",
             }
         ]
     )
@@ -61,6 +85,8 @@ def test_shapley_hand_example():
                 "order_id": "o1",
                 "route": "A->B",
                 "distance_km": 10.0,
+                "weight_band": "Q1",
+                "payment_type": "credit_card",
                 "approval": 2.0,
                 "prep": 1.0,
                 "transit": 1.0,
@@ -96,24 +122,41 @@ def test_shapley_symmetry_and_null_player():
     assert sum(phi[s][0] for s in A.STAGES) == pytest.approx(1.0)
 
 
-def test_fit_benchmarks_fallback_levels():
-    # 100 đơn / 10 decile = 10 đơn mỗi ô.
-    o = pd.concat([_orders(100, "R1->X", 1.0), _orders(10, "R2->X", 1.0)])
-    b = A.fit_benchmarks(o, min_orders=5)
-    assert set(b.loc[b.route == "R1->X", "benchmark_level"]) == {"route_band"}
-
-    b = A.fit_benchmarks(o, min_orders=20)
-    assert set(b.loc[b.route == "R1->X", "benchmark_level"]) == {"route"}
-    # Tuyến R2 chỉ có 10 đơn < 20 -> dùng global, kể cả khi ô có >= 1 đơn.
-    assert set(b.loc[b.route == "R2->X", "benchmark_level"]) == {"global"}
-
-
-def test_attribute_preserves_benchmark_fallback_level():
-    o = _orders(40, "R1->X")
-    b = A.fit_benchmarks(o, min_orders=1000)  # mọi ô và tuyến đều < 1000
-    assert set(b["benchmark_level"]) == {"global"}
+def test_transit_benchmark_is_cross_route_peer():
+    # Hai tuyến cùng dải khoảng cách: benchmark transit phải là median gộp
+    # xuyên tuyến (15), không phải median nội bộ từng tuyến (10 và 20).
+    o = pd.concat(
+        [
+            _orders(40, "A->X", 1.0, transit=10.0),
+            _orders(40, "B->X", 1.0, transit=20.0),
+        ]
+    )
+    b = A.fit_benchmarks(o, min_orders=30, distance_bands=2)
     a = A.attribute(o, b)
-    assert set(a["benchmark_level"]) == {"global"}
+    for route in ("A->X", "B->X"):
+        values = a.loc[a["route"] == route, "b_transit"]
+        assert values.nunique() == 1
+        assert values.iloc[0] == pytest.approx(15.0)
+
+
+def test_fit_benchmarks_fallback_per_stage():
+    o = pd.concat(
+        [
+            _orders(100, "R1->X", 1.0, payment_type="credit_card", weight_band="Q1"),
+            _orders(5, "R2->X", 1.0, payment_type="boleto", weight_band="Q9"),
+        ]
+    )
+    b = A.fit_benchmarks(o, min_orders=30, distance_bands=10)
+    approval = b.attrs["stage_benchmarks"]["approval"].set_index("payment_type")
+    assert approval.loc["credit_card", "benchmark_level_approval"] == "peer"
+    assert approval.loc["boleto", "benchmark_level_approval"] == "global"
+
+    prep = b.attrs["stage_benchmarks"]["prep"].set_index("weight_band")
+    assert prep.loc["Q1", "benchmark_level_prep"] == "peer"
+    assert prep.loc["Q9", "benchmark_level_prep"] == "global"
+
+    # 10 decile trên 105 đơn -> mỗi decile ~10 đơn < 30: transit fallback global.
+    assert set(b["benchmark_level_transit"]) == {"global"}
 
 
 def test_fit_benchmarks_rejects_bad_input():
@@ -121,11 +164,25 @@ def test_fit_benchmarks_rejects_bad_input():
         A.fit_benchmarks(pd.DataFrame({"route": []}))
     with pytest.raises(ValueError):
         A.fit_benchmarks(_orders(3).drop(columns=["distance_km"]))
+    with pytest.raises(ValueError):
+        A.fit_benchmarks(_orders(3), quantile=1.0)
+
+
+def test_attribute_preserves_benchmark_fallback_level():
+    o = _orders(40, "R1->X")
+    b = A.fit_benchmarks(o, min_orders=1000)  # mọi nhóm đều < 1000
+    assert set(b["benchmark_level_approval"]) == {"global"}
+    assert set(b["benchmark_level_prep"]) == {"global"}
+    assert set(b["benchmark_level_transit"]) == {"global"}
+    a = A.attribute(o, b)
+    assert set(a["benchmark_level_approval"]) == {"global"}
+    assert set(a["benchmark_level_prep"]) == {"global"}
+    assert set(a["benchmark_level_transit"]) == {"global"}
 
 
 def test_benchmarks_cover_every_order(attributed):
     assert not attributed[A.BENCH_COLS].isna().any().any()
-    assert set(attributed["benchmark_level"]).issubset({"route_band", "route", "global"})
+    assert set(attributed["benchmark_level"]).issubset({"peer", "global", "mixed"})
     assert (attributed["late_actual"] == attributed["is_late"].astype(int)).all()
 
 
@@ -152,8 +209,11 @@ def test_attribution_summary_reconstructs_late_rate(attributed):
     assert s["phi_total"].notna().all()
     assert set(s["top_stage"]).issubset(set(A.STAGES))
     positive = s[s["phi_total"] > 0]
-    share_sum = positive[[f"share_{s}" for s in A.STAGES]].sum(axis=1)
-    assert np.allclose(share_sum, 1.0, atol=1e-12)
+    stage_share_sum = positive[[f"share_{x}" for x in A.STAGES]].sum(axis=1)
+    assert np.allclose(stage_share_sum, 1.0, atol=1e-12)
+    caused = s[s["late_rate"] > 0]
+    cause_cols = [f"cause_share_{x}" for x in A.STAGES] + ["share_promise"]
+    assert np.allclose(caused[cause_cols].sum(axis=1), 1.0, atol=1e-12)
 
 
 def test_bad_review_uplift_contract():

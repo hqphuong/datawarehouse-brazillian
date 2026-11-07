@@ -1,9 +1,23 @@
 """Khối 2 nâng cấp: benchmark 3 giai đoạn, Shapley attribution, residual promise.
 
-Mỗi đơn hàng được so với benchmark của **cùng tuyến và cùng decile khoảng cách**.
+Mỗi giai đoạn dùng một **nhóm peer riêng**, không dùng chung khóa tuyến:
+
+- ``approval``: median theo ``payment_type`` (loại thanh toán).
+- ``prep``: median theo ``weight_band`` (nhóm trọng lượng).
+- ``transit``: median **xuyên tuyến** theo ``distance_band`` (decile khoảng cách
+  toàn cục). Đây là peer group theo khoảng cách, không phải median nội bộ tuyến.
+
+Nhóm nào ít hơn ``min_orders`` hoặc thiếu khóa (``"NA"``) thì fallback về median
+toàn cục của chính giai đoạn đó. Cách này đo "tuyến chậm hơn peer cùng điều kiện"
+thay vì "chênh lệch trong nội bộ tuyến". Không giữ cột within-route dispersion
+để tránh trộn hai chuẩn; hạn chế được ghi trong báo cáo.
+
+Sensitivity chỉ dùng q=0,25 và q=0,5. q=0,75 bị loại vì benchmark 75th percentile
+chậm hơn thời gian thực tế, làm ``phi`` âm và phân rã không hợp lệ.
+
 Chênh lệch thời gian của từng giai đoạn (approval/prep/transit) được phân bổ
 bằng Shapley cho phần làm đơn trễ, còn phần trễ còn lại khi cả 3 giai đoạn đã
-đạt benchmark được gọi là ``residual_promise`` (cam kết giao hàng quá chặt).
+đạt benchmark được gọi là ``residual_promise`` (benchmark ngắn hơn cam kết).
 
 Định nghĩa game cho một đơn:
 
@@ -40,6 +54,15 @@ BENCH_COLS = [f"b_{s}" for s in STAGES]
 PERMUTATIONS = tuple(permutations(STAGES))
 BAD_REVIEW_MAX = 2  # Olist review_score 1..5; 1-2 là đánh giá xấu.
 
+# Mỗi giai đoạn so với peer group riêng (thiết kế v2, G2 phương án 2).
+STAGE_KEYS = {
+    "approval": "payment_type",
+    "prep": "weight_band",
+    "transit": "distance_band",
+}
+LEVEL_COLS = [f"benchmark_level_{s}" for s in STAGES]
+BENCH_KEY_COLS = ["route", "distance_band", "weight_band", "payment_type"]
+
 
 def add_distance_band(o: pd.DataFrame, q: int = 10) -> pd.DataFrame:
     """Thêm cột ``distance_band`` = decile khoảng cách; thiếu km → ``"NA"``."""
@@ -68,58 +91,80 @@ def add_distance_band(o: pd.DataFrame, q: int = 10) -> pd.DataFrame:
 
 
 def fit_benchmarks(
-    o: pd.DataFrame, min_orders: int = 30, distance_bands: int = 10
+    o: pd.DataFrame,
+    min_orders: int = 30,
+    distance_bands: int = 10,
+    quantile: float = 0.5,
 ) -> pd.DataFrame:
-    """Fit benchmark median 3 giai đoạn theo (tuyến, decile khoảng cách).
+    """Fit benchmark từng giai đoạn theo peer group riêng.
 
-    Thứ tự fallback khi một ô quá ít đơn:
+    - ``approval``: median theo ``payment_type``.
+    - ``prep``: median theo ``weight_band``.
+    - ``transit``: median theo ``distance_band`` = decile khoảng cách toàn cục,
+      tính **xuyên tuyến**. Đây là điểm khác cốt lõi so với bản cũ
+      (tuyến × decile), nơi benchmark transit chỉ đo dispersion nội bộ tuyến.
 
-    1. ``route_band``: median của (tuyến, decile khoảng cách) nếu ``n >= min_orders``.
-    2. ``route``: median toàn tuyến nếu tuyến có ``n >= min_orders``.
-    3. ``global``: median toàn bộ đơn.
+    Fallback: nhóm có ``n < min_orders`` hoặc khóa thiếu (``"NA"``) dùng median
+    toàn cục của giai đoạn. ``quantile`` mặc định 0,5 (median); sensitivity chỉ
+    dùng 0,25 và 0,5, không dùng 0,75 (xem docstring module).
 
-    Trả về DataFrame một dòng / (route, distance_band) với các cột ``b_*``,
-    ``n_orders`` và ``benchmark_level``. Các bảng fallback được lưu trong
-    ``.attrs`` để ``attribute()`` dùng lại, tránh fit lại trên dữ liệu khác.
+    Trả về DataFrame một dòng / tổ hợp khóa quan sát được, kèm ``b_*`` và
+    ``benchmark_level_*`` từng giai đoạn. Các bảng lookup và median toàn cục
+    được lưu trong ``.attrs`` để ``attribute()`` dùng lại.
     """
-    missing = [c for c in ["route", "distance_km", *STAGES] if c not in o.columns]
+    required = ["order_id", "route", "distance_km", "weight_band", "payment_type", *STAGES]
+    missing = [c for c in required if c not in o.columns]
     if missing:
         raise ValueError(f"Thiếu cột cho benchmark: {missing}")
     if len(o) == 0:
         raise ValueError("Không có dòng nào để fit benchmark")
+    if not 0 < quantile < 1:
+        raise ValueError("quantile phải trong (0, 1)")
 
     d = add_distance_band(o, q=distance_bands)
-    agg = {"n_orders": ("order_id", "size"), **{f"b_{s}": (s, "median") for s in STAGES}}
-    cell = d.groupby(["route", "distance_band"], as_index=False).agg(**agg)
+    for key in ("distance_band", "weight_band", "payment_type"):
+        d[key] = d[key].fillna("NA").astype(str)
 
-    route = (
-        d.groupby("route", as_index=False)
-        .agg(route_orders=("order_id", "size"), **{f"b_{s}_route": (s, "median") for s in STAGES})
-    )
-    global_bench = {s: float(d[s].median()) for s in STAGES}
+    def qstat(series: pd.Series) -> float:
+        return float(series.quantile(quantile))
 
-    cell = cell.merge(route, on="route", how="left")
-    cell["benchmark_level"] = "route_band"
-
-    low_cell = cell["n_orders"] < min_orders
+    global_bench = {s: qstat(d[s]) for s in STAGES}
+    stage_benchmarks: dict[str, pd.DataFrame] = {}
     for s in STAGES:
-        cell.loc[low_cell, f"b_{s}"] = cell.loc[low_cell, f"b_{s}_route"]
-    cell.loc[low_cell, "benchmark_level"] = "route"
+        key = STAGE_KEYS[s]
+        g = d.groupby(key, as_index=False).agg(
+            **{f"n_{s}": ("order_id", "size"), f"b_{s}": (s, qstat)}
+        )
+        level_col = f"benchmark_level_{s}"
+        is_peer = (g[f"n_{s}"] >= min_orders) & (g[key] != "NA")
+        g[level_col] = np.where(is_peer, "peer", "global")
+        g.loc[~is_peer, f"b_{s}"] = global_bench[s]
+        stage_benchmarks[s] = g[[key, f"b_{s}", f"n_{s}", level_col]]
 
-    low_route = cell["route_orders"] < min_orders
-    for s in STAGES:
-        cell.loc[low_route, f"b_{s}"] = global_bench[s]
-    cell.loc[low_route, "benchmark_level"] = "global"
-
-    keep = ["route", "distance_band", "n_orders", *BENCH_COLS, "benchmark_level"]
-    cell = cell[keep].reset_index(drop=True)
-    cell.attrs["min_orders"] = int(min_orders)
-    cell.attrs["distance_bands"] = int(distance_bands)
-    cell.attrs["global_benchmark"] = global_bench
-    cell.attrs["route_benchmark"] = route.rename(
-        columns={f"b_{s}_route": f"route_b_{s}" for s in STAGES}
+    combined = d.groupby(BENCH_KEY_COLS, as_index=False).agg(
+        n_orders=("order_id", "size")
     )
-    return cell
+    for s in STAGES:
+        combined = combined.merge(stage_benchmarks[s], on=STAGE_KEYS[s], how="left")
+    combined["benchmark_level"] = np.select(
+        [
+            (combined[LEVEL_COLS] == "peer").all(axis=1),
+            (combined[LEVEL_COLS] == "global").all(axis=1),
+        ],
+        ["peer", "global"],
+        default="mixed",
+    )
+    combined = combined[
+        [*BENCH_KEY_COLS, "n_orders", *BENCH_COLS, *LEVEL_COLS, "benchmark_level"]
+    ].reset_index(drop=True)
+
+    combined.attrs["stage_benchmarks"] = stage_benchmarks
+    combined.attrs["global_benchmark"] = global_bench
+    combined.attrs["stage_keys"] = dict(STAGE_KEYS)
+    combined.attrs["min_orders"] = int(min_orders)
+    combined.attrs["distance_bands"] = int(distance_bands)
+    combined.attrs["quantile"] = float(quantile)
+    return combined
 
 
 def _shapley_orders(
@@ -160,13 +205,34 @@ def _shapley_orders(
     return phi, values[(1 << len(STAGES)) - 1], values[0]
 
 
+def _stage_lookup(benchmarks: pd.DataFrame, stage: str) -> pd.DataFrame | None:
+    """Bảng tra benchmark của một giai đoạn theo đúng khóa peer của nó."""
+    key = STAGE_KEYS[stage]
+    value_col = f"b_{stage}"
+    if key not in benchmarks.columns or value_col not in benchmarks.columns:
+        return None
+    level_col = f"benchmark_level_{stage}"
+    cols = [key, value_col] + ([level_col] if level_col in benchmarks.columns else [])
+    return benchmarks[cols].drop_duplicates(subset=[key]).set_index(key)
+
+
 def attribute(o: pd.DataFrame, benchmarks: pd.DataFrame | None = None, min_orders: int = 30):
     """Gắn benchmark, phần vượt, residual promise và ``phi_*`` cho từng đơn.
 
-    Nếu ``benchmarks=None`` thì fit trên chính ``o``. Ô (tuyến, decile) chưa có
-    trong benchmark sẽ fallback về median tuyến, rồi median toàn cục.
+    Nếu ``benchmarks=None`` thì fit trên chính ``o``. Mỗi giai đoạn lấy benchmark
+    theo khóa peer riêng (``payment_type`` / ``weight_band`` / ``distance_band``);
+    khóa chưa có hoặc giai đoạn đó fallback sẽ dùng median toàn cục.
     """
-    need = ["order_id", "route", "distance_km", "promise_days", "total_lead_days", *STAGES]
+    need = [
+        "order_id",
+        "route",
+        "distance_km",
+        "weight_band",
+        "payment_type",
+        "promise_days",
+        "total_lead_days",
+        *STAGES,
+    ]
     missing = [c for c in need if c not in o.columns]
     if missing:
         raise ValueError(f"Thiếu cột để attribute: {missing}")
@@ -176,36 +242,44 @@ def attribute(o: pd.DataFrame, benchmarks: pd.DataFrame | None = None, min_order
     if benchmarks is None:
         benchmarks = fit_benchmarks(o, min_orders=min_orders)
     b = benchmarks
-    missing_b = [c for c in ["route", "distance_band", *BENCH_COLS] if c not in b.columns]
+    missing_b = [f"b_{s}" for s in STAGES if f"b_{s}" not in b.columns]
     if missing_b:
         raise ValueError(f"Benchmark thiếu cột: {missing_b}")
 
-    d = add_distance_band(o)
-    m = d.merge(
-        b[["route", "distance_band", *BENCH_COLS, "benchmark_level"]],
-        on=["route", "distance_band"],
-        how="left",
-    )
+    d = add_distance_band(o, q=int(b.attrs.get("distance_bands", 10)))
+    m = d.copy()
+    for key in ("distance_band", "weight_band", "payment_type"):
+        m[key] = m[key].fillna("NA").astype(str)
 
-    route_b = b.attrs.get("route_benchmark")
-    if route_b is None:
-        route_b = (
-            o.groupby("route", as_index=False)[STAGES]
-            .median()
-            .rename(columns={s: f"route_b_{s}" for s in STAGES})
-        )
-    m = m.merge(route_b[["route", *[f"route_b_{s}" for s in STAGES]]], on="route", how="left")
+    global_b = b.attrs.get("global_benchmark")
+    if global_b is None:
+        quantile = float(b.attrs.get("quantile", 0.5))
+        global_b = {s: float(o[s].quantile(quantile)) for s in STAGES}
 
-    global_b = b.attrs.get("global_benchmark") or {s: float(o[s].median()) for s in STAGES}
-    cell_found = m["b_approval"].notna()
-    route_found = m["route_b_approval"].notna()
     for s in STAGES:
-        m[f"b_{s}"] = m[f"b_{s}"].fillna(m[f"route_b_{s}"])
-        m[f"b_{s}"] = m[f"b_{s}"].fillna(global_b[s])
-    # Giữ level đã fallback bên trong benchmark (route_band/route/global);
-    # chỉ gán level mới cho ô (tuyến, decile) không có trong bảng benchmark.
-    m.loc[~cell_found, "benchmark_level"] = np.where(
-        route_found[~cell_found], "route", "global"
+        key = STAGE_KEYS[s]
+        value_col = f"b_{s}"
+        level_col = f"benchmark_level_{s}"
+        lookup = _stage_lookup(b, s)
+        if lookup is None:
+            m[value_col] = np.nan
+            m[level_col] = np.nan
+        else:
+            m[value_col] = m[key].map(lookup[value_col])
+            if level_col in lookup.columns:
+                m[level_col] = m[key].map(lookup[level_col])
+            else:
+                m[level_col] = np.where(m[value_col].notna(), "peer", np.nan)
+        m[value_col] = m[value_col].fillna(global_b[s])
+        m[level_col] = m[level_col].fillna("global")
+
+    m["benchmark_level"] = np.select(
+        [
+            (m[LEVEL_COLS] == "peer").all(axis=1),
+            (m[LEVEL_COLS] == "global").all(axis=1),
+        ],
+        ["peer", "global"],
+        default="mixed",
     )
 
     for s in STAGES:
@@ -263,6 +337,15 @@ def attribution_summary(
     positive = out["phi_total"] > 0
     for s in STAGES:
         out[f"share_{s}"] = np.where(positive, out[f"phi_{s}"] / out["phi_total"], np.nan)
+    # Tỷ trọng 4 nguyên nhân trên toàn bộ đơn trễ: 3 stage + residual promise.
+    late_positive = out["late_rate"] > 0
+    out["share_promise"] = np.where(
+        late_positive, out["residual_late_rate"] / out["late_rate"], np.nan
+    )
+    for s in STAGES:
+        out[f"cause_share_{s}"] = np.where(
+            late_positive, out[f"phi_{s}"] / out["late_rate"], np.nan
+        )
     out["top_stage"] = (
         out[PHI_COLS].idxmax(axis=1).str.replace("phi_", "", regex=False)
     )
@@ -365,6 +448,10 @@ def main() -> None:
         "residual_promise_days", *PHI_COLS, "phi_total", "top_stage",
     ]
     print(top[cols].to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+    print("\n## Fallback benchmark theo giai đoạn")
+    for stage in STAGES:
+        levels = a[f"benchmark_level_{stage}"].value_counts(normalize=True)
+        print(f"- {stage}: {levels.round(6).to_dict()}")
     print("\n## Bất biến")
     print(check_attrib(a))
     print("\n## Đánh giá xấu theo trạng thái giao")

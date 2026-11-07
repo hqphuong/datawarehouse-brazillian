@@ -1,6 +1,6 @@
 # DSS Requirements — nguồn sự thật duy nhất
 
-Cập nhật: 06/11/2026 (sau Checkpoint A). Trạng thái: `todo` | `doing` | `done` | `changed` | `dropped`.
+Cập nhật: 07/11/2026 (sau G2 — S1 redesign). Trạng thái: `todo` | `doing` | `done` | `changed` | `dropped`.
 Mọi thay đổi trạng thái phải kèm evidence (lệnh chạy/file). Không đổi âm thầm.
 
 ## DATA
@@ -28,8 +28,8 @@ Mọi thay đổi trạng thái phải kèm evidence (lệnh chạy/file). Khôn
 
 | ID | Ưu tiên | Trạng thái | Evidence |
 |---|---|---|---|
-| S1 | P0 | changed | `etl/dss_attrib.py`: `fit_benchmarks`/`attribute`/Shapley chạy và test pass, NHƯNG deviation G2b: benchmark đang tính trong (tuyến×decile khoảng cách), chưa phải peer group xuyên tuyến theo distance decile; chờ duyệt trước khi sửa. |
-| S2 | P0 | done | `attribution_summary`, `bad_review_uplift`, `check_attrib` L1–L3; 11 test mới; raw eval mục "Attribution" (95.591 đơn, invariant pass). |
+| S1 | P0 | changed | Đã đổi theo G2 phương án (2): `fit_benchmarks` dùng peer group riêng từng giai đoạn — approval theo `payment_type`, prep theo `weight_band`, transit theo `distance_band` (decile khoảng cách toàn cục, **xuyên tuyến**); fallback median toàn cục khi nhóm < `min_orders` hoặc khóa `"NA"`. `attribute` giữ `benchmark_level_<stage>`; sensitivity q=0,25/0,5. Evidence: `reports/dss_eval_raw.txt` mục "Attribution" (95.591 đơn, L1–L3 pass); commit `dss-opt: S1`. |
+| S2 | P0 | done | `attribution_summary` (thêm `cause_share_*`, `share_promise`), `bad_review_uplift`, `check_attrib` L1–L3; 12 test attribution; raw eval mục "Attribution" (95.591 đơn, invariant pass). |
 | S3 | P0 | todo | promise calibration route×weight_band, min 100; tight/loose/ok; avoidable items |
 | S4 | P0 | todo | feasible_max_cut, status, bootstrap 300× CI, marginal_cut_table |
 | S5 | P1 | todo | seller_scorecard + portfolio; chỉ đơn single-seller, báo share loại |
