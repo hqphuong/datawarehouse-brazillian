@@ -314,6 +314,129 @@ def test_promise_calibration_rejects_bad_input():
         )
 
 
+def _cut_orders(
+    n,
+    route,
+    approval,
+    prep,
+    transit,
+    promise=5.0,
+    start_km=1.0,
+    weight_band="Q1",
+    payment_type="credit_card",
+):
+    rows = []
+    for i in range(n):
+        total = approval + prep + transit
+        rows.append(
+            {
+                "order_id": f"{route}-{i}",
+                "route": route,
+                "distance_km": start_km + i,
+                "approval": approval,
+                "prep": prep,
+                "transit": transit,
+                "promise_days": promise,
+                "total_lead_days": total,
+                "delay_days": total - promise,
+                "is_late": total > promise,
+                "review_score": 5,
+                "gmv": 100.0,
+                "payment_type": payment_type,
+                "weight_band": weight_band,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _cut_fixture():
+    # Tuyến nhanh đứng trước để P25 rơi vào nhóm nhanh (Q25 = 1).
+    fast = _cut_orders(100, "C->D", 1, 1, 1)
+    slow = _cut_orders(100, "A->B", 1, 2, 3, start_km=1000.0)
+    return pd.concat([fast, slow], ignore_index=True)
+
+
+def test_feasible_max_cut_point_and_ci_rule():
+    o = _cut_fixture()
+    slow = A.feasible_max_cut(
+        o, "A->B", quantile=0.25, min_orders=1, n_boot=100, seed=42
+    )
+    assert slow["cut_approval"] == pytest.approx(0.0)
+    assert slow["cut_prep"] == pytest.approx(1.0)
+    assert slow["cut_transit"] == pytest.approx(2.0)
+    assert slow["total_cut_days"] == pytest.approx(3.0)
+    assert slow["baseline_late_rate"] == pytest.approx(1.0)
+    assert slow["projected_late_rate"] == pytest.approx(0.0)
+    assert slow["avoided_orders"] == 100
+    assert slow["delta_pp"] == pytest.approx(100.0)
+    assert slow["status"] in {"có cơ sở", "chưa đủ bằng chứng"}
+
+    fast = A.feasible_max_cut(
+        o, "C->D", quantile=0.25, min_orders=1, n_boot=100, seed=42
+    )
+    assert fast["total_cut_days"] == pytest.approx(0.0)
+    assert fast["avoided_orders"] == 0
+    assert fast["delta_pp"] == pytest.approx(0.0)
+    assert fast["delta_ci_low_pp"] == fast["delta_ci_high_pp"] == pytest.approx(0.0)
+    assert fast["status"] == "chưa đủ bằng chứng"
+
+
+def test_status_from_ci():
+    assert A._status_from_ci(0.5, 2.0) == "có cơ sở"
+    assert A._status_from_ci(-0.5, 2.0) == "chưa đủ bằng chứng"
+    assert A._status_from_ci(-2.0, -0.5) == "tác động âm"
+
+
+def test_feasible_cut_table_contract():
+    o = _cut_fixture()
+    t = A.feasible_cut_table(
+        o, min_orders=50, top=2, n_boot=50, seed=42
+    )
+    assert len(t) == 2
+    assert t.iloc[0]["route"] == "A->B"
+    assert t["avoided_orders"].is_monotonic_decreasing
+    assert t.attrs["n_routes_eligible"] == 2
+    assert t.attrs["n_boot"] == 50
+    one = A.feasible_cut_table(o, routes=["C->D"], n_boot=20, seed=42)
+    assert len(one) == 1
+    assert one.iloc[0]["route"] == "C->D"
+
+
+def test_marginal_cut_table_contract():
+    o = _cut_fixture()
+    m = A.marginal_cut_table(o, "A->B", quantile=0.25, step=1.0, stage="prep")
+    assert list(m["cut_days"]) == [0.0, 1.0]
+    assert m.iloc[0]["avoided_orders"] == 0
+    assert m.iloc[1]["avoided_orders"] == 100
+    assert m.iloc[1]["marginal_avoided_orders"] == 100
+    assert m.iloc[1]["marginal_avoided_per_day"] == pytest.approx(100.0)
+    transit = A.marginal_cut_table(o, "A->B", quantile=0.25, step=1.0, stage="transit")
+    assert list(transit["cut_days"]) == [0.0, 1.0, 2.0]
+    assert transit.iloc[-1]["avoided_orders"] == 100
+
+
+def test_feasible_max_cut_rejects_bad_input():
+    o = _cut_fixture()
+    with pytest.raises(ValueError):
+        A.feasible_max_cut(pd.DataFrame(), "A->B")
+    with pytest.raises(ValueError):
+        A.feasible_max_cut(o, "Z->Z")
+    with pytest.raises(ValueError):
+        A.feasible_max_cut(o, "A->B", alpha=1.0)
+    with pytest.raises(ValueError):
+        A.feasible_max_cut(o, "A->B", n_boot=0)
+    with pytest.raises(ValueError):
+        A.feasible_max_cut(o, "A->B", quantile=1.0)
+    with pytest.raises(ValueError):
+        A.feasible_cut_table(o, routes=["Z->Z"])
+    with pytest.raises(ValueError):
+        A.feasible_cut_table(o, sort_by="unknown")
+    with pytest.raises(ValueError):
+        A.marginal_cut_table(o, "A->B", step=0)
+    with pytest.raises(ValueError):
+        A.marginal_cut_table(o, "A->B", stage="unknown")
+
+
 def test_attribute_rejects_missing_columns():
     with pytest.raises(ValueError):
         A.attribute(pd.DataFrame({"order_id": ["x"]}))

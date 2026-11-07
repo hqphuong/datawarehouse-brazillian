@@ -17,7 +17,8 @@
 - Fallback global: transit 0,4959% (chỉ đơn thiếu `distance_km`); approval 0,001% (1 đơn thiếu `payment_type`); prep 0%.
 - `phi_transit` q=0,5: SP→RJ 14,11 pp (trước 13,50), SP→SP 2,46 pp (trước 2,90); hạng nguyên nhân không đổi (transit đứng đầu).
 - S3 promise calibration: 130/1.157 ô route×weight_band đủ mẫu (83.104/95.591 đơn-tuyến); 89 tight / 11 ok / 30 loose; 3.751/6.720 đơn trễ có thể tránh nếu promise = Q95 (đổi định nghĩa trễ, không rút ngắn giao). SP→SP: 4/4 ô tight; `share_promise` 36,02% (q=0,5) vs 3,11% (q=0,25).
-- Test 07/11/2026: **53 pytest passed**, **16 Django tests OK**; S1 cross-route peer commit `5606c08`, S3 commit sẽ ghi sau.
+- S4 feasible max cut (peer P25 cùng định nghĩa S1, bootstrap 300× seed 42): 71/406 tuyến đủ 100 đơn-tuyến. Top theo số đơn tránh: SP→SP 1.023 đơn (CI +3,19…+3,61 pp), SP→RJ 659 (+7,52…+8,83 pp), SP→MG 261, SP→BA 231, SP→SC 178; tất cả "có cơ sở". H10: cắt 1 ngày tại SP→RJ → approval 15,36% / prep 14,50% / transit 14,32% (baseline 15,71%).
+- Test 07/11/2026: **58 pytest passed**, **16 Django tests OK**; S1 commit `5606c08`, S3 `0f84768`, S4 commit sẽ ghi sau.
 
 ## Đã xong (THẬT, kiểm 07/11/2026)
 
@@ -52,12 +53,12 @@ Branch: `dss-v2` (tag `before-optimize` tại 32a34ca). Deadline 15/11/2026 23:5
 
 - [x] F1 [x] F2 [x] F3 [x] F4 [x] F5 [x] F6 [x] F7 [x] F8 [x] F9
 - [x] D1 [x] D2
-- [x] S1 [x] S2 [x] S3 [ ] S4 [ ] S5 [ ] S6 [ ] S7 [ ] S8
+- [x] S1 [x] S2 [x] S3 [x] S4 [ ] S5 [ ] S6 [ ] S7 [ ] S8
 - [ ] V1 [ ] V2 [ ] V3 [ ] V4
 - [ ] A1 [ ] U1 [ ] U2
 - [ ] X1 [ ] X2 [ ] X3
 
-NEXT: Checkpoint C — S4 `feasible_max_cut` + bootstrap 300× (seed 42) + `marginal_cut_table`, dùng peer P25 cùng định nghĩa S1.
+NEXT: Checkpoint C — S5 seller scorecard/portfolio (chỉ đơn single-seller, báo share loại).
 
 Schema facts đã xác minh (06/11/2026):
 - `data/processed/`: 5 CSV gồm dim_time, dim_location, dim_product, dim_seller, fact_delivery_sla.

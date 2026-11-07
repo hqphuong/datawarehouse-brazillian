@@ -487,6 +487,367 @@ def promise_calibration(
     return out
 
 
+def _prepare_peer_frame(
+    o: pd.DataFrame,
+    benchmarks: pd.DataFrame | None = None,
+    quantile: float = 0.25,
+) -> pd.DataFrame:
+    """Gắn benchmark peer P25 (cùng định nghĩa peer với S1) cho từng đơn-tuyến."""
+    if benchmarks is None:
+        benchmarks = fit_benchmarks(o, quantile=quantile)
+    else:
+        bq = benchmarks.attrs.get("quantile")
+        if bq is not None and abs(float(bq) - float(quantile)) > 1e-12:
+            raise ValueError(
+                f"benchmarks có quantile={bq}, cần {quantile} (peer P25 của S4)"
+            )
+    return attribute(o, benchmarks)
+
+
+def _feasible_cuts(
+    frame: pd.DataFrame,
+) -> tuple[dict[str, float], dict[str, float], dict[str, float]]:
+    """Mức cắt tối đa từng giai đoạn để đưa route về trung bình peer P25.
+
+    ``cut_s = max(0, mean(actual_s) − mean(peer_p25_s))``. Peer P25 lấy từ
+    ``b_*`` của :func:`attribute` (approval theo payment_type, prep theo
+    weight_band, transit theo distance_band xuyên tuyến — đúng S1).
+    """
+    cuts: dict[str, float] = {}
+    actual: dict[str, float] = {}
+    peer: dict[str, float] = {}
+    for s in STAGES:
+        actual[s] = float(frame[s].mean())
+        peer[s] = float(frame[f"b_{s}"].mean())
+        cuts[s] = max(0.0, actual[s] - peer[s])
+    return cuts, actual, peer
+
+
+def _feasible_point(frame: pd.DataFrame) -> dict:
+    """Ước lượng điểm: cắt tối đa + mô phỏng ``scenario`` (không bootstrap)."""
+    cuts, actual, peer = _feasible_cuts(frame)
+    result = scenario(frame, cut=cuts)
+    return {
+        "cuts": cuts,
+        "actual": actual,
+        "peer": peer,
+        "baseline": float(result["baseline"]),
+        "projected": float(result["projected"]),
+        "avoided": int(result["avoided"]),
+        "delta_pp": (float(result["baseline"]) - float(result["projected"])) * 100.0,
+    }
+
+
+def _feasible_bootstrap(
+    frame: pd.DataFrame, n_boot: int, seed: int, alpha: float
+) -> tuple[np.ndarray, np.ndarray, float, float]:
+    """Bootstrap ``n_boot`` lần theo đơn-tuyến trong một tuyến.
+
+    Mỗi lần lấy mẫu có hoàn lại ``n`` đơn-tuyến, **tính lại** mức cắt từ dữ liệu
+    mẫu (peer P25 giữ cố định từ toàn bộ dữ liệu), rồi mô phỏng ``scenario``.
+    Trả về ``(delta_pp_samples, avoided_samples, ci_low_pp, ci_high_pp)``.
+    """
+    n = len(frame)
+    rng = np.random.default_rng(seed)
+    deltas = np.empty(n_boot, dtype=float)
+    avoided = np.empty(n_boot, dtype=int)
+    for i in range(n_boot):
+        idx = rng.integers(0, n, size=n)
+        sample = frame.iloc[idx].reset_index(drop=True)
+        cuts, _, _ = _feasible_cuts(sample)
+        result = scenario(sample, cut=cuts)
+        deltas[i] = (
+            float(result["baseline"]) - float(result["projected"])
+        ) * 100.0
+        avoided[i] = int(result["avoided"])
+    lo = float(np.percentile(deltas, 100.0 * alpha / 2.0))
+    hi = float(np.percentile(deltas, 100.0 * (1.0 - alpha / 2.0)))
+    return deltas, avoided, lo, hi
+
+
+def _status_from_ci(ci_low_pp: float, ci_high_pp: float) -> str:
+    """Trạng thái theo CI 95%: chứa 0 → chưa đủ bằng chứng."""
+    if ci_low_pp > 0:
+        return "có cơ sở"
+    if ci_high_pp < 0:
+        return "tác động âm"
+    return "chưa đủ bằng chứng"
+
+
+def _feasible_from_frame(
+    frame: pd.DataFrame,
+    route: str,
+    min_orders: int,
+    quantile: float,
+    n_boot: int,
+    seed: int,
+    alpha: float,
+) -> dict:
+    """Tính S4 cho một tuyến đã có sẵn ``b_*`` (peer P25)."""
+    point = _feasible_point(frame)
+    deltas, avoided_samples, lo, hi = _feasible_bootstrap(
+        frame, n_boot=n_boot, seed=seed, alpha=alpha
+    )
+    avoided_lo, avoided_hi = np.percentile(
+        avoided_samples, [100.0 * alpha / 2.0, 100.0 * (1.0 - alpha / 2.0)]
+    )
+    cuts = point["cuts"]
+    return {
+        "route": route,
+        "n_orders": int(len(frame)),
+        "min_orders": int(min_orders),
+        "low_sample": bool(len(frame) < min_orders),
+        "quantile": float(quantile),
+        "n_boot": int(n_boot),
+        "seed": int(seed),
+        "alpha": float(alpha),
+        "cut_approval": cuts["approval"],
+        "cut_prep": cuts["prep"],
+        "cut_transit": cuts["transit"],
+        "total_cut_days": float(sum(cuts.values())),
+        "actual_mean_approval": point["actual"]["approval"],
+        "actual_mean_prep": point["actual"]["prep"],
+        "actual_mean_transit": point["actual"]["transit"],
+        "peer_p25_approval": point["peer"]["approval"],
+        "peer_p25_prep": point["peer"]["prep"],
+        "peer_p25_transit": point["peer"]["transit"],
+        "baseline_late_rate": point["baseline"],
+        "projected_late_rate": point["projected"],
+        "avoided_orders": point["avoided"],
+        "delta_pp": point["delta_pp"],
+        "delta_ci_low_pp": lo,
+        "delta_ci_high_pp": hi,
+        "avoided_ci_low": int(round(float(avoided_lo))),
+        "avoided_ci_high": int(round(float(avoided_hi))),
+        "status": _status_from_ci(lo, hi),
+    }
+
+
+def feasible_max_cut(
+    o: pd.DataFrame,
+    route: str,
+    benchmarks: pd.DataFrame | None = None,
+    quantile: float = 0.25,
+    min_orders: int = 100,
+    n_boot: int = 300,
+    seed: int = 42,
+    alpha: float = 0.05,
+) -> dict:
+    """S4: mức cắt tối đa khả thi của một tuyến so với peer P25 + bootstrap CI.
+
+    Với từng giai đoạn, ``cut_s = max(0, mean(actual_s) − mean(peer_p25_s))``.
+    Peer P25 dùng **cùng định nghĩa peer với S1**: approval theo ``payment_type``,
+    prep theo ``weight_band``, transit theo ``distance_band`` (decile khoảng cách
+    toàn cục, xuyên tuyến). Cắt được mô phỏng bằng :func:`etl.dss_models.scenario`
+    (chặn theo thời gian thực tế từng đơn), **không phải** can thiệp thật.
+
+    Bootstrap ``n_boot`` lần (mặc định 300, seed 42) theo đơn-tuyến trong tuyến;
+    mỗi lần tính lại mức cắt trên mẫu rồi mô phỏng. CI 95% cho mức giảm tỷ lệ
+    trễ (điểm phần trăm). ``status``:
+
+    - ``"có cơ sở"`` nếu CI dưới > 0.
+    - ``"tác động âm"`` nếu CI trên < 0.
+    - ``"chưa đủ bằng chứng"`` nếu CI chứa 0.
+
+    Câu chữ đúng: "**nếu** cắt được ... **thì ước tính** tỷ lệ trễ ...", không
+    nói "sẽ giảm". Đây là mô phỏng theo luật, không có counterfactual thật.
+    """
+    if not 0 < alpha < 1:
+        raise ValueError("alpha phải trong (0, 1)")
+    if n_boot < 1:
+        raise ValueError("n_boot phải >= 1")
+    if min_orders < 1:
+        raise ValueError("min_orders phải >= 1")
+    if not 0 < quantile < 1:
+        raise ValueError("quantile phải trong (0, 1)")
+    if len(o) == 0:
+        raise ValueError("Không có dòng nào để feasible_max_cut")
+
+    att = _prepare_peer_frame(o, benchmarks=benchmarks, quantile=quantile)
+    frame = att[att["route"] == route]
+    if len(frame) == 0:
+        raise ValueError(f"Không có tuyến {route!r}")
+    return _feasible_from_frame(
+        frame,
+        route=route,
+        min_orders=min_orders,
+        quantile=quantile,
+        n_boot=n_boot,
+        seed=seed,
+        alpha=alpha,
+    )
+
+
+def feasible_cut_table(
+    o: pd.DataFrame,
+    routes: list[str] | None = None,
+    benchmarks: pd.DataFrame | None = None,
+    quantile: float = 0.25,
+    min_orders: int = 100,
+    top: int = 10,
+    n_boot: int = 300,
+    seed: int = 42,
+    alpha: float = 0.05,
+    sort_by: str = "avoided_orders",
+) -> pd.DataFrame:
+    """Bảng S4 cho nhiều tuyến, chỉ bootstrap các tuyến được chọn.
+
+    Nếu ``routes=None``: lấy các tuyến có ít nhất ``min_orders`` đơn-tuyến, xếp
+    hạng bằng ước lượng điểm theo ``sort_by`` (mặc định ``avoided_orders``),
+    rồi bootstrap ``top`` tuyến đầu. Nếu truyền ``routes``: tính đúng các tuyến
+    đó (kể cả mẫu nhỏ; cột ``low_sample`` cho biết).
+
+    Trả về DataFrame một dòng / tuyến, sắp theo ``sort_by`` giảm dần. Tham số
+    và số tuyến đủ điều kiện nằm trong ``.attrs``.
+    """
+    if sort_by not in {
+        "avoided_orders",
+        "total_cut_days",
+        "delta_pp",
+        "baseline_late_rate",
+    }:
+        raise ValueError(f"sort_by không hỗ trợ: {sort_by}")
+    if top < 1:
+        raise ValueError("top phải >= 1")
+    if len(o) == 0:
+        raise ValueError("Không có dòng nào để feasible_cut_table")
+
+    att = _prepare_peer_frame(o, benchmarks=benchmarks, quantile=quantile)
+    counts = att.groupby("route").size()
+    if routes is None:
+        candidates = counts[counts >= min_orders].index.tolist()
+    else:
+        missing = [r for r in routes if r not in counts.index]
+        if missing:
+            raise ValueError(f"Không có tuyến: {missing}")
+        candidates = list(dict.fromkeys(routes))
+    if not candidates:
+        empty = pd.DataFrame()
+        empty.attrs["n_routes_eligible"] = 0
+        return empty
+
+    point_rows = []
+    for route in candidates:
+        frame = att[att["route"] == route]
+        point = _feasible_point(frame)
+        point_rows.append(
+            {
+                "route": route,
+                "n_orders": int(len(frame)),
+                "total_cut_days": float(sum(point["cuts"].values())),
+                "avoided_orders": int(point["avoided"]),
+                "delta_pp": float(point["delta_pp"]),
+                "baseline_late_rate": float(point["baseline"]),
+                "low_sample": bool(len(frame) < min_orders),
+            }
+        )
+    point_df = pd.DataFrame(point_rows)
+    if routes is None:
+        chosen = (
+            point_df.sort_values([sort_by, "n_orders"], ascending=[False, False])
+            .head(top)["route"]
+            .tolist()
+        )
+    else:
+        chosen = candidates
+
+    rows = [
+        _feasible_from_frame(
+            att[att["route"] == route],
+            route=route,
+            min_orders=min_orders,
+            quantile=quantile,
+            n_boot=n_boot,
+            seed=seed,
+            alpha=alpha,
+        )
+        for route in chosen
+    ]
+    out = (
+        pd.DataFrame(rows)
+        .sort_values([sort_by, "n_orders"], ascending=[False, False])
+        .reset_index(drop=True)
+    )
+    out.attrs["quantile"] = float(quantile)
+    out.attrs["min_orders"] = int(min_orders)
+    out.attrs["n_boot"] = int(n_boot)
+    out.attrs["seed"] = int(seed)
+    out.attrs["n_routes_total"] = int(len(counts))
+    out.attrs["n_routes_eligible"] = int((counts >= min_orders).sum())
+    out.attrs["n_routes_returned"] = int(len(out))
+    return out
+
+
+def marginal_cut_table(
+    o: pd.DataFrame,
+    route: str,
+    benchmarks: pd.DataFrame | None = None,
+    quantile: float = 0.25,
+    step: float = 1.0,
+    stage: str | None = None,
+) -> pd.DataFrame:
+    """Bảng cắt biên: mỗi giai đoạn cắt 0..``cut_s`` (các giai đoạn khác = 0).
+
+    Với ``stage=None`` làm cả 3 giai đoạn; nếu truyền ``stage`` chỉ làm một.
+    ``cut_s`` là mức cắt tối đa khả thi của S4 (đưa route về peer P25). Mỗi
+    dòng là một mức cắt, kèm ``projected_late_rate``, ``avoided_orders`` và
+    ``marginal_avoided_orders`` / ``marginal_avoided_per_day`` so với mức trước.
+
+    Đây là hiệu ứng **một giai đoạn tại một thời điểm**, không phải kịch bản
+    cắt đồng thời cả 3 (dùng :func:`feasible_max_cut` cho kịch bản đồng thời).
+    """
+    if step <= 0:
+        raise ValueError("step phải > 0")
+    if stage is not None and stage not in STAGES:
+        raise ValueError(f"stage phải thuộc {STAGES} hoặc None")
+    if len(o) == 0:
+        raise ValueError("Không có dòng nào để marginal_cut_table")
+
+    att = _prepare_peer_frame(o, benchmarks=benchmarks, quantile=quantile)
+    frame = att[att["route"] == route]
+    if len(frame) == 0:
+        raise ValueError(f"Không có tuyến {route!r}")
+    cuts, _, _ = _feasible_cuts(frame)
+    stages = [stage] if stage else list(STAGES)
+
+    rows = []
+    for s in stages:
+        max_cut = float(cuts[s])
+        if max_cut <= 0:
+            xs = [0.0]
+        else:
+            xs = list(np.arange(0.0, max_cut, step))
+            if not xs or xs[-1] > max_cut - 1e-12:
+                xs = [0.0]
+            xs.append(max_cut)
+            xs = sorted({round(float(x), 10) for x in xs if x <= max_cut + 1e-12})
+        prev_avoided = 0
+        prev_x = 0.0
+        for x in xs:
+            result = scenario(frame, cut={s: float(x)})
+            avoided = int(result["avoided"])
+            marginal = avoided - prev_avoided
+            per_day = marginal / (x - prev_x) if x > prev_x else 0.0
+            rows.append(
+                {
+                    "stage": s,
+                    "cut_days": float(x),
+                    "projected_late_rate": float(result["projected"]),
+                    "avoided_orders": avoided,
+                    "marginal_avoided_orders": int(marginal),
+                    "marginal_avoided_per_day": float(per_day),
+                }
+            )
+            prev_avoided = avoided
+            prev_x = x
+    out = pd.DataFrame(rows)
+    out.attrs["route"] = route
+    out.attrs["quantile"] = float(quantile)
+    out.attrs["n_orders"] = int(len(frame))
+    out.attrs["feasible_cuts"] = cuts
+    return out
+
+
 def bad_review_uplift(o_attr: pd.DataFrame) -> dict:
     """So sánh tỷ lệ đánh giá xấu (review_score ≤ 2) giữa đơn trễ và đúng hạn.
 

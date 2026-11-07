@@ -1002,6 +1002,80 @@ def promise_policy_report(o: pd.DataFrame) -> None:
     )
 
 
+def feasible_cut_report(o: pd.DataFrame) -> None:
+    """In S4: feasible max cut theo peer P25 + bootstrap CI + bảng cắt biên."""
+    table = ATTRIB.feasible_cut_table(o, top=10, n_boot=300, seed=42)
+    print("\n## Feasible max cut (S4: peer P25 + bootstrap 300×, seed 42)")
+    print(
+        "- Peer P25 dùng CÙNG định nghĩa peer với S1: approval theo payment_type; "
+        "prep theo weight_band; transit theo distance_band (decile khoảng cách "
+        "toàn cục, XUYÊN tuyến)."
+    )
+    print(
+        "- cut_s = max(0, mean(actual_s) − mean(peer_p25_s)); mô phỏng bằng "
+        "scenario, chặn theo thời gian thực tế từng đơn."
+    )
+    print(
+        "- Đây là MÔ PHỎNG theo luật, không có counterfactual thật: nói "
+        "'NẾU cắt được ... THÌ ƯỚC TÍNH', không nói 'sẽ giảm'."
+    )
+    print(
+        "- Bootstrap 300 lần theo đơn-tuyến trong mỗi tuyến; CI 95% cho mức "
+        "giảm tỷ lệ trễ (điểm phần trăm). CI chứa 0 → 'chưa đủ bằng chứng'."
+    )
+    if len(table) == 0:
+        print("- Không có tuyến đủ mẫu.")
+        return
+    print(
+        f"- Tuyến đủ mẫu {table.attrs['min_orders']} đơn-tuyến: "
+        f"{table.attrs['n_routes_eligible']}/{table.attrs['n_routes_total']}; "
+        f"bootstrap {table.attrs['n_routes_returned']} tuyến."
+    )
+    cols = [
+        "route",
+        "n_orders",
+        "cut_approval",
+        "cut_prep",
+        "cut_transit",
+        "total_cut_days",
+        "baseline_late_rate",
+        "projected_late_rate",
+        "avoided_orders",
+        "delta_pp",
+        "delta_ci_low_pp",
+        "delta_ci_high_pp",
+        "status",
+    ]
+    view = table[cols].copy()
+    for col in cols:
+        if col not in {"route", "n_orders", "avoided_orders", "status"}:
+            view[col] = view[col].round(6)
+    print("\n### Top 10 tuyến theo số đơn trễ có thể tránh")
+    print(_md_table(view))
+
+    print(
+        "\n### Kiểm tra H10: cắt 1 ngày mỗi giai đoạn tại SP->RJ "
+        "(một giai đoạn tại một thời điểm)"
+    )
+    for stage in ATTRIB.STAGES:
+        result = M.scenario(o, "SP->RJ", {stage: 1})
+        print(
+            f"- {stage}: projected={result['projected']:.6f}, "
+            f"avoided={result['avoided']} "
+            f"(baseline={result['baseline']:.6f})"
+        )
+
+    top_route = str(table.iloc[0]["route"])
+    marginal = ATTRIB.marginal_cut_table(o, top_route)
+    for col in ("cut_days", "projected_late_rate", "marginal_avoided_per_day"):
+        marginal[col] = marginal[col].round(6)
+    print(
+        f"\n### Cắt biên tại {top_route} (mỗi giai đoạn cắt riêng, "
+        f"các giai đoạn khác = 0)"
+    )
+    print(_md_table(marginal))
+
+
 def main() -> None:
     raw = M.load_orders(include_invalid=True)
     o = M.load_orders()
@@ -1105,6 +1179,8 @@ def main() -> None:
     attribution_report(o)
 
     promise_policy_report(o)
+
+    feasible_cut_report(o)
 
 
 if __name__ == "__main__":

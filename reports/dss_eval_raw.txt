@@ -227,3 +227,42 @@ Thống kê cấp (đơn, tuyến): {'order_route_rows': 96981, 'approval_negati
 - Nhãn S3 tại SP->SP: {'tight': 4}.
 - S3 (Q95 lead time) ủng hộ 'cam kết chặt' tại SP->SP: mọi ô đủ mẫu có promise < Q95.
 - Lưu ý: share_promise phụ thuộc mạnh vào q của benchmark; q=0,5 và q=0,25 cho hai bức tranh khác nhau. S3 dùng Q95 nên là lát cắt 'mức phục vụ 95%', không đồng nhất với benchmark q=0,5.
+
+## Feasible max cut (S4: peer P25 + bootstrap 300×, seed 42)
+- Peer P25 dùng CÙNG định nghĩa peer với S1: approval theo payment_type; prep theo weight_band; transit theo distance_band (decile khoảng cách toàn cục, XUYÊN tuyến).
+- cut_s = max(0, mean(actual_s) − mean(peer_p25_s)); mô phỏng bằng scenario, chặn theo thời gian thực tế từng đơn.
+- Đây là MÔ PHỎNG theo luật, không có counterfactual thật: nói 'NẾU cắt được ... THÌ ƯỚC TÍNH', không nói 'sẽ giảm'.
+- Bootstrap 300 lần theo đơn-tuyến trong mỗi tuyến; CI 95% cho mức giảm tỷ lệ trễ (điểm phần trăm). CI chứa 0 → 'chưa đủ bằng chứng'.
+- Tuyến đủ mẫu 100 đơn-tuyến: 71/406; bootstrap 10 tuyến.
+
+### Top 10 tuyến theo số đơn trễ có thể tránh
+| route | n_orders | cut_approval | cut_prep | cut_transit | total_cut_days | baseline_late_rate | projected_late_rate | avoided_orders | delta_pp | delta_ci_low_pp | delta_ci_high_pp | status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| SP->SP | 30178 | 0.248037 | 1.89067 | 2.26856 | 4.40727 | 0.062927 | 0.029028 | 1023 | 3.38989 | 3.18916 | 3.60859 | có cơ sở |
+| SP->RJ | 8016 | 0.257225 | 2.14828 | 7.67043 | 10.0759 | 0.157061 | 0.07485 | 659 | 8.22106 | 7.52121 | 8.82641 | có cơ sở |
+| SP->MG | 7283 | 0.271591 | 1.99093 | 3.78598 | 6.04851 | 0.064259 | 0.028422 | 261 | 3.58369 | 3.08218 | 4.00282 | có cơ sở |
+| SP->BA | 2267 | 0.34563 | 1.95977 | 8.04672 | 10.3521 | 0.149978 | 0.048081 | 231 | 10.1897 | 8.79687 | 11.2947 | có cơ sở |
+| SP->SC | 2272 | 0.294753 | 1.99833 | 6.87479 | 9.16787 | 0.112676 | 0.034331 | 178 | 7.83451 | 6.57901 | 9.02289 | có cơ sở |
+| SP->RS | 3520 | 0.307836 | 1.84264 | 6.06875 | 8.21922 | 0.076989 | 0.036364 | 143 | 4.0625 | 3.39418 | 4.74432 | có cơ sở |
+| SP->ES | 1443 | 0.298475 | 2.03103 | 5.72265 | 8.05216 | 0.142065 | 0.057519 | 122 | 8.45461 | 6.93001 | 10.3257 | có cơ sở |
+| SP->PR | 3044 | 0.28873 | 1.93877 | 4.22439 | 6.4519 | 0.054862 | 0.022339 | 99 | 3.2523 | 2.72668 | 3.81078 | có cơ sở |
+| SP->GO | 1389 | 0.365622 | 1.84152 | 6.33911 | 8.54625 | 0.092873 | 0.034557 | 81 | 5.83153 | 4.60763 | 7.09323 | có cơ sở |
+| SP->CE | 945 | 0.326357 | 2.02733 | 8.03217 | 10.3859 | 0.155556 | 0.069841 | 81 | 8.57143 | 6.56085 | 10.3704 | có cơ sở |
+
+### Kiểm tra H10: cắt 1 ngày mỗi giai đoạn tại SP->RJ (một giai đoạn tại một thời điểm)
+- approval: projected=0.153568, avoided=28 (baseline=0.157061)
+- prep: projected=0.144960, avoided=97 (baseline=0.157061)
+- transit: projected=0.143214, avoided=111 (baseline=0.157061)
+
+### Cắt biên tại SP->SP (mỗi giai đoạn cắt riêng, các giai đoạn khác = 0)
+| stage | cut_days | projected_late_rate | avoided_orders | marginal_avoided_orders | marginal_avoided_per_day |
+| --- | --- | --- | --- | --- | --- |
+| approval | 0 | 0.062927 | 0 | 0 | 0 |
+| approval | 0.248037 | 0.062496 | 13 | 13 | 52.4116 |
+| prep | 0 | 0.062927 | 0 | 0 | 0 |
+| prep | 1 | 0.04891 | 423 | 423 | 423 |
+| prep | 1.89067 | 0.043177 | 596 | 173 | 194.235 |
+| transit | 0 | 0.062927 | 0 | 0 | 0 |
+| transit | 1 | 0.047021 | 480 | 480 | 480 |
+| transit | 2 | 0.039234 | 715 | 235 | 235 |
+| transit | 2.26856 | 0.038836 | 727 | 12 | 44.6832 |
