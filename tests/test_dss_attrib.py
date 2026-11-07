@@ -108,6 +108,14 @@ def test_fit_benchmarks_fallback_levels():
     assert set(b.loc[b.route == "R2->X", "benchmark_level"]) == {"global"}
 
 
+def test_attribute_preserves_benchmark_fallback_level():
+    o = _orders(40, "R1->X")
+    b = A.fit_benchmarks(o, min_orders=1000)  # mọi ô và tuyến đều < 1000
+    assert set(b["benchmark_level"]) == {"global"}
+    a = A.attribute(o, b)
+    assert set(a["benchmark_level"]) == {"global"}
+
+
 def test_fit_benchmarks_rejects_bad_input():
     with pytest.raises(ValueError):
         A.fit_benchmarks(pd.DataFrame({"route": []}))

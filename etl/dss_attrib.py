@@ -202,8 +202,10 @@ def attribute(o: pd.DataFrame, benchmarks: pd.DataFrame | None = None, min_order
     for s in STAGES:
         m[f"b_{s}"] = m[f"b_{s}"].fillna(m[f"route_b_{s}"])
         m[f"b_{s}"] = m[f"b_{s}"].fillna(global_b[s])
-    m["benchmark_level"] = np.select(
-        [cell_found, route_found], ["route_band", "route"], default="global"
+    # Giữ level đã fallback bên trong benchmark (route_band/route/global);
+    # chỉ gán level mới cho ô (tuyến, decile) không có trong bảng benchmark.
+    m.loc[~cell_found, "benchmark_level"] = np.where(
+        route_found[~cell_found], "route", "global"
     )
 
     for s in STAGES:
