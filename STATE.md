@@ -1,11 +1,11 @@
-# STATE (cập nhật sau mỗi việc; cập nhật 06/11/2026)
+# STATE (cập nhật sau mỗi việc; cập nhật 07/11/2026)
 
 ## Quy tắc
 
 - Tiếng Việt, ngắn. Không bịa số: số lấy từ lệnh chạy thật. Mô hình hoàn toàn theo luật và mô phỏng, chủ ý để dễ giải thích. Không sửa report/ (LaTeX) khi chưa được nói.
 - Một việc mỗi lượt; xong thì dừng. Không `git add -A`. Chạy test trúng đích, full suite chỉ ở cuối.
 
-## Số đã kiểm chứng (Checkpoint A, nguồn `reports/dss_eval_raw.txt`)
+## Số đã kiểm chứng (Checkpoint A–B, nguồn `reports/dss_eval_raw.txt`)
 
 - Tỷ lệ trễ order-route 8,1556%; order-level (unique order_id) 8,1950% trên 95.082 đơn.
 - 96.981 order-route trước lọc; loại 1.390 (1,4333%): prep<0=1.361, transit<0=29, NaN=0.
@@ -15,10 +15,10 @@
 - Đơn trễ có review xấu (≤2) 54,16% vs 9,44% đúng hạn (+44,72 pp; liên hệ, không nhân quả).
 - Test 07/11/2026: **48 pytest passed**, **16 Django tests OK**.
 
-## Đã xong (THẬT, kiểm 06/11/2026)
+## Đã xong (THẬT, kiểm 07/11/2026)
 
 - Checkpoint A: H1–H15 trong `reports/dss_defect_ledger.md`; F1–F9, D1–D2 `done` trong `reports/dss_requirements.md`.
-- Checkpoint B: `etl/dss_attrib.py` + `tests/test_dss_attrib.py` (benchmark, Shapley, summary, bad review, L1–L3); 10 test mới.
+- Checkpoint B: `etl/dss_attrib.py` + `tests/test_dss_attrib.py` (benchmark, Shapley, summary, bad review, L1–L3); 11 test mới.
 - DB reload đủ 5 bảng: Dim_Time 612, Dim_Location 15.078, Dim_Product 32.951, Dim_Seller 3.095, Fact_Delivery_SLA 110.173; 0 orphan FK.
 - Fact 21 cột: thêm seller_id, price, shipping_limit_date, promise_days, total_lead_days, handoff_slack_days, distance_km; weight_band qcut 4 lúc chạy.
 - Base DSS hiện có: `route_priority`, `root_cause`, `scenario`, `sensitivity`, `goal_seek_promise`, `goal_seek_cut`, Wilson/red-first/uncertain, bootstrap CI, excess_ratio.
@@ -29,6 +29,11 @@
 
 portfolio, promise calibration, seller scorecard, Decision Brief, AUC/time-split/replay, các badge UI v2.
 
+## Deviation đã duyệt (G1/G2)
+
+- G1: bỏ U2; U1 chỉ 3 thẻ chính; X2 chỉ sửa số headline; V1/V3 hoãn nếu hết giờ. Giữ P0 S3, S4, S6, A1, X1; không cắt S1, S3, S4, S6.
+- G2: thêm X3 (P1): đồng bộ docs còn số cũ MỘT LẦN sau Checkpoint D, dùng số cuối; không sửa rải rác. Không đánh done khi chưa evidence.
+
 ## Còn lại
 
 - UI còn chữ "đơn-tuyến" (F4 → U1).
@@ -38,16 +43,16 @@ portfolio, promise calibration, seller scorecard, Decision Brief, AUC/time-split
 
 ## DSS optimize progress
 
-Branch: `dss-v2` (tag `before-optimize` tại 32a34ca). Deadline 15/11/2026 23:59 — còn 9 ngày.
+Branch: `dss-v2` (tag `before-optimize` tại 32a34ca). Deadline 15/11/2026 23:59 — còn 8 ngày.
 
 - [x] F1 [x] F2 [x] F3 [x] F4 [x] F5 [x] F6 [x] F7 [x] F8 [x] F9
 - [x] D1 [x] D2
 - [x] S1 [x] S2 [ ] S3 [ ] S4 [ ] S5 [ ] S6 [ ] S7 [ ] S8
 - [ ] V1 [ ] V2 [ ] V3 [ ] V4
 - [ ] A1 [ ] U1 [ ] U2
-- [ ] X1 [ ] X2
+- [ ] X1 [ ] X2 [ ] X3
 
-NEXT: Checkpoint C (S3, S4) — chờ duyệt G2.
+NEXT: DỪNG chờ G2b — xác nhận deviation benchmark "peer group theo distance decile"; chưa sang Checkpoint C (S3).
 
 Schema facts đã xác minh (06/11/2026):
 - `data/processed/`: 5 CSV gồm dim_time, dim_location, dim_product, dim_seller, fact_delivery_sla.

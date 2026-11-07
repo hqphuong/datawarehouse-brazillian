@@ -28,8 +28,8 @@ Mọi thay đổi trạng thái phải kèm evidence (lệnh chạy/file). Khôn
 
 | ID | Ưu tiên | Trạng thái | Evidence |
 |---|---|---|---|
-| S1 | P0 | done | `etl/dss_attrib.py`: `fit_benchmarks` (tuyến×decile khoảng cách, fallback route/global), `attribute` (Shapley 3 stage, `phi_*`, `residual_promise_days`); test ví dụ tay, symmetry, null player. |
-| S2 | P0 | done | `attribution_summary`, `bad_review_uplift`, `check_attrib` L1–L3; 10 test mới; raw eval mục "Attribution" (95.591 đơn, invariant pass). |
+| S1 | P0 | changed | `etl/dss_attrib.py`: `fit_benchmarks`/`attribute`/Shapley chạy và test pass, NHƯNG deviation G2b: benchmark đang tính trong (tuyến×decile khoảng cách), chưa phải peer group xuyên tuyến theo distance decile; chờ duyệt trước khi sửa. |
+| S2 | P0 | done | `attribution_summary`, `bad_review_uplift`, `check_attrib` L1–L3; 11 test mới; raw eval mục "Attribution" (95.591 đơn, invariant pass). |
 | S3 | P0 | todo | promise calibration route×weight_band, min 100; tight/loose/ok; avoidable items |
 | S4 | P0 | todo | feasible_max_cut, status, bootstrap 300× CI, marginal_cut_table |
 | S5 | P1 | todo | seller_scorecard + portfolio; chỉ đơn single-seller, báo share loại |
@@ -60,3 +60,4 @@ Mọi thay đổi trạng thái phải kèm evidence (lệnh chạy/file). Khôn
 |---|---|---|---|
 | X1 | P0 | todo | append mục tiếng Việt vào dss_formulas.md + dss_results.md (số từ raw eval) |
 | X2 | P1 | todo | refresh CHEAT_SHEET.md, QA_BANK.md (≥57 Q), DEMO_SCRIPT.md |
+| X3 | P1 | todo | Deviation đã duyệt (G2): đồng bộ số cũ (README, run_guide, TOM_TAT, dss_results.md, defense files) MỘT LẦN sau Checkpoint D, dùng số cuối từ `dss_eval_raw.txt` (test hiện tại 48/16). Ưu tiên nếu hết giờ: README, run_guide, TOM_TAT, QA_BANK. Không done khi chưa evidence. |
