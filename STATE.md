@@ -16,7 +16,7 @@
 - Attribution cross-route peer (q=0,5): toàn hệ thống approval 1,58% / prep 15,15% / transit 69,88% / promise 13,39%; q=0,25: 2,53 / 20,08 / 76,33 / 1,06.
 - Fallback global: transit 0,4959% (chỉ đơn thiếu `distance_km`); approval 0,001% (1 đơn thiếu `payment_type`); prep 0%.
 - `phi_transit` q=0,5: SP→RJ 14,11 pp (trước 13,50), SP→SP 2,46 pp (trước 2,90); hạng nguyên nhân không đổi (transit đứng đầu).
-- Test 07/11/2026: **50 pytest passed**, **16 Django tests OK**.
+- Test 07/11/2026: **50 pytest passed**, **16 Django tests OK**; S1 cross-route peer commit `5606c08`.
 
 ## Đã xong (THẬT, kiểm 07/11/2026)
 

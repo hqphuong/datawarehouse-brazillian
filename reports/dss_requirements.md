@@ -28,7 +28,7 @@ Mọi thay đổi trạng thái phải kèm evidence (lệnh chạy/file). Khôn
 
 | ID | Ưu tiên | Trạng thái | Evidence |
 |---|---|---|---|
-| S1 | P0 | changed | Đã đổi theo G2 phương án (2): `fit_benchmarks` dùng peer group riêng từng giai đoạn — approval theo `payment_type`, prep theo `weight_band`, transit theo `distance_band` (decile khoảng cách toàn cục, **xuyên tuyến**); fallback median toàn cục khi nhóm < `min_orders` hoặc khóa `"NA"`. `attribute` giữ `benchmark_level_<stage>`; sensitivity q=0,25/0,5. Evidence: `reports/dss_eval_raw.txt` mục "Attribution" (95.591 đơn, L1–L3 pass); commit `dss-opt: S1`. |
+| S1 | P0 | changed | Đã đổi theo G2 phương án (2): `fit_benchmarks` dùng peer group riêng từng giai đoạn — approval theo `payment_type`, prep theo `weight_band`, transit theo `distance_band` (decile khoảng cách toàn cục, **xuyên tuyến**); fallback median toàn cục khi nhóm < `min_orders` hoặc khóa `"NA"`. `attribute` giữ `benchmark_level_<stage>`; sensitivity q=0,25/0,5. Evidence: `reports/dss_eval_raw.txt` mục "Attribution" (95.591 đơn, L1–L3 pass); commit `5606c08` (`dss-opt: S1 cross-route peer benchmarks + q sensitivity`). |
 | S2 | P0 | done | `attribution_summary` (thêm `cause_share_*`, `share_promise`), `bad_review_uplift`, `check_attrib` L1–L3; 12 test attribution; raw eval mục "Attribution" (95.591 đơn, invariant pass). |
 | S3 | P0 | todo | promise calibration route×weight_band, min 100; tight/loose/ok; avoidable items |
 | S4 | P0 | todo | feasible_max_cut, status, bootstrap 300× CI, marginal_cut_table |
@@ -60,4 +60,4 @@ Mọi thay đổi trạng thái phải kèm evidence (lệnh chạy/file). Khôn
 |---|---|---|---|
 | X1 | P0 | todo | append mục tiếng Việt vào dss_formulas.md + dss_results.md (số từ raw eval) |
 | X2 | P1 | todo | refresh CHEAT_SHEET.md, QA_BANK.md (≥57 Q), DEMO_SCRIPT.md |
-| X3 | P1 | todo | Deviation đã duyệt (G2): đồng bộ số cũ (README, run_guide, TOM_TAT, dss_results.md, defense files) MỘT LẦN sau Checkpoint D, dùng số cuối từ `dss_eval_raw.txt` (test hiện tại 49/16). Ưu tiên nếu hết giờ: README, run_guide, TOM_TAT, QA_BANK. Không done khi chưa evidence. |
+| X3 | P1 | todo | Deviation đã duyệt (G2): đồng bộ số cũ (README, run_guide, TOM_TAT, dss_results.md, defense files) MỘT LẦN sau Checkpoint D, dùng số cuối từ `dss_eval_raw.txt` (test hiện tại 50/16). Ưu tiên nếu hết giờ: README, run_guide, TOM_TAT, QA_BANK. Không done khi chưa evidence. |
