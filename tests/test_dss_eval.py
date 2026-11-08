@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import pytest
 
 from etl import dss_eval as E
@@ -159,3 +160,28 @@ def test_negative_time_comparison_contract(o):
     )
     assert (table["stage_keep"] == table["stage_drop"]).all()
     assert (table["has_bottleneck_keep"] == table["has_bottleneck_drop"]).all()
+
+
+def test_exact_sign_test_hand_example():
+    result = E._exact_sign_test(pd.Series([1, 2, -1, -2, 0]))
+
+    assert result["positive"] == 2
+    assert result["negative"] == 2
+    assert result["n_non_tie"] == 4
+    assert result["p_one_sided"] == pytest.approx(0.6875)
+    assert result["p_two_sided"] == pytest.approx(1.0)
+
+
+def test_route_level_bootstrap_is_deterministic(o):
+    first = E.route_level_bootstrap(o, reps=12, seed=42)
+    second = E.route_level_bootstrap(o, reps=12, seed=42)
+
+    assert first == second
+    assert first["reps"] == 12
+    assert first["routes_resampled"] > 0
+    assert set(first["shares"]) == {
+        "share_approval",
+        "share_prep",
+        "share_transit",
+        "share_promise",
+    }
