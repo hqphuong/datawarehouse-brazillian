@@ -63,9 +63,29 @@ Branch: `dss-v2` (tag `before-optimize` tại 32a34ca). Deadline 15/11/2026 23:5
 - [ ] A1 [ ] U1 [ ] U2
 - [ ] X1 [ ] X2 [ ] X3
 
-NEXT: A1 — API `/brief` + các endpoint P0 (dùng `dss_brief.decision_brief`), rồi V2/V4 nếu còn thời gian. Không mở X3 trước Checkpoint D.
+NEXT (trước Phase 1): A1 — API `/brief` + các endpoint P0 (dùng `dss_brief.decision_brief`), rồi V2/V4 nếu còn thời gian. Không mở X3 trước Checkpoint D.
 
 Schema facts đã xác minh (06/11/2026):
 - `data/processed/`: 5 CSV gồm dim_time, dim_location, dim_product, dim_seller, fact_delivery_sla.
 - `cleaned_fact_orders.csv`: grain item; có seller_id, price, shipping_limit_date, promise_days, total_lead_days, handoff_slack_days, distance_km.
 - `load_orders()` gộp về (order_id, route), route = seller_state->cust_state; loại stage âm/NaN.
+
+## Phase 1 — đã được người dùng xác nhận
+
+- `reports/CHECK_OUTPUT.txt`: pytest 77/77, Django 22/22, regen_eval pass; raw eval 56.630 bytes; L1–L3 pass.
+- Đã có Decision Brief GMV, A1 API và báo cáo V2/V4; không tự chạy lại check hoặc tái tạo raw eval.
+
+## Phase 2 — tài liệu đã đồng bộ
+
+- X1: `reports/dss_formulas.md` và `reports/dss_results.md` có phần attribution/Shapley, promise, feasible cut, seller, low-sample, S8, V2, V4 và hạn chế; số đánh giá lấy từ raw eval hiện hành.
+- X2: `reports/defense/CHEAT_SHEET.md`, `QA_BANK.md`, `DEMO_SCRIPT.md` đã đồng bộ; QA_BANK bổ sung Q&A về Shapley/benchmarks, q=0,75, GROSS/NET, CI-feasibility, seller confounding và sign test.
+- X3: README, run guide, TOM_TAT và tài liệu defense đã cập nhật endpoint, khối DSS, số liệu hiện hành và số kiểm thử từ CHECK_OUTPUT.
+- Không chạy test, regenerate eval, commit, stage hoặc server theo yêu cầu code-edit-only.
+
+## Deviations pending
+
+- V1, V3, U2 bị drop theo yêu cầu.
+- Fact 21 cột và số lượng 5 bảng/CSV là metadata cấu trúc được đối chiếu từ DDL/ETL, không được in trong `reports/dss_eval_raw.txt`. Đã giữ các thông tin được yêu cầu ở tài liệu và ghi rõ nguồn cấu trúc; để đáp ứng nghiêm ngặt quy tắc mọi số lấy từ raw eval, cần bổ sung các metadata này vào raw-eval report hoặc bỏ chúng khỏi tài liệu.
+- Phase 3 (U1, requirements/status rows, FINAL_G4) chưa bắt đầu.
+
+NEXT: chờ người dùng yêu cầu “phase 3”.
