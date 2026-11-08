@@ -3,11 +3,14 @@
 import json
 import math
 
+import numpy as np
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 
 from etl import dss_models as M
+from etl import dss_attrib as A
+from etl import dss_brief as B
 
 from .models import ActionLog
 
@@ -33,6 +36,8 @@ def _bad(message, status=400):
 
 def _clean(value):
     """Đổi NaN/Infinity thành None để JSON hợp lệ với JavaScript."""
+    if isinstance(value, np.generic):
+        return _clean(value.item())
     if isinstance(value, dict):
         return {k: _clean(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
@@ -146,3 +151,142 @@ def actions(request):
         )[:50]
     )
     return JsonResponse(_clean(rows), safe=False)
+
+
+@require_GET
+def brief(request):
+    try:
+        orders = _selected_orders(request)
+    except ValueError as exc:
+        return _bad(str(exc))
+    try:
+        result = B.decision_brief(orders, n_boot=300, seed=42)
+    except ValueError as exc:
+        return _bad(str(exc))
+    return JsonResponse(
+        _clean(
+            {
+                key: _records(value)
+                if hasattr(value, "to_dict")
+                else value
+                for key, value in result.items()
+            }
+        )
+    )
+
+
+@require_GET
+def attribution(request):
+    q = request.GET.get("q", "0.5")
+    try:
+        quantile = float(q)
+    except (TypeError, ValueError):
+        return _bad("q chỉ nhận 0.25 hoặc 0.5; q=0.75 bị loại vì benchmark "
+                    "chậm hơn actual, tạo phi âm và phân rã không hợp lệ.")
+    if quantile not in (0.25, 0.5):
+        return _bad("q chỉ nhận 0.25 hoặc 0.5; q=0.75 bị loại vì benchmark "
+                    "chậm hơn actual, tạo phi âm và phân rã không hợp lệ.")
+    try:
+        orders = _selected_orders(request)
+        benchmarks = A.fit_benchmarks(orders, quantile=quantile)
+        attributed = A.attribute(orders, benchmarks)
+        summary = A.attribution_summary(attributed, min_orders=30)
+    except ValueError as exc:
+        return _bad(str(exc))
+    late_rate = float(attributed["late_actual"].mean())
+    systemwide = {
+        "orders": int(len(attributed)),
+        "late_rate": late_rate,
+        "shares_in_late_orders": None,
+    }
+    if late_rate > 0:
+        systemwide["shares_in_late_orders"] = {
+            **{
+                f"share_{stage}": float(attributed[f"phi_{stage}"].mean() / late_rate)
+                for stage in A.STAGES
+            },
+            "share_promise": float(
+                attributed["late_benchmark"].mean() / late_rate
+            ),
+        }
+    return JsonResponse(
+        _clean(
+            {
+                "q": quantile,
+                "design": "Shapley attribution theo peer group",
+                "rows": _records(summary),
+                "systemwide": systemwide,
+                "invariants": A.check_attrib(attributed),
+            }
+        )
+    )
+
+
+@require_GET
+def promise_policy(request):
+    try:
+        orders = _selected_orders(request)
+        calibration = A.promise_calibration(orders)
+        table = A.promise_service_levels(
+            orders, levels=(0.85, 0.90, 0.95), top=5,
+            calibration=calibration,
+        )
+    except ValueError as exc:
+        return _bad(str(exc))
+    return JsonResponse(
+        _clean(
+            {
+                "label": "mức phục vụ, không phải khuyến nghị đặt promise",
+                "note": "Đổi định nghĩa trễ, không rút ngắn thời gian giao.",
+                "rows": _records(table),
+            }
+        )
+    )
+
+
+@require_GET
+def sellers(request):
+    try:
+        orders = _selected_orders(request)
+    except ValueError as exc:
+        return _bad(str(exc))
+    try:
+        scorecard = M.seller_scorecard(orders, min_orders=30)
+    except ValueError as exc:
+        return _bad(str(exc))
+    return JsonResponse(
+        _clean(
+            {
+                "summary": scorecard.attrs,
+                "rows": _records(scorecard),
+                "note": "Liên hệ mô tả, không phải kết luận nhân quả.",
+            }
+        )
+    )
+
+
+@require_GET
+def portfolio(request):
+    try:
+        orders = _selected_orders(request)
+    except ValueError as exc:
+        return _bad(str(exc))
+    try:
+        scorecard = M.seller_scorecard(orders, min_orders=30)
+        result = M.seller_portfolio(
+            orders, min_orders=30, top=10, scorecard=scorecard
+        )
+        coverage = M.sellers_covering_late_share(scorecard, target=0.5)
+    except ValueError as exc:
+        return _bad(str(exc))
+    return JsonResponse(
+        _clean(
+            {
+                "summary": result["summary"],
+                "segments": _records(result["segments"]),
+                "top_sellers": _records(result["top_sellers"]),
+                "coverage_50_percent": coverage,
+                "note": "Liên hệ mô tả, không phải kết luận nhân quả.",
+            }
+        )
+    )

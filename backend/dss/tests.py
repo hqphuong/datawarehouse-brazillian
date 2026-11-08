@@ -218,3 +218,56 @@ class DssApiTests(TestCase):
         series = body["series"]
         self.assertEqual(series[1]["cut"], 1)
         self.assertAlmostEqual(series[1]["projected"], body["projected"], places=12)
+
+    def test_brief_endpoint_includes_action_groups_and_notes(self):
+        res = self.client.get("/api/dss/brief")
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertIn("route_actions", body)
+        self.assertIn("seller_actions", body)
+        self.assertIn("low_sample_actions", body)
+        self.assertTrue(
+            any("đổi định nghĩa trễ, không rút ngắn thời gian giao" in note
+                for note in body["notes"])
+        )
+
+    def test_attribution_endpoint_accepts_supported_quantiles(self):
+        for q in ("0.25", "0.5"):
+            res = self.client.get(f"/api/dss/attribution?q={q}")
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(res.json()["q"], float(q))
+            self.assertIn("rows", res.json())
+            self.assertIn("shares_in_late_orders", res.json()["systemwide"])
+
+    def test_attribution_endpoint_rejects_q75_with_reason(self):
+        res = self.client.get("/api/dss/attribution?q=0.75")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("q=0.75 bị loại", res.json()["error"])
+
+    def test_promise_policy_endpoint_labels_service_levels(self):
+        res = self.client.get("/api/dss/promise-policy")
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertEqual(
+            body["label"], "mức phục vụ, không phải khuyến nghị đặt promise"
+        )
+        self.assertEqual(
+            {row["service_level"] for row in body["rows"]},
+            {0.85, 0.9, 0.95},
+        )
+        self.assertIn("không rút ngắn thời gian giao", body["note"])
+
+    def test_sellers_endpoint_returns_single_seller_scorecard(self):
+        res = self.client.get("/api/dss/sellers")
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertTrue(body["rows"])
+        self.assertIn("segment", body["rows"][0])
+        self.assertGreater(body["summary"]["n_orders_single_seller"], 0)
+
+    def test_portfolio_endpoint_reports_half_late_order_coverage(self):
+        res = self.client.get("/api/dss/portfolio")
+        self.assertEqual(res.status_code, 200)
+        coverage = res.json()["coverage_50_percent"]
+        self.assertEqual(coverage["k"], 102)
+        self.assertAlmostEqual(coverage["covered_share"], 0.5010, places=4)

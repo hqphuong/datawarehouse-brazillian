@@ -15,6 +15,22 @@ NaN và Infinity trong kết quả Python được chuyển thành `null` trư�
 | GET | `/api/dss/scenario` | What-if: tỷ lệ trễ dự báo khi cắt thời gian giai đoạn |
 | GET | `/api/dss/promise` | Goal seek: số ngày cần kéo dài cam kết giao hàng |
 | GET/POST | `/api/dss/actions` | GET: lấy log hành động; POST: ghi hành động Apply |
+| GET | `/api/dss/brief` | Decision Brief gồm các nhóm hành động tách biệt |
+| GET | `/api/dss/attribution` | Attribution Shapley theo benchmark peer |
+| GET | `/api/dss/promise-policy` | Bảng mức phục vụ 85/90/95% |
+| GET | `/api/dss/sellers` | Seller scorecard trên đơn single-seller |
+| GET | `/api/dss/portfolio` | Phân khúc seller và mức tập trung đơn trễ |
+
+Các endpoint trên hỗ trợ `year` như `/routes`. Attribution nhận `q=0.25` hoặc
+`q=0.5`; giá trị khác, gồm `q=0.75`, trả HTTP 400 kèm lý do. Promise policy
+ghi rõ đây là “mức phục vụ, không phải khuyến nghị đặt promise” và việc đổi
+promise là đổi định nghĩa trễ, không rút ngắn thời gian giao. Portfolio trả
+độ phủ tối thiểu 50% số đơn trễ bằng số seller `k` và tỷ lệ thực tế.
+
+`/brief` trả riêng route, payment, promise, seller và low-sample; tổng giữa các
+nhóm không phải tổng đơn tránh được do các tập đơn-tuyến chồng lấn. Promise chỉ
+dùng NET. GMV mỗi dòng là số nguyên gắn với đúng tập hành động; seller excess
+không phải số đơn tránh được theo tuyến.
 
 ---
 
