@@ -1,18 +1,96 @@
 # DSS Evaluation Results (Bước 9 / Giai đoạn 5)
 
+> **Snapshot hiện hành:** dùng các kết quả từ lần tái tạo trong
+> `reports/dss_eval_raw.txt` và `reports/CHECK_OUTPUT.txt`. Các bảng chi tiết
+> tại mục 2–8 dưới đây được lưu từ lần đánh giá trước; chỉ Snapshot hiện hành
+> ở đầu tài liệu là căn cứ cho số liệu hiện tại.
+
+## Snapshot hiện hành
+
+- Dữ liệu: 110.173 dòng cấp item; 96.981 đơn-tuyến trước lọc; 95.591 sau khi
+  loại 1.390 đơn-tuyến có thời gian âm. Tỷ lệ trễ là 8,1556% theo đơn-tuyến và
+  8,1950% theo đơn duy nhất trên 95.082 đơn.
+- Kiểm tra: pytest 77/77, Django `dss analytics` 22/22, regen eval pass.
+- V4: `min_orders=30`, 19 kỳ; `min_orders=100`, 13 kỳ đủ điều kiện. Exact sign
+  test (không tính hòa): DSS so 0 là 16/3, n=19, p một phía 0,00221 và hai phía
+  0,00443; so prior 12/5, n=17, p=0,07173/0,14346; so through 12/4, n=16,
+  p=0,03841/0,07681. Đây là tương quan hồi cứu.
+
+| So sánh V4 | Dương/âm | n | p một phía | p hai phía |
+|---|---:|---:|---:|---:|
+| DSS so với 0 | 16/3 | 19 | 0,00221 | 0,00443 |
+| DSS so với prior | 12/5 | 17 | 0,07173 | 0,14346 |
+| DSS so với through | 12/4 | 16 | 0,03841 | 0,07681 |
+- Backtest min_orders=30: weighted diff +8,2826 pp, mean diff +7,2403 pp,
+  flagged-weighted diff +10,4624 pp.
+- V2: route-level bootstrap 500 lần, seed 42, q=0,50. CI 95% tỷ trọng trong
+  tập đơn trễ: approval 1,5799% [1,0753%; 1,9991%], prep 15,1638%
+  [10,6215%; 19,1531%], transit 69,9162% [56,4003%; 83,5136%], promise
+  13,3402% [4,4096%; 23,1705%]. Transit đứng #1 ở 165/226 tuyến.
+- S8: tại min_orders=100, năm cặp ngưỡng quanh mặc định cho 10–21 tuyến; bộ
+  100/2,5/2,0 giữ lõi 6 tuyến. Toàn lưới cho 4–30 tuyến.
+- Decision Brief: các tổng là top-N, có thể chồng lấn và không phải tổng đơn
+  tránh được. Route = top 5 P25; payment = top 5 payment_type, approval-only,
+  low-impact; promise = top 5 ô theo NET; seller = top 5 excess. Ba nhóm mẫu
+  nhỏ MA→SP, PR→BA, SP→TO nằm trong 14 tuyến gắn cờ nhưng hiển thị “cần thêm
+  dữ liệu”, không tính trùng. Không cộng/so sánh seller excess với đơn tránh
+  được theo tuyến.
+
+### Attribution: peer benchmark, Shapley và q
+
+Approval benchmark theo `payment_type`, prep theo `weight_band`, transit theo
+decile khoảng cách xuyên tuyến. `cause_share_*` là tỷ trọng trong tập đơn trễ.
+
+| q | Approval | Prep | Transit | Promise |
+|---|---:|---:|---:|---:|
+| 0,25 | 2,5291% | 20,0765% | 76,3297% | 1,0646% |
+| 0,50 | 1,5777% | 15,1488% | 69,8820% | 13,3915% |
+
+q=0,75 không dùng vì benchmark chậm hơn actual, tạo phi âm và phân rã không
+hợp lệ. Bad-review 54,16% ở đơn trễ so với 9,44% đúng hạn là association trong
+cùng dữ liệu, không phải nguyên nhân.
+
+### Promise calibration
+
+130/1.157 ô đủ mẫu (83.104/95.591 đơn-tuyến); GROSS 3.751, trừ 884 đơn trễ mới
+còn NET 2.867. Bảng 85/90/95% là mức phục vụ, không phải khuyến nghị đặt
+promise; nếu đặt promise bằng `needed_days` thì ước tính lại nhãn trễ, không
+rút ngắn thời gian giao. `tight` phản ánh so sánh với Q95, không xác nhận tính
+khả thi.
+
+### Feasible cut và seller
+
+S4 dùng P25 làm mức cắt; P50 chỉ là tham chiếu. Có 71/406 tuyến đủ mẫu. Tại
+SP→SP, nếu cắt prep 1 ngày thì ước tính 423 đơn tránh được; tăng đến 1,89067
+ngày thêm 173. Với transit, 1 ngày ước tính 480; tăng đến 2 ngày thêm 235.
+Lợi ích biên thay đổi theo mức cắt; CI hẹp phản ánh sampling noise, không phải
+tính khả thi.
+
+Seller scorecard chỉ dùng đơn single-seller: 94.580/95.082 đơn, 2.948 seller,
+609 seller đủ mẫu. k=102 bao phủ 3.902/7.788 đơn trễ (50,10%). Khác biệt
+seller có thể bị confound bởi route mix; seller excess không phải số đơn tránh
+được theo tuyến.
+
+### Hạn chế
+
+Backtest là tương quan hồi cứu; không có ROI hay đối chứng can thiệp.
+Simulation không phải counterfactual. Mỗi đơn có một carrier date; Wilson CI
+giả định đơn độc lập. CI của S4 chỉ mô tả sampling noise, không chứng minh tính
+khả thi vận hành.
+
 ## 1) Test results
 **Pytest (repo root):**
 ```bash
 .\backend\env\Scripts\python.exe -m pytest -q
 ```
-Result: **38 passed** (full repo suite, cập nhật 06/11/2026 sau Checkpoint A). Số liệu DSS mới nhất nằm trong `reports/dss_eval_raw.txt`.
+Result hiện hành: **77 passed** (xác nhận trong `reports/CHECK_OUTPUT.txt`).
 
 **Django API tests (dss app):**
 ```bash
 cd backend
-..\backend\env\Scripts\python.exe manage.py test dss -v 2
+..\backend\env\Scripts\python.exe manage.py test dss analytics
 ```
-Result: **16 tests OK**. Đếm theo class: `DssApiTests` **16** test.
+Result hiện hành: **22 tests OK** cho `dss analytics`.
 
 ## 2) Backtest (tuyến gắn cờ kỳ t vs tỷ lệ trễ kỳ t+1)
 **Method:** For each period `t` (from 2017 onward, `min_period_orders=500`), `route_priority` is run on data of period `t` with selected `min_orders`. Routes flagged as red/amber are compared against others in period `t+1`. Periods with no flags or too few flagged orders are recorded but not counted in `periods_evaluated`.
@@ -44,7 +122,8 @@ Result: **16 tests OK**. Đếm theo class: `DssApiTests` **16** test.
 | 201806 | 201807 | 4 | 351 | 5848 | 6199 | 0.0569801 | 0.0437756 | 0.0132044 |
 | 201807 | 201808 | 3 | 165 | 6243 | 6408 | 0.0121212 | 0.105398 | -0.0932768 |
 
-**Summary:** `periods_considered=19, periods_evaluated=19, periods_without_flags=0, higher_periods=16/19 (0.842), weighted_diff=0.08138, mean_diff=0.07129`
+**Summary lần chạy trước:** các chi tiết theo kỳ dưới đây đã được thay bằng
+snapshot hiện hành ở đầu tài liệu.
 
 **Công thức `weighted_diff` (bắt buộc ghi rõ):**
 Gọi `d_t = flagged_late_rate(t+1) - other_late_rate(t+1)`.
@@ -52,19 +131,18 @@ Gọi `d_t = flagged_late_rate(t+1) - other_late_rate(t+1)`.
 - **Số chính — `weighted_diff`:**  
   `Σ(d_t × total_orders(t+1)) / Σ total_orders(t+1)`, trong đó  
   `total_orders(t+1) = flagged_orders(t+1) + other_orders(t+1)`.  
-  Với `min_orders=30`: **+0.081379** = **+8.14 pp**.
+  Số lần chạy hiện hành (`min_orders=30`): **+0.0828261158 = +8,2826 pp**.
 - **Cách thay thế — `weighted_diff_flagged`:**  
   `Σ(d_t × flagged_orders(t+1)) / Σ flagged_orders(t+1)`, trọng số là số đơn của **nhóm gắn cờ** ở kỳ t+1.  
-  Với `min_orders=30`: **+0.103166** = **+10.32 pp** (khớp kiểm tra độc lập).
-- **`mean_diff`:** trung bình cộng không trọng số của `d_t`: **+0.071286** = **+7.13 pp**.
+  Số lần chạy hiện hành (`min_orders=30`): **+0.1046239 = +10,4624 pp**.
+- **`mean_diff` hiện hành:** **+0.0724026 = +7,2403 pp**.
 
 | min_orders | mean_diff | weighted_diff (total_orders) | weighted_diff_flagged |
 | --- | --- | --- | --- |
-| 30 | 0.071286 | 0.081379 | 0.103166 |
-| 50 | 0.069090 | 0.079404 | 0.105140 |
-| 100 | 0.088421 | 0.100059 | 0.116637 |
+| 30 (hiện hành) | 0.0724026 | 0.0828261158 | 0.1046239 |
+| 50, 100 | — | — | — |
 
-**Vì sao chọn `weighted_diff` (total_orders) làm số chính:** mỗi kỳ là một đơn vị so sánh; trọng số theo toàn bộ đơn của kỳ t+1 phản ánh độ lớn mẫu của cả hai nhóm và tránh để một kỳ có nhóm gắn cờ lớn nhưng nhóm còn lại nhỏ chi phối kết quả. Cách `weighted_diff_flagged` trả lời câu hỏi khác (“trung bình trên mỗi đơn bị gắn cờ”), nên được báo cáo song song. Cả hai đều dương và cùng kết luận; số chính trong báo cáo là **+8.14 pp**, số tham khảo là **+10.32 pp**.
+**Vì sao chọn `weighted_diff` (total_orders) làm số chính:** mỗi kỳ là một đơn vị so sánh; trọng số theo toàn bộ đơn của kỳ t+1 phản ánh độ lớn mẫu của cả hai nhóm. `weighted_diff_flagged` trả lời câu hỏi khác nên báo cáo song song. Hai ước lượng hồi cứu không phải hiệu quả can thiệp.
 
 ### min_orders=50
 | period | next_period | flagged_routes | flagged_orders | other_orders | total_orders | flagged_late_rate | other_late_rate | diff |
@@ -116,7 +194,11 @@ Gọi `d_t = flagged_late_rate(t+1) - other_late_rate(t+1)`.
 
 **Summary:** `periods_considered=19, periods_evaluated=13, periods_without_flags=6, higher_periods=12/13 (0.923), weighted_diff=0.10006, mean_diff=0.08842`
 
-**Selection for the monthly backtest: `min_orders=30`.** Reason: the data is split by month, so `min_orders=100` leaves **6 of 19** periods with no flagged routes at all (only 13 periods can be evaluated), and `min_orders=50` leaves 2 periods unevaluable. `min_orders=30` still leaves a meaningful minimum sample (30 orders per route per month) while covering **19/19** periods; the flagged group has a higher next-period late rate in **16/19** periods, with a weighted difference of **+0.0814** (8.14 percentage points). This makes the backtest more representative across the year instead of only the high-volume months. The production `route_priority` keeps its default `min_orders=100` because it runs on the full (not monthly) dataset and deliberately avoids small-route noise; the lower threshold is only for the monthly backtest.
+**Selection for the backtest: `min_orders=30`.** In the current raw eval,
+`min_orders=100` gives 13 eligible periods; `min_orders=30` gives 19, with the
+flagged group higher in 16/19. The current weighted difference is +8,2826 pp.
+The production default remains 100; the lower threshold is for retrospective
+period-by-period evaluation.
 
 **Where the backtest does NOT support the flag (reported explicitly):**
 - `201701 -> 201702`: flagged group 2.27% vs rest 3.25% (`diff = -0.00975`, -0.98 pp).
@@ -148,14 +230,17 @@ Gọi `d_t = flagged_late_rate(t+1) - other_late_rate(t+1)`.
 | 201806 | 0.0132044 | -0.00599853 |
 | 201807 | -0.0932768 | -0.0714562 |
 
-**Kết quả baseline (`min_orders=30`):**
-- Baseline có nhóm gắn cờ trễ hơn nhóm còn lại ở **13/19 kỳ** (DSS: 16/19).
-- So trực tiếp từng kỳ: **DSS tốt hơn 11 kỳ**, **baseline tốt hơn 7 kỳ**, **hòa 1 kỳ** (`201701`, vì chọn cùng tuyến).
-- Chênh lệch trung bình: baseline **+0.042072 (+4.21 pp)**; DSS **+0.071286 (+7.13 pp)**.
-- Có trọng số `total_orders`: baseline **+0.051755 (+5.18 pp)**; DSS **+0.081379 (+8.14 pp)**.
-- Có trọng số `flagged_orders`: baseline **+0.063472 (+6.35 pp)**; DSS **+0.103166 (+10.32 pp)**.
+**Kết quả baseline (`min_orders=30`, hiện hành; chi tiết theo kỳ cũ ở trên không đồng bộ):**
+- prior: 13/19 kỳ có nhóm gắn cờ trễ hơn; weighted diff **+5,23 pp**, mean
+  **+4,22 pp**, flagged-weighted **+6,46 pp**.
+- through: 14/19 kỳ; weighted diff **+7,37 pp**, mean **+5,93 pp**,
+  flagged-weighted **+9,68 pp**.
+- DSS: 16/19 kỳ; weighted diff **+8,28 pp**, mean **+7,24 pp**,
+  flagged-weighted **+10,46 pp**.
 
-**Kết luận trung thực:** baseline lịch sử **không tốt hơn** DSS về tổng thể (thấp hơn ở cả 3 cách tính trung bình), nhưng **tốt hơn DSS ở 7/19 kỳ**, đáng chú ý là `201708`, `201807`, `201801`, `201802`, `201805`. Vì vậy không thể nói DSS luôn vượt trội; baseline là một đối chứng hợp lý và cho thấy tín hiệu lịch sử cũng có giá trị, nhưng việc dùng ngưỡng theo kỳ hiện tại của DSS cho kết quả tổng thể tốt hơn. Với `min_orders=50`: DSS tốt hơn 9 kỳ, baseline tốt hơn 8 kỳ, không hòa; DSS vẫn cao hơn về trung bình có trọng số (+7.94 vs +7.43 pp). Với `min_orders=100`: DSS tốt hơn 7 kỳ, baseline tốt hơn 3 kỳ, hòa 3 kỳ; DSS vẫn cao hơn (+10.01 vs +8.07 pp).
+**Kết luận hiện hành:** cặp từng kỳ DSS-vs-prior là 12 kỳ DSS cao hơn, 5 kỳ prior
+cao hơn và 2 hòa; DSS-vs-through là 12/4/3. Điểm ước lượng cao hơn không đủ để
+khẳng định DSS tốt hơn mọi baseline ở mọi kỳ.
 
 **Lưu ý các kỳ gần như hòa:** trong danh sách baseline "prior" tốt hơn DSS, hai kỳ `201801` và `201805` chênh lệch rất nhỏ, gần như hòa:
 - `201801`: baseline `0.216696` vs DSS `0.216649` — lệch **~0.005 điểm %**.
@@ -191,11 +276,14 @@ Ngoài biến thể "prior" (chỉ các kỳ **trước** `t`), báo cáo thêm 
 
 | Biến thể baseline | Cờ trễ hơn nhóm còn lại | mean_diff | weighted (tổng đơn t+1) | weighted (đơn nhóm cờ) | DSS tốt hơn | Baseline tốt hơn | Hòa |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| **prior** (chỉ kỳ trước `t`) | 13/19 | +4.21 pp | +5.18 pp | +6.35 pp | 11 | 7 | 1 |
-| **through** (đến hết kỳ `t`) | 14/19 | **+5.97 pp** | **+7.33 pp** | **+9.51 pp** | **11** | **5** | **3** |
-| DSS (tham chiếu) | 16/19 | +7.13 pp | +8.14 pp | +10.32 pp | — | — | — |
+| **prior** (chỉ kỳ trước `t`) | 13/19 | +4.22 pp | +5.23 pp | +6.46 pp | 12 | 5 | 2 |
+| **through** (đến hết kỳ `t`) | 14/19 | **+5.93 pp** | **+7.37 pp** | **+9.68 pp** | **12** | **4** | **3** |
+| DSS (tham chiếu) | 16/19 | +7.24 pp | +8.28 pp | +10.46 pp | — | — | — |
 
-**Kết luận trung thực cho biến thể "through":** baseline dùng thêm dữ liệu kỳ `t` nên **sát DSS hơn** rõ rệt so với biến thể "prior" (mean +5.97 vs +4.21 pp; weighted +7.33 vs +5.18 pp; flagged +9.51 vs +6.35 pp). Tuy vậy baseline "through" vẫn **thấp hơn DSS** ở cả 3 cách tính trung bình **(điểm ước lượng; CI chứa 0)** — DSS cao hơn through ~+0,8 pp có trọng số nhưng không có ý nghĩa thống kê, xem Bootstrap CI bên dưới — và DSS vẫn tốt hơn ở **11/19 kỳ**. Số kỳ baseline tốt hơn giảm còn 5 (thay vì 7) và số kỳ hòa tăng lên 3 (`201701`, `201703`, `201704` — chọn cùng tuyến). Trong 5 kỳ baseline "through" tốt hơn, `201801` gần như hòa tuyệt đối (`0.216696` vs `0.216649`, lệch ~0.005 điểm %) và `201805` cũng rất sát (`0.010823` vs `0.007545`, lệch ~0.33 điểm %); các kỳ còn lại là `201708`, `201802`, `201807`. Hai giá trị `201801`/`201805` trùng bảng prior vì hai biến thể chọn cùng tập tuyến ở hai kỳ này, **không phải lỗi sao chép**; ba kỳ hòa thực sự là `201701`, `201703`, `201704` (delta = 0). Vì vậy không nên nói baseline "through" vượt DSS; nó chỉ thu hẹp khoảng cách nhờ dùng thêm thông tin hiện tại. **Through là so sánh chính** (cùng lượng thông tin với DSS), prior là đối chứng phụ.
+**Kết luận hiện hành cho biến thể "through":** điểm ước lượng của DSS cao hơn,
+nhưng CI pair và block đều chứa 0; đây là **chưa đủ bằng chứng** DSS tốt hơn
+through. Sign test kiểm tra hướng chênh lệch theo kỳ, không phải độ lớn hay hiệu
+quả nhân quả. Through là so sánh chính vì dùng thông tin đến hết kỳ `t`.
 
 ### Bootstrap CI (n_boot=10 000, seed=42, trọng số=total_orders)
 
@@ -207,15 +295,14 @@ Hai loại bootstrap:
 
 | Loại bootstrap | vs 0 (DSS > 0) | vs prior | vs through *(so sánh chính)* |
 | --- | --- | --- | --- |
-| Pair | [**+3.68; +12.40**] pp | [+0.45; +5.79] pp | [**−0.58; +2.35**] pp |
-| Block (3 tháng) | [**+1.95; +13.36**] pp | [+0.64; +6.19] pp | [**−0.40; +2.20**] pp |
+| Pair (hiện hành) | [**+3.77; +12.55**] pp | [+0.52; +5.92] pp | [**−0.50; +2.52**] pp |
+| Block (3 tháng), through | — | — | [**−0.30; +2.35**] pp |
 
 **Đọc CI:**
-- **vs 0**: CI pair không chứa 0 → có thể nói DSS "vượt 0" với cơ sở thống kê; CI block rộng hơn (vì tính tự tương quan) nhưng vẫn không chứa 0.
-- **vs prior**: CI pair không chứa 0 → DSS tốt hơn baseline lịch sử prior về mặt thống kê.
-- **vs through (so sánh chính)**: CI pair `[−0.58; +2.35]` và block `[−0.40; +2.20]` **đều chứa 0** → không thể nói DSS "vượt" baseline through có ý nghĩa thống kê ở mức 5%; hiệu chỉnh DSS vs through nhỏ (trung tâm ~+0.8 pp) và không đủ mạnh để kết luận. Chỉ nói "DSS tốt hơn ở 11/19 kỳ, trung bình có trọng số cao hơn +0.8 pp so với through".
+- Nếu CI chứa 0, kết luận là **chưa đủ bằng chứng** về chênh lệch.
+- **vs through:** pair CI hiện hành `[−0.50; +2.52]` và block CI `[−0.30; +2.35]` chứa 0; chưa đủ bằng chứng DSS tốt hơn through.
 
-**Quy tắc báo cáo:** chỉ dùng từ "vượt" khi CI (pair hoặc block) **không chứa 0**. Với so sánh vs through — không dùng từ "vượt".
+**Quy tắc báo cáo:** với CI chứa 0, dùng “chưa đủ bằng chứng”; không diễn giải thành DSS vượt baseline.
 
 **Độ khớp số tự chạy:** với vs prior, chỉ **cận dưới** khớp số tôi tự chạy (+0,45 pp); cận trên +5,79 pp lệch 0,08 pp so với +5,87 pp.
 
@@ -224,12 +311,10 @@ Hai loại bootstrap:
 ## 3) Threshold sensitivity (full year data)
 | min_orders | red | amber | flagged_routes | red_routes | amber_routes |
 | --- | --- | --- | --- | --- | --- |
-| 50 | 2.0 | 1.5 | 22 | 7 | 15 |
-| 50 | 1.5 | 1.25 | 30 | 22 | 8 |
+| 50 | 2.0 | 1.5 | 21 | 7 | 14 |
+| 50 | 2.5 | 1.5 | 21 | 4 | 17 |
 | 100 | 2.0 | 1.5 | 14 | 6 | 8 |
-| 100 | 1.5 | 1.25 | 21 | 14 | 7 |
-| 200 | 2.0 | 1.5 | 11 | 4 | 7 |
-| 200 | 1.5 | 1.25 | 16 | 11 | 5 |
+| 100 | 2.5 | 2.0 | 6 | 3 | 3 |
 
 ## 4) Top 3 routes (including SP->RJ)
 Bảng này dùng chế độ chi tiết `ensure_red=False` (xếp thuần theo `late_orders`, đúng 3 dòng) để giữ top 3 lịch sử. Danh sách cảnh báo mặc định của `route_priority`/API dùng red-first: trả **tất cả tuyến đỏ trước** (sắp `late_orders` giảm dần), rồi vàng cho đủ `top`.
@@ -283,16 +368,13 @@ Trong 14 tuyến, **7/14 có `uncertain=True`**: SP->PI, SP->SE, PR->BA, PR->RJ,
 
 Top mặc định 10 dòng hiện chứa đủ **6 tuyến đỏ** (SP->MA, SP->AL, SP->PI, SP->SE, MA->SP, PR->BA), sau đó 4 tuyến vàng; không còn che `SP->SE`, `MA->SP`, `PR->BA`.
 
-## 5) Impact of negative times
-**Fact-level counts (from `cleaned_fact_orders.csv`):**
-- `seller_prep_time_days` negative: **1542** rows
-- `carrier_transit_time_days` negative: **50** rows
-- `approval_time_days` negative: **0**
-- either prep/transit negative: **1592** (0 overlap where both negative)
+## 5) Impact of negative times (detailed table from previous run)
+**Current raw-eval counts are at đơn-tuyến grain:** 1.361 prep-negative,
+29 transit-negative, 1.390 with either negative; all 1.390 were removed from
+the DSS sample. Fact-level totals were not emitted in the current raw eval.
 
-**At model level (1 row = (order_id, route), grouped):**
-- Rows with any negative (prep<0 or transit<0): **1390** out of **96981** (removed if filtered)
-- `prep<0`: **1361**, `transit<0`: **29**
+**Current model-level count (1 row = đơn-tuyến):** 1.390 removed from 96.981
+before filtering; 95.591 remain.
 
 **Comparison for top 3 routes (clean = drop rows where `prep>=0 and transit>=0`; system means also change):**
 | route | removed_rows | orders_keep | orders_drop | baseline_keep | baseline_drop | stage_keep | stage_drop | has_bottleneck_keep | has_bottleneck_drop | excess_approval_keep | excess_approval_drop | excess_prep_keep | excess_prep_drop | excess_transit_keep | excess_transit_drop |
@@ -305,34 +387,29 @@ Top mặc định 10 dòng hiện chứa đủ **6 tuyến đỏ** (SP->MA, SP->
 
 ## 6) Parameters chosen and rationale
 - **route_priority production defaults kept:** `red=2.0, amber=1.5, min_orders=100, top=10`, với `ensure_red=True` (red-first) để không che tuyến đỏ.
-- **Backtest min_orders = 30:** chosen for monthly evaluation only. At `min_orders=100`, 6/19 periods have no flagged route (only 13 evaluable); at 50, 2/19. `30` gives 19/19 coverage while still requiring at least 30 orders per route per month; 16/19 periods flagged group has higher next-period late rate, weighted +8.14 pp. The production default remains 100 because it runs on the full dataset.
+- **Backtest min_orders = 30:** dùng riêng cho đánh giá theo kỳ. Với 100, chỉ
+  13 kỳ đủ điều kiện; với 30 có 19 kỳ, trong đó 16 kỳ nhóm gắn cờ cao hơn.
+  Weighted diff hiện hành là +8,2826 pp. Đây là tương quan hồi cứu.
 - **Backtest window:** start from 2017 (drop 2016 sparse months), require `min_period_orders>=500` in t and t+1, use next calendar month.
-- **Baseline lịch sử (đối chứng):** cùng số tuyến K như DSS; **so sánh chính là "through"** (dùng lịch sử đến hết kỳ t, gồm cả t), còn "prior" (chỉ các kỳ trước t) là đối chứng phụ. Cả hai chỉ xét tuyến đủ `min_orders` đơn trong kỳ t và có ít nhất một dòng lịch sử. Baseline "through" sát DSS hơn (tốt hơn ở 5/19 kỳ, hòa 3) nhưng vẫn thấp hơn DSS ở cả 3 cách trung bình **(điểm ước lượng; CI chứa 0)**; baseline "prior" thấp hơn DSS về tổng thể nhưng tốt hơn ở 7/19 kỳ.
+- **Baseline lịch sử (đối chứng):** through là so sánh chính, prior là đối chứng phụ. Số hiện hành ở Snapshot đầu tài liệu thay thế các thống kê baseline cũ trong bảng chi tiết.
 - **Top routes:** bảng chi tiết top 3 (`ensure_red=False`) vẫn là SP->RJ/BA/ES, đều có bottleneck transit. Danh sách cảnh báo mặc định (`route_priority()` top 10) trả đủ 6 tuyến đỏ trước rồi 4 tuyến vàng, không còn che `SP->SE`, `MA->SP`, `PR->BA`.
 
 ## 7) Limitations observed
 - **Early months sparse:** 2016 has tiny counts; several periods have 0 flagged routes when using stricter `min_orders` (e.g. 201701-201704 at 100). Backtest explicitly excludes/marks these.
 - **Monthly granularity limits sample size:** even with `min_orders=30` we get small flagged sets in some months.
-- **Negative stage times exist:** ~1.4k (order,route) rows affected; diagnosis remains consistent after removal but magnitudes shift.
+- **Thời gian giai đoạn âm:** 1.390 đơn-tuyến bị loại (prep âm 1.361,
+  transit âm 29).
 - **`goal_seek_cut` chỉ đạt 5% ở mức trần 10 ngày với SP->BA:** bảng top 3 cho thấy SP->BA đạt 4,71% khi cắt transit đúng 10 ngày (`max_days=10`), còn SP->ES đạt ở 9 ngày. Vì vậy không nên nói "cắt giai đoạn không đủ" tuyệt đối; đúng hơn là "chỉ đủ ở biên 10 ngày, cần kiểm chứng thêm vì đây là giới hạn của hàm".
 - **`transit_goal_cut` ≈ `promise_days` là hệ quả của giả định 1:1.** `goal_seek_cut` tìm `c` sao cho `scenario(cut=c)["projected"] ≤ 5%`; `goal_seek_promise` tìm `x` sao cho `P(delay_days > x) ≤ 5%`. Dưới giả định cắt 1:1 (`delay_days_new = delay_days - min(c, transit)`), cắt `c` ngày transit tương đương kéo dài cam kết `c` ngày — trừ phần chặn bởi thời gian transit thực tế của từng đơn (khi `c > transit_i`, chỉ cắt được đúng `transit_i` ngày). Đây là lý do `transit_goal_cut` (SP->BA=10) gần trùng `promise_days` (SP->BA=10). **Hệ quả quan trọng:** cắt 10 ngày transit của SP->BA vượt quá mức trung bình excess transit của tuyến (7,2 ngày), tức là yêu cầu cắt **nhiều hơn tổng excess** — không nên trình bày như phương án khả thi trong thực tế. `goal_seek_cut(SP->BA, "transit") = 10` là **mức cắt tối thiểu theo giả định 1:1, trùng biên `max_days=10`**, không phải phương án can thiệp cụ thể. SP->ES cắt 9 ngày — gần biên nhưng chưa chạm, và vẫn vượt xa excess transit ~3,1 ngày. Nếu muốn đạt 5% thực sự với SP->BA, cần kết hợp cắt nhiều giai đoạn hoặc dùng `goal_seek_promise`.
-- **Baseline lịch sử chỉ là đối chứng đơn giản:** cả hai biến thể đều dùng tỷ lệ trễ gộp quá khứ và cùng số tuyến, không dùng ngưỡng hiện tại. So sánh chính là "through": sát DSS hơn (5/19 kỳ tốt hơn, 3 hòa) nhưng vẫn kém hơn ở cả 3 cách trung bình **(điểm ước lượng; CI chứa 0)**. Biến thể "prior" (đối chứng phụ) tốt hơn DSS ở 7/19 kỳ nhưng kém hơn rõ về tổng thể. Không nên dùng baseline thay DSS chỉ dựa trên một vài kỳ, đặc biệt các kỳ chênh lệch gần như hòa (`201801`, `201805` — through tốt hơn rất nhẹ).
-- **Bootstrap CI vs through chứa 0:** Pair CI `[−0.58; +2.35]` và Block CI `[−0.40; +2.20]` đều chứa 0 — không thể nói DSS "vượt" baseline through có ý nghĩa thống kê.
+- **Baseline lịch sử chỉ là đối chứng đơn giản:** bảng baseline chi tiết lưu kết quả lần chạy trước; dùng các số prior/through trong Snapshot hiện hành.
+- **Bootstrap CI vs through chứa 0:** Pair CI `[−0.50; +2.52]` và Block CI
+  `[−0.30; +2.35]` đều chứa 0 — chưa đủ bằng chứng DSS tốt hơn through.
 - **Model is descriptive/what-if:** Backtest shows flagged routes tend to have higher late rate in next period (supportive in most evaluated periods) but is not a causal proof.
 
-## 8) Commands run (for reproducibility)
-```bash
-# Model/base checks
-.\backend\env\Scripts\python.exe -c "from etl import dss_models as M; o=M.load_orders(); print(len(o), o.is_late.mean())"
+## 8) Reproduction
 
-# Backtest + tables
-.\backend\env\Scripts\python.exe etl/dss_eval.py > reports/dss_eval_raw.txt
-
-# Tests
-.\backend\env\Scripts\python.exe -m pytest -q
-.\backend\env\Scripts\python.exe -m pytest tests/test_dss_models.py tests/test_dss_eval.py -q
-cd backend && ..\backend\env\Scripts\python.exe manage.py test dss -v 2
-```
-
-Files created/modified in Giai đoạn 5: `etl/dss_eval.py`, `tests/test_dss_eval.py`, `reports/dss_eval_raw.txt`, `reports/dss_results.md` (this file).
+The current user-run check is `.\scripts\check.ps1`; add `-Quick` to skip
+raw-eval regeneration. See `reports/run_guide.md`. The old commands and file
+list from Giai đoạn 5 have been retired; they are not a record of the Phase 1/2
+changes.
 No Django/giao diện files modified.

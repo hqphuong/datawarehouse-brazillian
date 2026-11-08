@@ -1,7 +1,7 @@
 # Công thức và giả định mô hình DSS
 
 Nguồn: `etl/dss_models.py`, `etl/dss_eval.py`.  
-Dữ liệu đầu vào: `data/processed/cleaned_fact_orders.csv` (~110 173 dòng ở cấp item; sau `load_orders()` gộp thành ~96 981 dòng ở cấp (đơn hàng, tuyến)).
+Dữ liệu đầu vào: `data/processed/cleaned_fact_orders.csv` (110.173 dòng cấp item; raw eval ghi nhận 96.981 đơn-tuyến trước lọc, loại 1.390 dòng thời gian âm, còn 95.591 đơn-tuyến).
 
 ---
 
@@ -96,7 +96,7 @@ $$\text{uncertain}(r) = \begin{cases}
 \mathbb{1}\!\left[\text{ci\_low}(r) < \bar{L} \cdot \theta_{\text{amber}}\right] & \text{nếu level}(r) = \text{amber}
 \end{cases}$$
 
-Nghĩa: cận dưới Wilson của tuyến nằm **dưới ngưỡng phân loại** của chính nó → khoảng tin cậy **chứa** ngưỡng → nhãn đỏ/vàng chưa được xác nhận chắc chắn. Với dữ liệu hiện tại ($\bar{L} \approx 8{,}07\%$, ngưỡng đỏ ≈ 16,14%, ngưỡng vàng ≈ 12,11%): **7/14 tuyến gắn cờ** có `uncertain=True` (SP→PI, SP→SE, PR→BA, PR→RJ, SP→PA, SP→MS, SP→TO). Chỉ để hiển thị cảnh báo — không đổi `level`, thứ tự, `stage`, `has_bottleneck`; cờ **độc lập với `low_sample`** (có tuyến mẫu nhỏ nhưng `uncertain=False` và ngược lại).
+Nghĩa: cận dưới Wilson của tuyến nằm **dưới ngưỡng phân loại** của chính nó → khoảng tin cậy **chứa** ngưỡng → nhãn đỏ/vàng chưa được CI xác nhận. Cờ chỉ hiển thị cảnh báo — không đổi `level`, thứ tự, `stage`, `has_bottleneck`; cờ **độc lập với `low_sample`**.
 
 ---
 
@@ -222,7 +222,7 @@ $$\overline{\text{diff}}_{\text{weighted}} = \frac{\sum_{t \in T} \text{diff}_t 
 
 với $T$ = tập kỳ có thể so sánh (có ít nhất một tuyến gắn cờ **và** có đơn gắn cờ ở kỳ $t+1$), $N_{t+1}$ = tổng số đơn kỳ $t+1$ (trọng số).
 
-**Chú thích trọng số `weighted_diff`:** trọng số $= N_{t+1} = |\,O_{t+1}|$ (tổng số đơn kỳ $t+1$, không phân biệt nhóm). Lý do: kỳ có nhiều đơn hơn → ước lượng $L$ chính xác hơn → đáng được trọng số cao hơn. Cách thay thế (trọng số = số đơn nhóm flagged) cho +10.32 pp; xem `dss_results.md` mục A1 để so sánh.
+**Chú thích trọng số `weighted_diff`:** trọng số $= N_{t+1} = |\,O_{t+1}|$ (tổng số đơn-tuyến kỳ $t+1$, không phân biệt nhóm). Cách thay thế trọng số theo đơn-tuyến nhóm flagged cho weighted diff +10,4624 pp trong lần chạy hiện hành; đây là một ước lượng khác, không phải hiệu quả can thiệp.
 
 ### Lọc kỳ
 
@@ -272,11 +272,11 @@ Kỳ không có tuyến nào gắn cờ được ghi lại trong `periods` với
 
 2. **Tuyến = (bang người bán → bang khách hàng):** Bỏ qua sự khác biệt giữa các thành phố, mã bưu điện, hay carrier cụ thể trong cùng một tuyến.
 
-3. **Một đơn có thể xuất hiện ở nhiều tuyến** nếu có item từ nhiều bang khác nhau. Trong thực tế đây là ~519 đơn (~0.5%).
+3. **Một đơn có thể xuất hiện ở nhiều tuyến** nếu có item từ nhiều bang khác nhau. Hãy phân biệt số đơn duy nhất với số đơn-tuyến; mọi kết quả route-level dùng đơn-tuyến.
 
 4. **Tỷ lệ trễ là chỉ số duy nhất:** Không mô hình hóa chi phí, doanh thu, hay tác động chuỗi cung ứng.
 
-5. **Backtest là quan hệ liên quan, không phải nhân quả:** Việc gắn cờ ở kỳ $t$ có tương quan với tỷ lệ trễ cao ở kỳ $t+1$ (16/19 kỳ), nhưng không chứng minh rằng can thiệp vào tuyến đó sẽ giảm trễ.
+5. **Backtest là tương quan hồi cứu, không phải nhân quả:** Việc gắn cờ ở kỳ $t$ có liên quan với tỷ lệ trễ cao hơn ở kỳ $t+1$ (16/19 kỳ), nhưng không chứng minh được tác động của can thiệp.
 
 6. **Mô hình tĩnh:** Dữ liệu phân tích và đánh giá đều từ cùng một bộ dữ liệu lịch sử (Olist 2016–2018); mô hình không tự cập nhật khi có dữ liệu mới.
 
@@ -287,11 +287,10 @@ Kỳ không có tuyến nào gắn cờ được ghi lại trong `periods` với
 
 | Hạn chế | Số liệu | Ảnh hưởng |
 | --- | --- | --- |
-| `seller_prep_time_days` âm | 1 542 dòng (cấp fact) | Có thể là lỗi dữ liệu (timestamp ngược); loại bỏ không đổi kết luận nghẽn nhưng thay đổi độ lớn excess một chút |
-| `carrier_transit_time_days` âm | 50 dòng | Tương tự trên |
-| `review_score` rỗng | 827 dòng | Không ảnh hưởng mô hình chính (không dùng review score); ảnh hưởng cột `has_logistics_complaint` |
-| Backtest so sánh với baseline đơn giản — kết quả hỗn hợp | DSS tốt hơn 11/19 kỳ vs baseline "through"; **pair CI vs through = [−0,58; +2,35] pp chứa 0** (điểm ước lượng +0,8 pp) | Tín hiệu DSS có giá trị nhưng không vượt trội rõ rệt về mặt thống kê so với baseline dùng cùng thông tin |
-| `goal_seek_cut` (transit, target=5%) với 3 tuyến top | SP→BA = 10 ngày, SP→ES = 9 ngày; chỉ SP→RJ = None | **SP→BA:** mức cắt tối thiểu theo giả định 1:1 là 10 ngày, trùng biên `max_days=10`. **SP→ES:** 9 ngày, gần biên nhưng chưa chạm. Cả hai đều vượt xa excess transit của tuyến (SP→BA ~7,2 ngày; SP→ES ~3,1 ngày) — không nên trình bày như phương án khả thi |
+| Thời gian giai đoạn âm | 1.361 prep và 29 transit ở cấp đơn-tuyến; tổng 1.390 đơn-tuyến bị loại | Mẫu phân tích còn 95.591 đơn-tuyến; mức độ sai lệch ảnh hưởng đến độ lớn ước lượng |
+| `review_score` | Liên hệ cùng dữ liệu: bad-review 54,16% ở đơn trễ và 9,44% ở đơn đúng hạn | Đây là liên hệ, không phải tác động nhân quả |
+| Backtest so sánh với baseline đơn giản — kết quả hỗn hợp | 16/19 kỳ DSS cao hơn nhóm còn lại; pair CI vs through = [−0,50; +2,52] pp, chứa 0 | Chưa đủ bằng chứng DSS tốt hơn baseline through |
+| Mô hình tĩnh và dữ liệu lịch sử | Một mốc carrier date trên mỗi đơn; dữ liệu lịch sử Olist | Không thể mô tả đầy đủ các lần giao nhiều chặng hoặc suy ra khả năng thực hiện trong tương lai |
 | Mô hình hoàn toàn theo luật và mô phỏng, chủ ý để dễ giải thích | Thiết kế chủ ý | 4 khối DSS dùng luật và mô phỏng |
 
 ---
@@ -314,3 +313,66 @@ Kỳ không có tuyến nào gắn cờ được ghi lại trong `periods` với
 | `backtest` | `min_orders` | 30 | Cho đánh giá theo tháng (không phải sản xuất) |
 | `backtest` | `min_period_orders` | 500 | Ngưỡng tối thiểu đơn trong kỳ |
 | `backtest` | `start_year` | 2017 | Bỏ năm 2016 quá thưa |
+
+---
+
+## 10. Cập nhật đánh giá DSS (Phase 2)
+
+Các số bên dưới lấy từ lần chạy hiện hành trong `reports/dss_eval_raw.txt`; số kiểm thử lấy từ `reports/CHECK_OUTPUT.txt`.
+
+### Attribution: peer benchmarks, Shapley và q
+
+Benchmark được chọn theo giai đoạn: approval theo `payment_type`, prep theo `weight_band`, transit theo `distance_band` là decile khoảng cách xuyên tuyến. Nếu nhóm peer thiếu mẫu hoặc khóa là NA, dùng median toàn cục của cùng giai đoạn. Shapley phân bổ phần trễ vượt benchmark giữa các giai đoạn và promise; `cause_share_*` là tỷ trọng trong tập đơn trễ, không phải tỷ lệ trễ hay xác suất nguyên nhân.
+
+| q | Approval | Prep | Transit | Promise |
+| --- | ---: | ---: | ---: | ---: |
+| 0,25 | 2,5291% | 20,0765% | 76,3297% | 1,0646% |
+| 0,50 | 1,5777% | 15,1488% | 69,8820% | 13,3915% |
+
+Chỉ báo cáo q=0,25 và q=0,50. q=0,75 bị loại vì benchmark ở phân vị này chậm hơn actual, tạo phi âm và phân rã không hợp lệ. Tỷ lệ trễ xấu đi đi cùng bad-review 54,16% so với 9,44% ở đơn đúng hạn trong cùng dữ liệu; đây là association, không phải quan hệ nhân quả.
+
+### Promise calibration và mức phục vụ
+
+Trong 130 ô đủ mẫu trên tổng 1.157 ô (83.104/95.591 đơn-tuyến), mô phỏng đổi định nghĩa trễ cho kết quả GROSS 3.751, phát sinh 884 đơn trễ mới và NET 2.867 đơn-tuyến. Vì vậy không diễn giải GROSS như số ròng. Các bảng 85/90/95% là mức phục vụ được quan sát/ước tính, không phải khuyến nghị đặt promise; nếu promise bằng `needed_days` thì ước tính lại nhãn trễ, không rút ngắn thời gian giao. Nhãn `tight` phản ánh so sánh với Q95, không phải khẳng định tính khả thi.
+
+### Feasible cut: P25, P50 và lợi ích biên
+
+S4 dùng P25 để ước lượng mức cắt khả thi theo peer; P50 chỉ là điểm tham chiếu và không dùng làm mức cắt. Có 71/406 tuyến đủ điều kiện mẫu. Top đơn-tuyến theo ước lượng tránh được gồm SP→SP 1.023, SP→RJ 659, SP→MG 261, SP→BA 231 và SP→SC 178. Bảng cắt theo từng mức cho thấy lợi ích biên thay đổi theo tuyến và giai đoạn, không nên ngoại suy một mức cắt đồng đều. Đây là nếu… thì ước tính, không phải kết quả can thiệp thực tế; CI hẹp phản ánh nhiễu lấy mẫu, không xác nhận tính khả thi vận hành.
+
+### Seller, mẫu nhỏ và độ nhạy ngưỡng
+
+Seller scorecard chỉ dùng đơn single-seller; khác biệt giữa seller có thể bị confound bởi route mix và thành phần đơn, nên không quy kết seller là nguyên nhân. k=102 seller bao phủ 3.902/7.788 đơn trễ (50,10%). Seller excess là chỉ số khác tập và khác ý nghĩa với route-avoidable orders; không cộng hoặc so sánh hai đại lượng.
+
+MA→SP, PR→BA và SP→TO đều thuộc 14 tuyến gắn cờ mặc định nhưng được hiển thị “cần thêm dữ liệu” do mẫu nhỏ; không tính lặp vào nhóm hành động chính. Ở min_orders=100, năm cặp ngưỡng quanh mặc định làm số tuyến gắn cờ dao động 10–21; bộ 100/2,5/2,0 giữ lõi 6 tuyến. Trên toàn lưới, số tuyến phụ thuộc đồng thời vào min_orders và ngưỡng; 14 chỉ đúng tại 100/2,0/1,5.
+
+### V2 — Bootstrap route-level
+
+Bootstrap lấy mẫu lại tuyến (500 lần, seed 42), q=0,50; CI dưới đây là CI 95% cho tỷ trọng nguyên nhân trong tổng tập đơn trễ. Transit xếp hạng #1 ở 165/226 tuyến (73,01%).
+
+| Tỷ trọng | Ước lượng | CI 95% |
+| --- | ---: | ---: |
+| Approval | 1,5799% | [1,0753%; 1,9991%] |
+| Prep | 15,1638% | [10,6215%; 19,1531%] |
+| Transit | 69,9162% | [56,4003%; 83,5136%] |
+| Promise | 13,3402% | [4,4096%; 23,1705%] |
+
+CI mô tả bất định lấy mẫu theo tuyến; không diễn giải thành tác động nhân quả. Mọi CI chứa 0 phải được mô tả là “chưa đủ bằng chứng”.
+
+### V4 — Sign test và tương quan hồi cứu
+
+Backtest dùng `min_orders=30`; 19 kỳ đủ điều kiện. Với min_orders=100 chỉ 13 kỳ đủ điều kiện. Exact sign test loại hòa và kiểm tra dấu chênh lệch:
+
+| So sánh | Dương/âm | n không hòa | p một phía | p hai phía |
+| --- | ---: | ---: | ---: | ---: |
+| DSS so với 0 | 16/3 | 19 | 0,00221 | 0,00443 |
+| DSS so với prior | 12/5 | 17 | 0,07173 | 0,14346 |
+| DSS so với through | 12/4 | 16 | 0,03841 | 0,07681 |
+
+Weighted diff DSS là +8,2826 pp (mean +7,2403 pp; trọng số theo flagged orders +10,4624 pp). Với through, chênh lệch ước lượng không có CI bootstrap loại trừ 0: pair CI [−0,50; +2,52] pp và block CI [−0,30; +2,35] pp. Sign test so dấu từng kỳ không thay thế CI cho độ lớn chênh lệch; kết quả là tương quan hồi cứu và không xác định tác động can thiệp.
+
+### Hạn chế
+
+- Mô hình mô tả và mô phỏng; không có đối chứng can thiệp, chi phí hay ROI. Simulation không phải counterfactual.
+- Mỗi đơn chỉ có một carrier date trong dữ liệu; không mô tả đầy đủ nhiều lần bàn giao.
+- Wilson CI theo tuyến giả định các đơn độc lập; bootstrap route-level ở V2 thể hiện độ bất định khi lấy mẫu tuyến, nhưng không loại bỏ mọi phụ thuộc.
+- Các CI bootstrap của S4 phản ánh sampling noise, không phải tính khả thi của mức cắt.
