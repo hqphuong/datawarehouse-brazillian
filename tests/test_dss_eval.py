@@ -129,6 +129,15 @@ def test_threshold_sensitivity_contract(o):
     assert at50["flagged_routes"].min() == 7
     assert at50["flagged_routes"].max() == 30
 
+    # Tại min_orders=100: 5 cặp quanh mặc định chạy 10–21; cặp siết cả hai
+    # (2,5; 2,0) chỉ còn lõi 6 tuyến.
+    at100 = table[table["min_orders"] == 100]
+    strict = at100[(at100["red"] == 2.5) & (at100["amber"] == 2.0)]
+    assert strict["flagged_routes"].iloc[0] == 6
+    around = at100[~((at100["red"] == 2.5) & (at100["amber"] == 2.0))]
+    assert around["flagged_routes"].min() == 10
+    assert around["flagged_routes"].max() == 21
+
 
 def test_top_routes_include_sp_rj(o):
     table = E.top_routes_report(o, n=3)

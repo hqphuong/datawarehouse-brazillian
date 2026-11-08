@@ -384,9 +384,19 @@ def promise_calibration(
     **định nghĩa trễ**, không rút ngắn thời gian giao thực tế; vì vậy không được
     diễn giải là "giảm trễ" theo nghĩa vận hành.
 
+    Vì ``needed_days`` có thể **ngắn hơn** cam kết hiện tại ở các ô ``loose``,
+    một số đơn đang đúng hạn sẽ thành trễ. Vì vậy báo cáo tách hai con số:
+
+    - ``avoidable_orders`` / ``gross_avoidable_orders``: số đơn trễ hiện tại có
+      thể tránh (GROSS, chỉ đếm phần giảm).
+    - ``new_late_orders``: số đơn đang đúng hạn nhưng thành trễ khi siết các ô
+      ``loose``.
+    - ``net_avoided_orders = gross − new_late``: mức giảm thực (NET), dùng trong
+      Decision Brief. NET cũng bằng ``late_orders_kept − calibrated_late_orders``.
+
     Trả về DataFrame một dòng / ô đủ mẫu, sắp theo ``avoidable_orders`` giảm dần.
     Các thông tin tổng hợp nằm trong ``.attrs``: số ô giữ/loại, số đơn-tuyến,
-    tổng ``avoidable_orders``, phân bố nhãn và tham số.
+    GROSS/NET/new late, phân bố nhãn và tham số.
 
     Tham số:
         o: bảng đơn-tuyến từ :func:`etl.dss_models.load_orders`.
@@ -460,6 +470,15 @@ def promise_calibration(
         cells["avoidable_orders"] / cells["late_orders"],
         np.nan,
     )
+    # Siết ô loose làm một số đơn đang đúng hạn thành trễ. Tách GROSS/NET để
+    # không báo cáo thổi phồng "đơn tránh được".
+    cells["new_late_orders"] = (
+        cells["calibrated_late_orders"]
+        - (cells["late_orders"] - cells["avoidable_orders"])
+    ).astype(int)
+    cells["net_avoided_orders"] = (
+        cells["avoidable_orders"] - cells["new_late_orders"]
+    ).astype(int)
 
     small = cells[cells["n_orders"] < min_orders]
     out = (
@@ -479,11 +498,114 @@ def promise_calibration(
     out.attrs["n_orders_small_cells"] = int(small["n_orders"].sum())
     out.attrs["late_orders_kept"] = int(out["late_orders"].sum())
     out.attrs["avoidable_orders"] = int(out["avoidable_orders"].sum())
+    out.attrs["gross_avoidable_orders"] = int(out["avoidable_orders"].sum())
     out.attrs["calibrated_late_orders"] = int(out["calibrated_late_orders"].sum())
+    out.attrs["new_late_orders"] = int(out["new_late_orders"].sum())
+    out.attrs["net_avoided_orders"] = int(
+        out.attrs["late_orders_kept"] - out.attrs["calibrated_late_orders"]
+    )
     out.attrs["label_counts"] = {
         label: int((out["label"] == label).sum()) for label in PROMISE_LABELS
     }
     return out
+
+
+def promise_service_levels(
+    o: pd.DataFrame,
+    routes: list[str] | None = None,
+    levels: tuple[float, ...] = (0.85, 0.90, 0.95),
+    top: int = 5,
+    min_orders: int = 100,
+    calibration: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Bảng mức phục vụ 85/90/95% cho top tuyến (bổ sung S3).
+
+    Với mỗi tuyến và mỗi mức phục vụ ``q``:
+
+    - ``needed_days = ceil(Qq total_lead_days)`` trên **toàn bộ đơn-tuyến** của
+      tuyến (không chia ô weight_band).
+    - ``late_rate = mean(total_lead_days > needed_days)``: tỷ lệ trễ nếu cam kết
+      bằng ``needed_days``. Đây là **đổi định nghĩa trễ**, không phải giảm thời
+      gian giao thực tế.
+    - ``avoidable_orders`` / ``new_late_orders`` / ``net_avoided_orders``: cùng
+      logic GROSS/NET như :func:`promise_calibration`, nhưng ở cấp tuyến.
+
+    Nếu ``routes=None``, lấy ``top`` tuyến có tổng ``avoidable_orders`` cao nhất
+    trong bảng calibration (mặc định tự tính bằng :func:`promise_calibration`).
+    Truyền ``calibration`` để tái dùng kết quả đã tính.
+
+    Trả về DataFrame dạng long (một dòng / tuyến × mức phục vụ), sắp theo thứ tự
+    tuyến rồi mức phục vụ tăng dần. Thông tin tổng hợp nằm trong ``.attrs``.
+    """
+    required = ["order_id", "route", "total_lead_days", "is_late"]
+    missing = [c for c in required if c not in o.columns]
+    if missing:
+        raise ValueError(f"Thiếu cột để promise_service_levels: {missing}")
+    if len(o) == 0:
+        raise ValueError("Không có dòng nào để promise_service_levels")
+    if top < 1:
+        raise ValueError("top phải >= 1")
+    if not levels:
+        raise ValueError("levels không được rỗng")
+    for q in levels:
+        if not 0 < q < 1:
+            raise ValueError("mỗi mức phục vụ phải trong (0, 1)")
+
+    if routes is None:
+        if calibration is None:
+            calibration = promise_calibration(o, min_orders=min_orders)
+        if len(calibration) == 0:
+            routes = (
+                o.groupby("route")["order_id"]
+                .size()
+                .sort_values(ascending=False)
+                .head(top)
+                .index.tolist()
+            )
+        else:
+            routes = (
+                calibration.groupby("route")["avoidable_orders"]
+                .sum()
+                .sort_values(ascending=False)
+                .head(top)
+                .index.tolist()
+            )
+    routes = list(dict.fromkeys(routes))
+    missing_routes = [r for r in routes if r not in set(o["route"])]
+    if missing_routes:
+        raise ValueError(f"Không có tuyến: {missing_routes}")
+
+    rows = []
+    for route in routes:
+        sub = o[o["route"] == route]
+        current_late = float(sub["is_late"].mean())
+        for q in levels:
+            needed = int(math.ceil(float(sub["total_lead_days"].quantile(q))))
+            calibrated_late = sub["total_lead_days"] > needed
+            currently_late = sub["is_late"].astype(bool)
+            avoidable = int((currently_late & ~calibrated_late).sum())
+            new_late = int((~currently_late & calibrated_late).sum())
+            rows.append(
+                {
+                    "route": route,
+                    "service_level": float(q),
+                    "orders": int(len(sub)),
+                    "needed_days": needed,
+                    "late_rate": float(calibrated_late.mean()),
+                    "current_late_rate": current_late,
+                    "avoidable_orders": avoidable,
+                    "new_late_orders": new_late,
+                    "net_avoided_orders": avoidable - new_late,
+                }
+            )
+    out = pd.DataFrame(rows)
+    out.attrs["levels"] = tuple(float(q) for q in levels)
+    out.attrs["routes"] = routes
+    out.attrs["top"] = int(top)
+    out.attrs["min_orders"] = int(min_orders)
+    out.attrs["n_routes_returned"] = int(len(routes))
+    return out
+
 
 
 def _prepare_peer_frame(
@@ -522,12 +644,23 @@ def _feasible_cuts(
     return cuts, actual, peer
 
 
-def _feasible_point(frame: pd.DataFrame) -> dict:
+def _applied_cuts(cuts: dict[str, float], stages: tuple[str, ...] | None) -> dict[str, float]:
+    """Chỉ giữ mức cắt của các giai đoạn được chọn (còn lại = 0)."""
+    if stages is None:
+        return dict(cuts)
+    return {s: (float(cuts[s]) if s in stages else 0.0) for s in STAGES}
+
+
+def _feasible_point(
+    frame: pd.DataFrame, stages: tuple[str, ...] | None = None
+) -> dict:
     """Ước lượng điểm: cắt tối đa + mô phỏng ``scenario`` (không bootstrap)."""
     cuts, actual, peer = _feasible_cuts(frame)
-    result = scenario(frame, cut=cuts)
+    applied = _applied_cuts(cuts, stages)
+    result = scenario(frame, cut=applied)
     return {
-        "cuts": cuts,
+        "cuts": applied,
+        "all_cuts": cuts,
         "actual": actual,
         "peer": peer,
         "baseline": float(result["baseline"]),
@@ -538,12 +671,17 @@ def _feasible_point(frame: pd.DataFrame) -> dict:
 
 
 def _feasible_bootstrap(
-    frame: pd.DataFrame, n_boot: int, seed: int, alpha: float
+    frame: pd.DataFrame,
+    n_boot: int,
+    seed: int,
+    alpha: float,
+    stages: tuple[str, ...] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, float, float]:
     """Bootstrap ``n_boot`` lần theo đơn-tuyến trong một tuyến.
 
     Mỗi lần lấy mẫu có hoàn lại ``n`` đơn-tuyến, **tính lại** mức cắt từ dữ liệu
     mẫu (peer P25 giữ cố định từ toàn bộ dữ liệu), rồi mô phỏng ``scenario``.
+    ``stages`` giới hạn giai đoạn được cắt (mặc định cả 3).
     Trả về ``(delta_pp_samples, avoided_samples, ci_low_pp, ci_high_pp)``.
     """
     n = len(frame)
@@ -554,7 +692,7 @@ def _feasible_bootstrap(
         idx = rng.integers(0, n, size=n)
         sample = frame.iloc[idx].reset_index(drop=True)
         cuts, _, _ = _feasible_cuts(sample)
-        result = scenario(sample, cut=cuts)
+        result = scenario(sample, cut=_applied_cuts(cuts, stages))
         deltas[i] = (
             float(result["baseline"]) - float(result["projected"])
         ) * 100.0
@@ -567,7 +705,7 @@ def _feasible_bootstrap(
 def _status_from_ci(ci_low_pp: float, ci_high_pp: float) -> str:
     """Trạng thái theo CI 95%: chứa 0 → chưa đủ bằng chứng."""
     if ci_low_pp > 0:
-        return "có cơ sở"
+        return "ước lượng ổn định (CI hẹp)"
     if ci_high_pp < 0:
         return "tác động âm"
     return "chưa đủ bằng chứng"
@@ -581,17 +719,23 @@ def _feasible_from_frame(
     n_boot: int,
     seed: int,
     alpha: float,
+    stages: tuple[str, ...] | None = None,
+    peer_p50: dict[str, float] | None = None,
 ) -> dict:
-    """Tính S4 cho một tuyến đã có sẵn ``b_*`` (peer P25)."""
-    point = _feasible_point(frame)
+    """Tính S4 cho một tuyến đã có sẵn ``b_*`` (peer P25).
+
+    ``stages`` giới hạn giai đoạn được cắt (dùng cho action theo payment_type).
+    ``peer_p50`` là mục tiêu peer P50 từng giai đoạn (bổ sung S4), chỉ để báo cáo.
+    """
+    point = _feasible_point(frame, stages=stages)
     deltas, avoided_samples, lo, hi = _feasible_bootstrap(
-        frame, n_boot=n_boot, seed=seed, alpha=alpha
+        frame, n_boot=n_boot, seed=seed, alpha=alpha, stages=stages
     )
     avoided_lo, avoided_hi = np.percentile(
         avoided_samples, [100.0 * alpha / 2.0, 100.0 * (1.0 - alpha / 2.0)]
     )
     cuts = point["cuts"]
-    return {
+    row = {
         "route": route,
         "n_orders": int(len(frame)),
         "min_orders": int(min_orders),
@@ -620,6 +764,17 @@ def _feasible_from_frame(
         "avoided_ci_high": int(round(float(avoided_hi))),
         "status": _status_from_ci(lo, hi),
     }
+    if peer_p50 is not None:
+        row["peer_p50_approval"] = float(peer_p50["approval"])
+        row["peer_p50_prep"] = float(peer_p50["prep"])
+        row["peer_p50_transit"] = float(peer_p50["transit"])
+        row["peer_p50_total_days"] = float(sum(peer_p50.values()))
+    return row
+
+
+def _peer_p50_means(frame: pd.DataFrame) -> dict[str, float]:
+    """Trung bình benchmark P50 từng giai đoạn trên một tập đơn-tuyến."""
+    return {s: float(frame[f"b_{s}"].mean()) for s in STAGES}
 
 
 def feasible_max_cut(
@@ -644,9 +799,12 @@ def feasible_max_cut(
     mỗi lần tính lại mức cắt trên mẫu rồi mô phỏng. CI 95% cho mức giảm tỷ lệ
     trễ (điểm phần trăm). ``status``:
 
-    - ``"có cơ sở"`` nếu CI dưới > 0.
+    - ``"ước lượng ổn định (CI hẹp)"`` nếu CI dưới > 0.
     - ``"tác động âm"`` nếu CI trên < 0.
     - ``"chưa đủ bằng chứng"`` nếu CI chứa 0.
+
+    Bổ sung S4: thêm ``peer_p50_*`` / ``peer_p50_total_days`` — mục tiêu peer P50
+    từng giai đoạn (fit riêng q=0,5) để đối chiếu với mức cắt P25.
 
     Câu chữ đúng: "**nếu** cắt được ... **thì ước tính** tỷ lệ trễ ...", không
     nói "sẽ giảm". Đây là mô phỏng theo luật, không có counterfactual thật.
@@ -666,6 +824,8 @@ def feasible_max_cut(
     frame = att[att["route"] == route]
     if len(frame) == 0:
         raise ValueError(f"Không có tuyến {route!r}")
+    att50 = _prepare_peer_frame(o, quantile=0.5)
+    peer_p50 = _peer_p50_means(att50[att50["route"] == route])
     return _feasible_from_frame(
         frame,
         route=route,
@@ -674,6 +834,7 @@ def feasible_max_cut(
         n_boot=n_boot,
         seed=seed,
         alpha=alpha,
+        peer_p50=peer_p50,
     )
 
 
@@ -750,18 +911,22 @@ def feasible_cut_table(
     else:
         chosen = candidates
 
-    rows = [
-        _feasible_from_frame(
-            att[att["route"] == route],
-            route=route,
-            min_orders=min_orders,
-            quantile=quantile,
-            n_boot=n_boot,
-            seed=seed,
-            alpha=alpha,
+    rows = []
+    att50 = _prepare_peer_frame(o, quantile=0.5)
+    for route in chosen:
+        frame50 = att50[att50["route"] == route]
+        rows.append(
+            _feasible_from_frame(
+                att[att["route"] == route],
+                route=route,
+                min_orders=min_orders,
+                quantile=quantile,
+                n_boot=n_boot,
+                seed=seed,
+                alpha=alpha,
+                peer_p50=_peer_p50_means(frame50),
+            )
         )
-        for route in chosen
-    ]
     out = (
         pd.DataFrame(rows)
         .sort_values([sort_by, "n_orders"], ascending=[False, False])
@@ -775,6 +940,74 @@ def feasible_cut_table(
     out.attrs["n_routes_eligible"] = int((counts >= min_orders).sum())
     out.attrs["n_routes_returned"] = int(len(out))
     return out
+
+
+def approval_action_table(
+    o: pd.DataFrame,
+    benchmarks: pd.DataFrame | None = None,
+    quantile: float = 0.25,
+    min_orders: int = 100,
+    top: int = 5,
+    n_boot: int = 300,
+    seed: int = 42,
+    alpha: float = 0.05,
+) -> pd.DataFrame:
+    """Hành động theo ``payment_type``: chỉ cắt giai đoạn approval về peer P25.
+
+    Đây là lát cắt "payment" của Decision Brief (S6), cùng logic S4 nhưng nhóm
+    theo loại thanh toán thay vì tuyến. ``cut_approval = max(0, mean(actual) −
+    mean(peer P25))``; ``cut_prep``/``cut_transit`` luôn bằng 0 vì chỉ can thiệp
+    khâu duyệt thanh toán. Bootstrap 300× seed 42, CI 95% cho mức giảm tỷ lệ trễ.
+
+    Kết quả **chồng lấn** với hành động theo tuyến (cùng đơn-tuyến có thể xuất
+    hiện ở cả hai), nên tuyệt đối không cộng ``avoided_orders`` giữa hai loại.
+    """
+    if top < 1:
+        raise ValueError("top phải >= 1")
+    if min_orders < 1:
+        raise ValueError("min_orders phải >= 1")
+    if len(o) == 0:
+        raise ValueError("Không có dòng nào để approval_action_table")
+
+    att = _prepare_peer_frame(o, benchmarks=benchmarks, quantile=quantile)
+    if "payment_type" not in att.columns:
+        raise ValueError("Thiếu cột payment_type")
+    counts = att.groupby("payment_type").size()
+    candidates = counts[counts >= min_orders].index.tolist()
+    rows = []
+    for payment_type in candidates:
+        frame = att[att["payment_type"] == payment_type]
+        row = _feasible_from_frame(
+            frame,
+            route=str(payment_type),
+            min_orders=min_orders,
+            quantile=quantile,
+            n_boot=n_boot,
+            seed=seed,
+            alpha=alpha,
+            stages=("approval",),
+        )
+        row["payment_type"] = row.pop("route")
+        rows.append(row)
+    if not rows:
+        empty = pd.DataFrame()
+        empty.attrs["n_payment_types_eligible"] = 0
+        return empty
+    out = (
+        pd.DataFrame(rows)
+        .sort_values(["avoided_orders", "n_orders"], ascending=[False, False])
+        .head(top)
+        .reset_index(drop=True)
+    )
+    out.attrs["quantile"] = float(quantile)
+    out.attrs["min_orders"] = int(min_orders)
+    out.attrs["n_boot"] = int(n_boot)
+    out.attrs["seed"] = int(seed)
+    out.attrs["n_payment_types_total"] = int(len(counts))
+    out.attrs["n_payment_types_eligible"] = int(len(candidates))
+    out.attrs["n_payment_types_returned"] = int(len(out))
+    return out
+
 
 
 def marginal_cut_table(

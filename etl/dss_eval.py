@@ -13,6 +13,7 @@ import pandas as pd
 
 try:  # chạy như package: python -m etl.dss_eval
     from . import dss_attrib as ATTRIB
+    from . import dss_brief as BRIEF
     from . import dss_models as M
     from .config import (
         RAW_ORDER_ITEMS,
@@ -22,6 +23,7 @@ try:  # chạy như package: python -m etl.dss_eval
     )
 except ImportError:  # chạy trực tiếp: python etl/dss_eval.py
     import dss_attrib as ATTRIB
+    import dss_brief as BRIEF
     import dss_models as M
     from config import (
         RAW_ORDER_ITEMS,
@@ -979,11 +981,21 @@ def promise_policy_report(o: pd.DataFrame) -> None:
     )
     kept = c.attrs["n_orders_kept"]
     late = c.attrs["late_orders_kept"]
-    avoidable = c.attrs["avoidable_orders"]
+    gross = c.attrs["gross_avoidable_orders"]
+    new_late = c.attrs["new_late_orders"]
+    net = c.attrs["net_avoided_orders"]
     cal_late = c.attrs["calibrated_late_orders"]
     print(
-        f"- Tổng đơn trễ có thể tránh (đổi định nghĩa): {avoidable}/{late} "
+        f"- GROSS đơn trễ tránh được (chỉ đếm phần giảm): {gross}/{late} "
         f"đơn-tuyến trễ."
+    )
+    print(
+        f"- Siết ô loose làm phát sinh {new_late} đơn trễ mới; "
+        f"NET = GROSS − new late = {net} đơn-tuyến."
+    )
+    print(
+        f"- Đơn trễ sau hiệu chỉnh: {cal_late}/{kept} "
+        f"(= late − GROSS + new late). Decision Brief CHỈ dùng NET."
     )
     if kept:
         print(
@@ -1008,6 +1020,32 @@ def promise_policy_report(o: pd.DataFrame) -> None:
         view[col] = view[col].round(6)
     print("\n### Top 10 ô theo số đơn trễ có thể tránh")
     print(_md_table(view))
+
+    levels = ATTRIB.promise_service_levels(o, calibration=c, top=5)
+    level_cols = [
+        "route",
+        "service_level",
+        "orders",
+        "needed_days",
+        "late_rate",
+        "current_late_rate",
+        "avoidable_orders",
+        "new_late_orders",
+        "net_avoided_orders",
+    ]
+    level_view = levels[level_cols].copy()
+    for col in ("late_rate", "current_late_rate"):
+        level_view[col] = level_view[col].round(6)
+    print(
+        "\n### Mức phục vụ 85/90/95% cho top 5 tuyến "
+        "(needed_days = ceil(Qq total_lead_days))"
+    )
+    print(_md_table(level_view))
+    print(
+        "- `late_rate` là tỷ lệ trễ NẾU cam kết bằng `needed_days` (đổi định "
+        "nghĩa trễ, không rút ngắn giao thực tế). `net_avoided_orders` = "
+        "avoidable − new late."
+    )
 
     print("\n### SP->SP (kiểm riêng)")
     sp = c[c["route"] == "SP->SP"][cols].copy()
@@ -1100,6 +1138,32 @@ def feasible_cut_report(o: pd.DataFrame) -> None:
     print("\n### Top 10 tuyến theo số đơn trễ có thể tránh")
     print(_md_table(view))
 
+    p50_cols = [
+        "route",
+        "n_orders",
+        "actual_mean_approval",
+        "actual_mean_prep",
+        "actual_mean_transit",
+        "peer_p50_approval",
+        "peer_p50_prep",
+        "peer_p50_transit",
+        "peer_p50_total_days",
+        "status",
+    ]
+    p50_view = table.head(5)[p50_cols].copy()
+    for col in p50_cols:
+        if col not in {"route", "n_orders", "status"}:
+            p50_view[col] = p50_view[col].round(6)
+    print(
+        "\n### Top 5 tuyến: mục tiêu peer P50 từng giai đoạn "
+        "(tham chiếu, KHÔNG dùng để cắt)"
+    )
+    print(_md_table(p50_view))
+    print(
+        "- `actual_mean_*` là trung bình thực tế; `peer_p50_*` là benchmark P50 "
+        "cùng định nghĩa peer S1. Mức cắt S4 vẫn dùng peer P25, P50 chỉ để đối chiếu."
+    )
+
     print(
         "\n### Kiểm tra H10: cắt 1 ngày mỗi giai đoạn tại SP->RJ "
         "(một giai đoạn tại một thời điểm)"
@@ -1160,6 +1224,12 @@ def seller_report(o: pd.DataFrame) -> None:
     print(
         f"- Seller đủ mẫu: {summary['n_sellers_scored']}/{summary['n_sellers']} "
         f"(min_orders={summary['min_orders']})."
+    )
+    print(
+        f"- Số seller ÍT NHẤT phủ 50% đơn trễ: "
+        f"{summary['k_sellers_cover_50pct_late']} seller "
+        f"({summary['late_orders_covered_50pct']}/{summary['late_orders']} đơn trễ, "
+        f"{summary['late_orders_covered_50pct_share']:.4%})."
     )
 
     if len(port["segments"]):
@@ -1243,6 +1313,189 @@ def low_sample_report(o: pd.DataFrame) -> None:
         view[col] = view[col].round(6)
     print("\n### Top 10 tuyến mẫu nhỏ có tín hiệu")
     print(_md_table(view))
+
+    named = ["MA->SP", "PR->BA", "SP->TO"]
+    check = M.route_flag_check(
+        o,
+        named,
+        min_orders=100,
+        low_sample_threshold=200,
+    )
+    check_view = check[
+        [
+            "route",
+            "orders",
+            "late_orders",
+            "late_rate",
+            "level",
+            "in_flagged",
+            "flagged_rank",
+            "low_sample",
+            "needed_orders",
+            "status",
+        ]
+    ].copy()
+    check_view["late_rate"] = check_view["late_rate"].round(6)
+    print(
+        "\n### Kiểm tra 3 tuyến được hỏi: MA->SP, PR->BA, SP->TO "
+        "(đối chiếu 14 tuyến gắn cờ mặc định)"
+    )
+    print(_md_table(check_view))
+    print(
+        "- `in_flagged=True` nghĩa là tuyến nằm trong tập gắn cờ mặc định "
+        "(min_orders=100, red=2,0, amber=1,5). Vì orders < 200, cả ba được "
+        "xếp vào nhóm 'cần thêm dữ liệu' thay vì danh sách ưu tiên chính."
+    )
+
+
+def decision_brief_report(o: pd.DataFrame) -> None:
+    """In S6: Decision Brief tách 4 nhóm hành động, không cộng chéo loại."""
+    brief = BRIEF.decision_brief(o, n_boot=300, seed=42)
+    print("\n## Decision Brief (S6: hành động theo 4 loại, KHÔNG cộng chéo)")
+    print(
+        "- Brief là lớp trình bày từ S3/S4/S5/S7. Các nhóm route/payment/"
+        "promise/seller CHỒNG LẤN trên cùng đơn-tuyến."
+    )
+    print(
+        "- TUYỆT ĐỐI KHÔNG cộng 'đơn tránh được' giữa các loại; chỉ được cộng "
+        "trong cùng một loại."
+    )
+    print(
+        "- Promise chỉ dùng NET. Mọi con số avoided/NET là mô phỏng theo luật: "
+        "nói 'nếu ... thì ước tính', không nói 'sẽ giảm'; không phải "
+        "counterfactual thật."
+    )
+
+    route = brief["route_actions"]
+    print("\n### 1) Hành động theo tuyến (S4, peer P25 + bootstrap CI)")
+    if len(route):
+        cols = [
+            "route",
+            "stage",
+            "owner",
+            "avoided_orders",
+            "avoided_ci_low",
+            "avoided_ci_high",
+            "delta_pp",
+            "status",
+            "action",
+        ]
+        view = route[cols].copy()
+        view["delta_pp"] = view["delta_pp"].round(6)
+        print(_md_table(view))
+        print(
+            "- Tổng TRONG nhóm route (không cộng với nhóm khác): "
+            f"{int(route['avoided_orders'].sum())} đơn tránh được."
+        )
+    else:
+        print("- Không có hành động route.")
+
+    payment = brief["payment_actions"]
+    print("\n### 2) Hành động theo loại thanh toán (chỉ cắt approval)")
+    if len(payment):
+        cols = [
+            "payment_type",
+            "owner",
+            "avoided_orders",
+            "avoided_ci_low",
+            "avoided_ci_high",
+            "delta_pp",
+            "status",
+            "action",
+        ]
+        view = payment[cols].copy()
+        view["delta_pp"] = view["delta_pp"].round(6)
+        print(_md_table(view))
+        print(
+            "- Tổng TRONG nhóm payment (không cộng với nhóm khác): "
+            f"{int(payment['avoided_orders'].sum())} đơn tránh được."
+        )
+    else:
+        print("- Không có hành động payment.")
+
+    ps = brief["promise_summary"]
+    print("\n### 3) Hiệu chỉnh promise (S3, CHỈ NET)")
+    print(
+        f"- Trước: {ps['late_orders_before']} đơn trễ "
+        f"({ps['late_rate_before']:.6f}); sau: {ps['late_orders_after']} "
+        f"({ps['late_rate_after']:.6f})."
+    )
+    print(
+        f"- NET tránh được: {ps['net_avoided_orders']}; phát sinh mới: "
+        f"{ps['new_late_orders']}; ô đủ mẫu: {ps['n_cells_kept']}."
+    )
+    promise = brief["promise_actions"]
+    if len(promise):
+        cols = [
+            "route",
+            "weight_band",
+            "owner",
+            "needed_days",
+            "net_avoided_orders",
+            "new_late_orders",
+            "late_orders",
+            "label",
+            "action",
+        ]
+        print(_md_table(promise[cols]))
+        print(
+            "- Tổng TRONG nhóm promise (chỉ NET, không cộng với nhóm khác): "
+            f"{int(promise['net_avoided_orders'].sum())} đơn tránh được."
+        )
+    else:
+        print("- Không có hành động promise.")
+
+    seller = brief["seller_actions"]
+    print("\n### 4) Hành động theo người bán (S5, chỉ liên hệ)")
+    if len(seller):
+        cols = [
+            "seller_id",
+            "owner",
+            "orders",
+            "late_orders",
+            "late_rate",
+            "wilson_low",
+            "wilson_high",
+            "level",
+            "estimated_excess_late_orders",
+            "action",
+        ]
+        view = seller[cols].copy()
+        for col in ("late_rate", "wilson_low", "wilson_high"):
+            view[col] = view[col].round(6)
+        print(_md_table(view))
+        print(
+            "- Tổng TRONG nhóm seller (không cộng với nhóm khác): "
+            f"{int(seller['estimated_excess_late_orders'].sum())} đơn trễ vượt "
+            "mức hệ thống (chỉ là liên hệ, không nhân quả)."
+        )
+    else:
+        print("- Không có seller thuộc nhóm ưu tiên.")
+
+    low = brief["low_sample_actions"]
+    print("\n### 5) Cần thêm dữ liệu (S7, không đưa vào ưu tiên chính)")
+    if len(low):
+        cols = [
+            "route",
+            "orders",
+            "late_orders",
+            "late_rate",
+            "level",
+            "needed_orders",
+            "in_flagged",
+            "flagged_rank",
+            "status",
+            "action",
+        ]
+        view = low[cols].copy()
+        view["late_rate"] = view["late_rate"].round(6)
+        print(_md_table(view))
+    else:
+        print("- Không có tuyến mẫu nhỏ cần thêm dữ liệu.")
+
+    print("\n### Ghi chú bắt buộc")
+    for note in brief["notes"]:
+        print(f"- {note}")
 
 
 def main() -> None:
@@ -1353,6 +1606,8 @@ def main() -> None:
     feasible_cut_report(o)
 
     seller_report(o)
+
+    decision_brief_report(o)
 
 
 if __name__ == "__main__":

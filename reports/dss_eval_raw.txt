@@ -189,6 +189,14 @@ Kết luận pair bootstrap:
 | PR->CE | 68 | 10 | 0.147059 | 0.081887 | 0.249976 | amber | 132 | cần thêm dữ liệu |
 | MG->MA | 64 | 10 | 0.15625 | 0.087147 | 0.264283 | amber | 136 | cần thêm dữ liệu |
 
+### Kiểm tra 3 tuyến được hỏi: MA->SP, PR->BA, SP->TO (đối chiếu 14 tuyến gắn cờ mặc định)
+| route | orders | late_orders | late_rate | level | in_flagged | flagged_rank | low_sample | needed_orders | status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| MA->SP | 118 | 31 | 0.262712 | red | True | 5 | True | 82 | cần thêm dữ liệu |
+| PR->BA | 144 | 24 | 0.166667 | red | True | 6 | True | 56 | cần thêm dữ liệu |
+| SP->TO | 195 | 25 | 0.128205 | amber | True | 14 | True | 5 | cần thêm dữ liệu |
+- `in_flagged=True` nghĩa là tuyến nằm trong tập gắn cờ mặc định (min_orders=100, red=2,0, amber=1,5). Vì orders < 200, cả ba được xếp vào nhóm 'cần thêm dữ liệu' thay vì danh sách ưu tiên chính.
+
 ## Thời gian âm
 Thống kê cấp (đơn, tuyến): {'order_route_rows': 96981, 'approval_negative': 0, 'prep_negative': 1361, 'transit_negative': 29, 'any_negative': 1390, 'nan_stage': 0}
 Đã loại khỏi DSS: 1390 order-route
@@ -242,7 +250,9 @@ Thống kê cấp (đơn, tuyến): {'order_route_rows': 96981, 'approval_negati
 - Ô giữ/loại: 130/1157 (loại 1027 ô nhỏ = 12487 đơn-tuyến).
 - Đơn-tuyến trong ô đủ mẫu: 83104/95591.
 - Số ô tight/ok/loose: 89/11/30.
-- Tổng đơn trễ có thể tránh (đổi định nghĩa): 3751/6720 đơn-tuyến trễ.
+- GROSS đơn trễ tránh được (chỉ đếm phần giảm): 3751/6720 đơn-tuyến trễ.
+- Siết ô loose làm phát sinh 884 đơn trễ mới; NET = GROSS − new late = 2867 đơn-tuyến.
+- Đơn trễ sau hiệu chỉnh: 3853/83104 (= late − GROSS + new late). Decision Brief CHỈ dùng NET.
 - Tỷ lệ trễ hiện tại (ô đủ mẫu): 0.080863; nếu promise = needed_days: 0.046364.
 
 ### Top 10 ô theo số đơn trễ có thể tránh
@@ -258,6 +268,26 @@ Thống kê cấp (đơn, tuyến): {'order_route_rows': 96981, 'approval_negati
 | SP->RJ | Q1 | 1880 | 24.0929 | 38 | -13.9071 | tight | 252 | 166 | 0.046277 |
 | SP->BA | Q1 | 651 | 29.2853 | 35 | -5.71468 | tight | 91 | 67 | 0.046083 |
 | SP->BA | Q4 | 573 | 30.48 | 40 | -9.52002 | tight | 87 | 65 | 0.048866 |
+
+### Mức phục vụ 85/90/95% cho top 5 tuyến (needed_days = ceil(Qq total_lead_days))
+| route | service_level | orders | needed_days | late_rate | current_late_rate | avoidable_orders | new_late_orders | net_avoided_orders |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| SP->SP | 0.85 | 30178 | 13 | 0.134403 | 0.062927 | 548 | 2705 | -2157 |
+| SP->SP | 0.9 | 30178 | 15 | 0.089469 | 0.062927 | 701 | 1502 | -801 |
+| SP->SP | 0.95 | 30178 | 19 | 0.045961 | 0.062927 | 967 | 455 | 512 |
+| SP->RJ | 0.85 | 8016 | 26 | 0.149202 | 0.157061 | 267 | 204 | 63 |
+| SP->RJ | 0.9 | 8016 | 32 | 0.093189 | 0.157061 | 560 | 48 | 512 |
+| SP->RJ | 0.95 | 8016 | 41 | 0.047031 | 0.157061 | 892 | 10 | 882 |
+| SP->BA | 0.85 | 2267 | 29 | 0.147772 | 0.149978 | 86 | 81 | 5 |
+| SP->BA | 0.9 | 2267 | 33 | 0.089987 | 0.149978 | 169 | 33 | 136 |
+| SP->BA | 0.95 | 2267 | 38 | 0.04764 | 0.149978 | 243 | 11 | 232 |
+| SP->MG | 0.85 | 7283 | 19 | 0.131539 | 0.064259 | 34 | 524 | -490 |
+| SP->MG | 0.9 | 7283 | 21 | 0.096938 | 0.064259 | 61 | 299 | -238 |
+| SP->MG | 0.95 | 7283 | 26 | 0.044075 | 0.064259 | 218 | 71 | 147 |
+| SP->SC | 0.85 | 2272 | 24 | 0.145687 | 0.112676 | 38 | 113 | -75 |
+| SP->SC | 0.9 | 2272 | 28 | 0.091989 | 0.112676 | 88 | 41 | 47 |
+| SP->SC | 0.95 | 2272 | 34 | 0.044454 | 0.112676 | 161 | 6 | 155 |
+- `late_rate` là tỷ lệ trễ NẾU cam kết bằng `needed_days` (đổi định nghĩa trễ, không rút ngắn giao thực tế). `net_avoided_orders` = avoidable − new late.
 
 ### SP->SP (kiểm riêng)
 | route | weight_band | n_orders | median_promise_days | needed_days | gap_days | label | late_orders | avoidable_orders | calibrated_late_rate |
@@ -281,16 +311,26 @@ Thống kê cấp (đơn, tuyến): {'order_route_rows': 96981, 'approval_negati
 ### Top 10 tuyến theo số đơn trễ có thể tránh
 | route | n_orders | cut_approval | cut_prep | cut_transit | total_cut_days | baseline_late_rate | projected_late_rate | avoided_orders | delta_pp | delta_ci_low_pp | delta_ci_high_pp | status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| SP->SP | 30178 | 0.248037 | 1.89067 | 2.26856 | 4.40727 | 0.062927 | 0.029028 | 1023 | 3.38989 | 3.18916 | 3.60859 | có cơ sở |
-| SP->RJ | 8016 | 0.257225 | 2.14828 | 7.67043 | 10.0759 | 0.157061 | 0.07485 | 659 | 8.22106 | 7.52121 | 8.82641 | có cơ sở |
-| SP->MG | 7283 | 0.271591 | 1.99093 | 3.78598 | 6.04851 | 0.064259 | 0.028422 | 261 | 3.58369 | 3.08218 | 4.00282 | có cơ sở |
-| SP->BA | 2267 | 0.34563 | 1.95977 | 8.04672 | 10.3521 | 0.149978 | 0.048081 | 231 | 10.1897 | 8.79687 | 11.2947 | có cơ sở |
-| SP->SC | 2272 | 0.294753 | 1.99833 | 6.87479 | 9.16787 | 0.112676 | 0.034331 | 178 | 7.83451 | 6.57901 | 9.02289 | có cơ sở |
-| SP->RS | 3520 | 0.307836 | 1.84264 | 6.06875 | 8.21922 | 0.076989 | 0.036364 | 143 | 4.0625 | 3.39418 | 4.74432 | có cơ sở |
-| SP->ES | 1443 | 0.298475 | 2.03103 | 5.72265 | 8.05216 | 0.142065 | 0.057519 | 122 | 8.45461 | 6.93001 | 10.3257 | có cơ sở |
-| SP->PR | 3044 | 0.28873 | 1.93877 | 4.22439 | 6.4519 | 0.054862 | 0.022339 | 99 | 3.2523 | 2.72668 | 3.81078 | có cơ sở |
-| SP->GO | 1389 | 0.365622 | 1.84152 | 6.33911 | 8.54625 | 0.092873 | 0.034557 | 81 | 5.83153 | 4.60763 | 7.09323 | có cơ sở |
-| SP->CE | 945 | 0.326357 | 2.02733 | 8.03217 | 10.3859 | 0.155556 | 0.069841 | 81 | 8.57143 | 6.56085 | 10.3704 | có cơ sở |
+| SP->SP | 30178 | 0.248037 | 1.89067 | 2.26856 | 4.40727 | 0.062927 | 0.029028 | 1023 | 3.38989 | 3.18916 | 3.60859 | ước lượng ổn định (CI hẹp) |
+| SP->RJ | 8016 | 0.257225 | 2.14828 | 7.67043 | 10.0759 | 0.157061 | 0.07485 | 659 | 8.22106 | 7.52121 | 8.82641 | ước lượng ổn định (CI hẹp) |
+| SP->MG | 7283 | 0.271591 | 1.99093 | 3.78598 | 6.04851 | 0.064259 | 0.028422 | 261 | 3.58369 | 3.08218 | 4.00282 | ước lượng ổn định (CI hẹp) |
+| SP->BA | 2267 | 0.34563 | 1.95977 | 8.04672 | 10.3521 | 0.149978 | 0.048081 | 231 | 10.1897 | 8.79687 | 11.2947 | ước lượng ổn định (CI hẹp) |
+| SP->SC | 2272 | 0.294753 | 1.99833 | 6.87479 | 9.16787 | 0.112676 | 0.034331 | 178 | 7.83451 | 6.57901 | 9.02289 | ước lượng ổn định (CI hẹp) |
+| SP->RS | 3520 | 0.307836 | 1.84264 | 6.06875 | 8.21922 | 0.076989 | 0.036364 | 143 | 4.0625 | 3.39418 | 4.74432 | ước lượng ổn định (CI hẹp) |
+| SP->ES | 1443 | 0.298475 | 2.03103 | 5.72265 | 8.05216 | 0.142065 | 0.057519 | 122 | 8.45461 | 6.93001 | 10.3257 | ước lượng ổn định (CI hẹp) |
+| SP->PR | 3044 | 0.28873 | 1.93877 | 4.22439 | 6.4519 | 0.054862 | 0.022339 | 99 | 3.2523 | 2.72668 | 3.81078 | ước lượng ổn định (CI hẹp) |
+| SP->GO | 1389 | 0.365622 | 1.84152 | 6.33911 | 8.54625 | 0.092873 | 0.034557 | 81 | 5.83153 | 4.60763 | 7.09323 | ước lượng ổn định (CI hẹp) |
+| SP->CE | 945 | 0.326357 | 2.02733 | 8.03217 | 10.3859 | 0.155556 | 0.069841 | 81 | 8.57143 | 6.56085 | 10.3704 | ước lượng ổn định (CI hẹp) |
+
+### Top 5 tuyến: mục tiêu peer P50 từng giai đoạn (tham chiếu, KHÔNG dùng để cắt)
+| route | n_orders | actual_mean_approval | actual_mean_prep | actual_mean_transit | peer_p50_approval | peer_p50_prep | peer_p50_transit | peer_p50_total_days | status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| SP->SP | 30178 | 0.377982 | 2.78883 | 4.79588 | 0.246337 | 1.84206 | 4.13634 | 6.22474 | ước lượng ổn định (CI hẹp) |
+| SP->RJ | 8016 | 0.370266 | 3.05048 | 12.9703 | 0.21359 | 1.85431 | 7.36829 | 9.43619 | ước lượng ổn định (CI hẹp) |
+| SP->MG | 7283 | 0.402865 | 2.89123 | 9.13092 | 0.248781 | 1.8486 | 7.52161 | 9.619 | ước lượng ổn định (CI hẹp) |
+| SP->BA | 2267 | 0.466502 | 2.85928 | 16.5201 | 0.228731 | 1.84538 | 12.3368 | 14.4109 | ước lượng ổn định (CI hẹp) |
+| SP->SC | 2272 | 0.441952 | 2.89879 | 12.6475 | 0.279554 | 1.84864 | 7.93781 | 10.066 | ước lượng ổn định (CI hẹp) |
+- `actual_mean_*` là trung bình thực tế; `peer_p50_*` là benchmark P50 cùng định nghĩa peer S1. Mức cắt S4 vẫn dùng peer P25, P50 chỉ để đối chiếu.
 
 ### Kiểm tra H10: cắt 1 ngày mỗi giai đoạn tại SP->RJ (một giai đoạn tại một thời điểm)
 - approval: projected=0.153568, avoided=28 (baseline=0.157061)
@@ -318,6 +358,7 @@ Thống kê cấp (đơn, tuyến): {'order_route_rows': 96981, 'approval_negati
 - `segment`: ưu tiên (đủ mẫu + red/amber), ổn định (đủ mẫu + ok), cần thêm dữ liệu (dưới min_orders).
 - `bad_review_rate` (review ≤ 2) chỉ là LIÊN HỆ, không phải nhân quả; đơn trễ có review xấu nhiều hơn nhưng không chứng minh trễ gây review xấu.
 - Seller đủ mẫu: 609/2948 (min_orders=30).
+- Số seller ÍT NHẤT phủ 50% đơn trễ: 102 seller (3902/7788 đơn trễ, 50.1027%).
 
 ### Phân khúc người bán
 | segment | n_sellers | orders | late_orders | gmv | late_rate | late_orders_share | gmv_share |
@@ -339,3 +380,65 @@ Thống kê cấp (đơn, tuyến): {'order_route_rows': 96981, 'approval_negati
 | 955fee9216a65b617aa5c0531780ce60 | 1225 | 98 | 0.08 | 0.066088 | 0.096538 | 0.971546 | ok | ổn định | 0.099425 | 0.009906 |
 | 7c67e1448b00f6e969d365cea6b010ab | 966 | 98 | 0.101449 | 0.08396 | 0.122096 | 1.23203 | red | ưu tiên | 0.253125 | 0.014338 |
 | 8b321bb669392f5163d04c59e235e066 | 909 | 96 | 0.105611 | 0.087264 | 0.127277 | 1.28257 | red | ưu tiên | 0.137017 | 0.001319 |
+
+## Decision Brief (S6: hành động theo 4 loại, KHÔNG cộng chéo)
+- Brief là lớp trình bày từ S3/S4/S5/S7. Các nhóm route/payment/promise/seller CHỒNG LẤN trên cùng đơn-tuyến.
+- TUYỆT ĐỐI KHÔNG cộng 'đơn tránh được' giữa các loại; chỉ được cộng trong cùng một loại.
+- Promise chỉ dùng NET. Mọi con số avoided/NET là mô phỏng theo luật: nói 'nếu ... thì ước tính', không nói 'sẽ giảm'; không phải counterfactual thật.
+
+### 1) Hành động theo tuyến (S4, peer P25 + bootstrap CI)
+| route | stage | owner | avoided_orders | avoided_ci_low | avoided_ci_high | delta_pp | status | action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| SP->SP | transit | Đơn vị vận chuyển | 1023 | 962 | 1089 | 3.38989 | ước lượng ổn định (CI hẹp) | Nếu rút ngắn transit của tuyến SP->SP khoảng 2.27 ngày (về peer P25), thì ước tính tránh 1023 đơn trễ (CI 962–1089). |
+| SP->RJ | transit | Đơn vị vận chuyển | 659 | 603 | 708 | 8.22106 | ước lượng ổn định (CI hẹp) | Nếu rút ngắn transit của tuyến SP->RJ khoảng 7.67 ngày (về peer P25), thì ước tính tránh 659 đơn trễ (CI 603–708). |
+| SP->MG | transit | Đơn vị vận chuyển | 261 | 224 | 292 | 3.58369 | ước lượng ổn định (CI hẹp) | Nếu rút ngắn transit của tuyến SP->MG khoảng 3.79 ngày (về peer P25), thì ước tính tránh 261 đơn trễ (CI 224–292). |
+| SP->BA | transit | Đơn vị vận chuyển | 231 | 199 | 256 | 10.1897 | ước lượng ổn định (CI hẹp) | Nếu rút ngắn transit của tuyến SP->BA khoảng 8.05 ngày (về peer P25), thì ước tính tránh 231 đơn trễ (CI 199–256). |
+| SP->SC | transit | Đơn vị vận chuyển | 178 | 149 | 205 | 7.83451 | ước lượng ổn định (CI hẹp) | Nếu rút ngắn transit của tuyến SP->SC khoảng 6.87 ngày (về peer P25), thì ước tính tránh 178 đơn trễ (CI 149–205). |
+- Tổng TRONG nhóm route (không cộng với nhóm khác): 2352 đơn tránh được.
+
+### 2) Hành động theo loại thanh toán (chỉ cắt approval)
+| payment_type | owner | avoided_orders | avoided_ci_low | avoided_ci_high | delta_pp | status | action |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| boleto | Duyệt thanh toán | 92 | 72 | 112 | 0.484823 | ước lượng ổn định (CI hẹp) | Nếu rút ngắn duyệt thanh toán cho boleto khoảng 0.72 ngày (về peer P25), thì ước tính tránh 92 đơn trễ (CI 72–112). |
+| credit_card | Duyệt thanh toán | 20 | 12 | 28 | 0.027714 | ước lượng ổn định (CI hẹp) | Nếu rút ngắn duyệt thanh toán cho credit_card khoảng 0.15 ngày (về peer P25), thì ước tính tránh 20 đơn trễ (CI 12–28). |
+| debit_card | Duyệt thanh toán | 2 | 0 | 5 | 0.138217 | chưa đủ bằng chứng | Nếu rút ngắn duyệt thanh toán cho debit_card khoảng 0.27 ngày (về peer P25), thì ước tính tránh 2 đơn trễ (CI 0–5). |
+| voucher | Duyệt thanh toán | 0 | 0 | 0 | 0 | chưa đủ bằng chứng | Nếu rút ngắn duyệt thanh toán cho voucher khoảng 0.29 ngày (về peer P25), thì ước tính tránh 0 đơn trễ (CI 0–0). |
+- Tổng TRONG nhóm payment (không cộng với nhóm khác): 114 đơn tránh được.
+
+### 3) Hiệu chỉnh promise (S3, CHỈ NET)
+- Trước: 6720 đơn trễ (0.080863); sau: 3853 (0.046364).
+- NET tránh được: 2867; phát sinh mới: 884; ô đủ mẫu: 130.
+| route | weight_band | owner | needed_days | net_avoided_orders | new_late_orders | late_orders | label | action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| SP->RJ | Q3 | Vận hành cam kết giao hàng | 40 | 254 | 1 | 357 | tight | Nếu đặt promise = 40 ngày cho ô SP->RJ × Q3, thì ước tính NET 254 đơn trễ được tránh (phát sinh 1 đơn trễ mới). |
+| SP->RJ | Q4 | Vận hành cam kết giao hàng | 43 | 247 | 2 | 346 | tight | Nếu đặt promise = 43 ngày cho ô SP->RJ × Q4, thì ước tính NET 247 đơn trễ được tránh (phát sinh 2 đơn trễ mới). |
+| SP->RJ | Q2 | Vận hành cam kết giao hàng | 40 | 212 | 2 | 304 | tight | Nếu đặt promise = 40 ngày cho ô SP->RJ × Q2, thì ước tính NET 212 đơn trễ được tránh (phát sinh 2 đơn trễ mới). |
+| SP->SP | Q4 | Vận hành cam kết giao hàng | 22 | 191 | 92 | 499 | tight | Nếu đặt promise = 22 ngày cho ô SP->SP × Q4, thì ước tính NET 191 đơn trễ được tránh (phát sinh 92 đơn trễ mới). |
+| SP->RJ | Q1 | Vận hành cam kết giao hàng | 38 | 165 | 1 | 252 | tight | Nếu đặt promise = 38 ngày cho ô SP->RJ × Q1, thì ước tính NET 165 đơn trễ được tránh (phát sinh 1 đơn trễ mới). |
+- Tổng TRONG nhóm promise (chỉ NET, không cộng với nhóm khác): 1069 đơn tránh được.
+
+### 4) Hành động theo người bán (S5, chỉ liên hệ)
+| seller_id | owner | orders | late_orders | late_rate | wilson_low | wilson_high | level | estimated_excess_late_orders | action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 4a3ca9315b744ce9f8e9374361493884 | Người bán | 1706 | 194 | 0.113716 | 0.099511 | 0.129657 | red | 54 | Làm việc với seller 4a3ca931…: 194 đơn trễ, tỷ lệ 11.37% (CI 9.95%–12.97%); ước tính 54 đơn trễ vượt mức hệ thống. |
+| 1f50f920176fa81dab994f9023523100 | Người bán | 1372 | 148 | 0.107872 | 0.092538 | 0.125395 | red | 35 | Làm việc với seller 1f50f920…: 148 đơn trễ, tỷ lệ 10.79% (CI 9.25%–12.54%); ước tính 35 đơn trễ vượt mức hệ thống. |
+| 4869f7a5dfa277a7dca6462dcf3b52b2 | Người bán | 1103 | 130 | 0.11786 | 0.100144 | 0.138229 | red | 39 | Làm việc với seller 4869f7a5…: 130 đơn trễ, tỷ lệ 11.79% (CI 10.01%–13.82%); ước tính 39 đơn trễ vượt mức hệ thống. |
+| ea8482cd71df3c1969d7b9473ff13abc | Người bán | 1099 | 118 | 0.10737 | 0.090415 | 0.127061 | red | 28 | Làm việc với seller ea8482cd…: 118 đơn trễ, tỷ lệ 10.74% (CI 9.04%–12.71%); ước tính 28 đơn trễ vượt mức hệ thống. |
+| 7c67e1448b00f6e969d365cea6b010ab | Người bán | 966 | 98 | 0.101449 | 0.08396 | 0.122096 | red | 18 | Làm việc với seller 7c67e144…: 98 đơn trễ, tỷ lệ 10.14% (CI 8.40%–12.21%); ước tính 18 đơn trễ vượt mức hệ thống. |
+- Tổng TRONG nhóm seller (không cộng với nhóm khác): 174 đơn trễ vượt mức hệ thống (chỉ là liên hệ, không nhân quả).
+
+### 5) Cần thêm dữ liệu (S7, không đưa vào ưu tiên chính)
+| route | orders | late_orders | late_rate | level | needed_orders | in_flagged | flagged_rank | status | action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| MA->SP | 118 | 31 | 0.262712 | red | 82 | True | 5 | cần thêm dữ liệu | Thu thập thêm 82 đơn cho tuyến MA->SP rồi đánh giá lại (hiện 118 đơn, 31 trễ). |
+| SP->TO | 195 | 25 | 0.128205 | amber | 5 | True | 14 | cần thêm dữ liệu | Thu thập thêm 5 đơn cho tuyến SP->TO rồi đánh giá lại (hiện 195 đơn, 25 trễ). |
+| PR->BA | 144 | 24 | 0.166667 | red | 56 | True | 6 | cần thêm dữ liệu | Thu thập thêm 56 đơn cho tuyến PR->BA rồi đánh giá lại (hiện 144 đơn, 24 trễ). |
+| PR->AL | 37 | 13 | 0.351351 | red | 163 | False | — | cần thêm dữ liệu | Thu thập thêm 163 đơn cho tuyến PR->AL rồi đánh giá lại (hiện 37 đơn, 13 trễ). |
+| RJ->PE | 95 | 12 | 0.126316 | amber | 105 | False | — | cần thêm dữ liệu | Thu thập thêm 105 đơn cho tuyến RJ->PE rồi đánh giá lại (hiện 95 đơn, 12 trễ). |
+
+### Ghi chú bắt buộc
+- KHÔNG cộng 'đơn tránh được' giữa route / payment / promise / seller: các nhóm chồng lấn trên cùng đơn-tuyến. Chỉ cộng trong cùng một loại.
+- Promise chỉ dùng NET (đã trừ đơn trễ mới do siết ô loose), không dùng GROSS.
+- Mọi con số avoided/NET là mô phỏng theo luật: nói 'nếu ... thì ước tính', không nói 'sẽ giảm'; không phải counterfactual thật.
+- Seller và review chỉ là liên hệ, không phải kết luận nhân quả.
+- MA→SP, PR→BA, SP→TO nằm trong 14 tuyến gắn cờ mặc định nhưng có <200 đơn, nên được xếp vào 'cần thêm dữ liệu' thay vì danh sách ưu tiên chính.

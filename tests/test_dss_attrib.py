@@ -274,7 +274,60 @@ def test_promise_calibration_labels_and_avoidable():
     assert c.attrs["n_cells_small"] == 1
     assert c.attrs["n_orders_small_cells"] == 50
     assert c.attrs["avoidable_orders"] == 95
+    assert c.attrs["gross_avoidable_orders"] == 95
+    assert c.attrs["new_late_orders"] == 0
+    assert c.attrs["net_avoided_orders"] == 95
     assert c.attrs["label_counts"] == {"tight": 1, "ok": 1, "loose": 1}
+    assert (
+        c["net_avoided_orders"] == c["avoidable_orders"] - c["new_late_orders"]
+    ).all()
+
+
+def test_promise_calibration_gross_net_and_service_levels():
+    # Tight: Q95=3, needed=3; 100 đơn đang trễ, 96 tránh được.
+    tight = _calibration_cell("T->X", "Q1", [3] * 96 + [10] * 4, promise=2)
+    # Loose: Q95=2, needed=2 < promise=5; 4 đơn đang đúng hạn thành trễ.
+    loose = _calibration_cell("L->X", "Q1", [2] * 96 + [4] * 4, promise=5)
+    o = pd.concat([tight, loose], ignore_index=True)
+
+    c = A.promise_calibration(o, min_orders=100, tolerance_days=0.5)
+    t = c.set_index("route")
+    assert t.loc["T->X", "label"] == "tight"
+    assert t.loc["T->X", "needed_days"] == 3
+    assert t.loc["T->X", "avoidable_orders"] == 96
+    assert t.loc["T->X", "new_late_orders"] == 0
+    assert t.loc["T->X", "net_avoided_orders"] == 96
+    assert t.loc["L->X", "label"] == "loose"
+    assert t.loc["L->X", "needed_days"] == 2
+    assert t.loc["L->X", "avoidable_orders"] == 0
+    assert t.loc["L->X", "new_late_orders"] == 4
+    assert t.loc["L->X", "net_avoided_orders"] == -4
+
+    assert c.attrs["gross_avoidable_orders"] == 96
+    assert c.attrs["new_late_orders"] == 4
+    assert c.attrs["net_avoided_orders"] == 92
+    assert (
+        c.attrs["net_avoided_orders"]
+        == c.attrs["late_orders_kept"] - c.attrs["calibrated_late_orders"]
+    )
+
+    s = A.promise_service_levels(
+        o, routes=["T->X"], levels=(0.85, 0.95), calibration=c
+    )
+    assert list(s["service_level"]) == [0.85, 0.95]
+    assert list(s["needed_days"]) == [3, 3]
+    assert list(s["late_rate"]) == pytest.approx([0.04, 0.04])
+    assert list(s["new_late_orders"]) == [0, 0]
+    assert s.attrs["routes"] == ["T->X"]
+    assert s.attrs["levels"] == (0.85, 0.95)
+
+    auto = A.promise_service_levels(o, top=2, calibration=c)
+    assert set(auto["route"]) == {"T->X", "L->X"}
+    assert len(auto) == 6
+    with pytest.raises(ValueError):
+        A.promise_service_levels(o, routes=["Z->Z"], calibration=c)
+    with pytest.raises(ValueError):
+        A.promise_service_levels(o, levels=(1.0,), calibration=c)
 
 
 def test_promise_calibration_real_data(o):
@@ -284,6 +337,15 @@ def test_promise_calibration_real_data(o):
     assert set(c["label"]).issubset(set(A.PROMISE_LABELS))
     assert (c["avoidable_orders"] <= c["late_orders"]).all()
     assert c["avoidable_orders"].sum() == c.attrs["avoidable_orders"]
+    assert c["new_late_orders"].sum() == c.attrs["new_late_orders"]
+    assert c.attrs["gross_avoidable_orders"] == c["avoidable_orders"].sum()
+    assert (
+        c.attrs["net_avoided_orders"]
+        == c.attrs["gross_avoidable_orders"] - c.attrs["new_late_orders"]
+    )
+    assert (
+        c["net_avoided_orders"] == c["avoidable_orders"] - c["new_late_orders"]
+    ).all()
     assert c.attrs["n_orders_kept"] == c["n_orders"].sum()
     assert sum(c.attrs["label_counts"].values()) == len(c)
     assert (c.loc[c["label"] == "tight", "gap_days"] < -c.attrs["tolerance_days"]).all()
@@ -369,7 +431,14 @@ def test_feasible_max_cut_point_and_ci_rule():
     assert slow["projected_late_rate"] == pytest.approx(0.0)
     assert slow["avoided_orders"] == 100
     assert slow["delta_pp"] == pytest.approx(100.0)
-    assert slow["status"] in {"có cơ sở", "chưa đủ bằng chứng"}
+    assert slow["status"] in {
+        "ước lượng ổn định (CI hẹp)",
+        "chưa đủ bằng chứng",
+    }
+    assert slow["peer_p50_approval"] == pytest.approx(1.0)
+    assert slow["peer_p50_prep"] == pytest.approx(1.5)
+    assert slow["peer_p50_transit"] == pytest.approx(2.0)
+    assert slow["peer_p50_total_days"] == pytest.approx(4.5)
 
     fast = A.feasible_max_cut(
         o, "C->D", quantile=0.25, min_orders=1, n_boot=100, seed=42
@@ -382,7 +451,7 @@ def test_feasible_max_cut_point_and_ci_rule():
 
 
 def test_status_from_ci():
-    assert A._status_from_ci(0.5, 2.0) == "có cơ sở"
+    assert A._status_from_ci(0.5, 2.0) == "ước lượng ổn định (CI hẹp)"
     assert A._status_from_ci(-0.5, 2.0) == "chưa đủ bằng chứng"
     assert A._status_from_ci(-2.0, -0.5) == "tác động âm"
 

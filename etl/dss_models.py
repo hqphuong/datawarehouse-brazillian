@@ -327,6 +327,57 @@ def seller_scorecard(o: pd.DataFrame, min_orders: int = 30) -> pd.DataFrame:
     return out
 
 
+def sellers_covering_late_share(
+    scorecard: pd.DataFrame, target: float = 0.5
+) -> dict:
+    """Số seller ít nhất phủ ``target`` tổng đơn trễ (bổ sung S5).
+
+    Sắp seller theo ``late_orders`` giảm dần (phá hòa bằng ``orders``), rồi lấy
+    ``k`` nhỏ nhất sao cho tổng ``late_orders`` của ``k`` seller đầu đạt ít nhất
+    ``target × total_late``. Dùng **toàn bộ** seller trong scorecard (kể cả mẫu
+    nhỏ), vì mục tiêu là độ tập trung của đơn trễ, không phải suy luận nhân quả.
+
+    Trả về dict: ``target``, ``k``, ``covered_late_orders``, ``total_late_orders``,
+    ``covered_share``, ``remaining_late_orders``, ``seller_ids``.
+    """
+    required = ["seller_id", "orders", "late_orders"]
+    missing = [c for c in required if c not in scorecard.columns]
+    if missing:
+        raise ValueError(f"Thiếu cột scorecard: {missing}")
+    if not 0 < target <= 1:
+        raise ValueError("target phải trong (0, 1]")
+
+    total_late = int(scorecard["late_orders"].sum())
+    if len(scorecard) == 0 or total_late <= 0:
+        return {
+            "target": float(target),
+            "k": 0,
+            "covered_late_orders": 0,
+            "total_late_orders": total_late,
+            "covered_share": float("nan"),
+            "remaining_late_orders": total_late,
+            "seller_ids": [],
+        }
+
+    ordered = scorecard.sort_values(
+        ["late_orders", "orders"], ascending=False
+    ).reset_index(drop=True)
+    cumulative = ordered["late_orders"].cumsum()
+    reached = cumulative >= target * total_late
+    idx = int(reached.idxmax())
+    k = idx + 1
+    covered = int(cumulative.iloc[idx])
+    return {
+        "target": float(target),
+        "k": k,
+        "covered_late_orders": covered,
+        "total_late_orders": total_late,
+        "covered_share": covered / total_late,
+        "remaining_late_orders": total_late - covered,
+        "seller_ids": ordered.head(k)["seller_id"].tolist(),
+    }
+
+
 def seller_portfolio(
     o: pd.DataFrame,
     min_orders: int = 30,
@@ -401,6 +452,7 @@ def seller_portfolio(
     )
 
     summary = dict(scorecard.attrs)
+    cover = sellers_covering_late_share(scorecard, target=0.5)
     summary.update(
         {
             "n_sellers": int(scorecard["seller_id"].nunique()),
@@ -422,6 +474,9 @@ def seller_portfolio(
                 if total_gmv > 0
                 else float("nan")
             ),
+            "k_sellers_cover_50pct_late": int(cover["k"]),
+            "late_orders_covered_50pct": int(cover["covered_late_orders"]),
+            "late_orders_covered_50pct_share": float(cover["covered_share"]),
             "level_counts": scorecard["level"].value_counts().to_dict(),
             "segment_counts": scorecard["segment"].value_counts().to_dict(),
         }
@@ -586,6 +641,87 @@ def low_sample_targets(
         low.loc[low["level"] != "ok", "late_orders"].sum()
     )
     out.attrs["n_returned"] = int(len(out))
+    return out
+
+
+def route_flag_check(
+    o,
+    routes,
+    min_orders=100,
+    red=2.0,
+    amber=1.5,
+    low_sample_threshold=200,
+):
+    """Kiểm tra tuyến cụ thể có nằm trong tập gắn cờ mặc định không (bổ sung S7).
+
+    Trả về một dòng / tuyến với ``orders``, ``late_orders``, ``late_rate``,
+    ``level`` (nhãn đỏ/vàng nếu gắn cờ, ``"ok"`` nếu không), ``flagged_rank``
+    (thứ hạng trong tập gắn cờ, 1 = nhiều đơn trễ nhất), ``in_flagged``,
+    ``low_sample`` (< ``low_sample_threshold``), ``needed_orders`` và ``status``:
+
+    - ``"cần thêm dữ liệu"`` nếu mẫu nhỏ (ưu tiên đặt vào nhóm S7),
+    - ``"ưu tiên"`` nếu gắn cờ và đủ mẫu,
+    - ``"ổn định"`` nếu không gắn cờ và đủ mẫu.
+
+    Dùng ``route_priority(top=len(o))`` để lấy **toàn bộ** tập gắn cờ, không bị
+    cắt bởi ``top`` mặc định 10. Không thay đổi ``route_priority``.
+    """
+    required = ["order_id", "route", "is_late"]
+    missing = [c for c in required if c not in o.columns]
+    if missing:
+        raise ValueError(f"Thiếu cột để route_flag_check: {missing}")
+    if min_orders < 1:
+        raise ValueError("min_orders phải >= 1")
+    if low_sample_threshold < 1:
+        raise ValueError("low_sample_threshold phải >= 1")
+    if len(o) == 0:
+        raise ValueError("Không có dòng nào để route_flag_check")
+
+    routes = list(dict.fromkeys(routes))
+    stats = (
+        o.groupby("route")
+        .agg(
+            orders=("order_id", "nunique"),
+            late_orders=("is_late", "sum"),
+            late_rate=("is_late", "mean"),
+        )
+        .reset_index()
+    )
+    flagged = route_priority(
+        o, red=red, amber=amber, min_orders=min_orders, top=len(o)
+    ).reset_index(drop=True)
+    flagged["flagged_rank"] = np.arange(1, len(flagged) + 1)
+    flagged_cols = [
+        "route",
+        "level",
+        "flagged_rank",
+        "ci_low",
+        "ci_high",
+        "uncertain",
+    ]
+
+    out = pd.DataFrame({"route": routes})
+    out = out.merge(stats, on="route", how="left")
+    out = out.merge(flagged[flagged_cols], on="route", how="left")
+    out["in_flagged"] = out["level"].notna()
+    out["level"] = out["level"].fillna("ok")
+    out["orders"] = out["orders"].fillna(0).astype(int)
+    out["late_orders"] = out["late_orders"].fillna(0).astype(int)
+    out["low_sample"] = out["orders"] < low_sample_threshold
+    out["needed_orders"] = (
+        low_sample_threshold - out["orders"]
+    ).clip(lower=0).astype(int)
+    out["status"] = np.select(
+        [out["low_sample"], out["in_flagged"]],
+        ["cần thêm dữ liệu", "ưu tiên"],
+        default="ổn định",
+    )
+    out.attrs["min_orders"] = int(min_orders)
+    out.attrs["red"] = float(red)
+    out.attrs["amber"] = float(amber)
+    out.attrs["low_sample_threshold"] = int(low_sample_threshold)
+    out.attrs["n_flagged_total"] = int(len(flagged))
+    out.attrs["flagged_routes"] = flagged["route"].tolist()
     return out
 
 

@@ -504,6 +504,9 @@ def test_seller_portfolio_segments_and_top_shares():
     assert summary["top_n"] == 2
     assert summary["top_seller_share_late_orders"] == pytest.approx(78 / 103)
     assert summary["top_seller_share_gmv"] == pytest.approx(2000 / 4200)
+    assert summary["k_sellers_cover_50pct_late"] == 2
+    assert summary["late_orders_covered_50pct"] == 78
+    assert summary["late_orders_covered_50pct_share"] == pytest.approx(78 / 103)
 
     segments = port["segments"].set_index("segment")
     assert set(segments.index) == {"ưu tiên", "ổn định", "cần thêm dữ liệu"}
@@ -517,6 +520,37 @@ def test_seller_portfolio_segments_and_top_shares():
     top = port["top_sellers"]
     assert list(top["seller_id"]) == ["A", "E"]
     assert list(top["late_orders"]) == [50, 28]
+
+
+def test_sellers_covering_late_share_contract():
+    """k nhỏ nhất phủ 50% đơn trễ; hòa phá bằng orders."""
+    frame = pd.concat(
+        [
+            _seller_orders("A", 100, 50),
+            _seller_orders("B", 100, 5),
+            _seller_orders("C", 100, 0),
+            _seller_orders("D", 20, 20),
+            _seller_orders("E", 100, 28),
+        ],
+        ignore_index=True,
+    )
+    card = M.seller_scorecard(frame, min_orders=30)
+    cover = M.sellers_covering_late_share(card, target=0.5)
+    # late_orders: A=50, E=28, D=20, B=5, C=0; total=103; 50% = 51,5.
+    assert cover["k"] == 2
+    assert cover["covered_late_orders"] == 78
+    assert cover["total_late_orders"] == 103
+    assert cover["covered_share"] == pytest.approx(78 / 103)
+    assert cover["remaining_late_orders"] == 25
+    assert cover["seller_ids"] == ["A", "E"]
+
+    assert M.sellers_covering_late_share(card, target=0.4)["k"] == 1
+    # Seller C có 0 đơn trễ nên không cần cho target=1,0.
+    assert M.sellers_covering_late_share(card, target=1.0)["k"] == 4
+    with pytest.raises(ValueError):
+        M.sellers_covering_late_share(card, target=0)
+    with pytest.raises(ValueError):
+        M.sellers_covering_late_share(card.drop(columns=["late_orders"]))
 
 
 def test_seller_scorecard_rejects_bad_input():
@@ -570,6 +604,50 @@ def test_low_sample_targets_split_without_changing_route_priority():
     assert set(all_low["route"]) == {"MA->SP", "PR->BA", "SP->TO", "OK->SM"}
     assert len(M.low_sample_targets(frame, top=2)) == 2
     assert len(M.low_sample_targets(frame, top=0)) == 3
+
+
+def test_route_flag_check_named_routes():
+    frame = _orders_from_counts(
+        [
+            ("ZZ->ZZ", 2000, 100),
+            ("BIG->OK", 200, 0),
+            ("MA->SP", 118, 30),
+            ("PR->BA", 144, 40),
+            ("SP->TO", 195, 22),
+            ("OK->SM", 50, 1),
+        ]
+    )
+    check = M.route_flag_check(
+        frame,
+        ["MA->SP", "PR->BA", "SP->TO", "OK->SM"],
+        min_orders=100,
+        low_sample_threshold=200,
+    )
+    by_route = check.set_index("route")
+    for route in ("MA->SP", "PR->BA", "SP->TO"):
+        assert bool(by_route.loc[route, "in_flagged"]) is True
+        assert bool(by_route.loc[route, "low_sample"]) is True
+        assert by_route.loc[route, "status"] == "cần thêm dữ liệu"
+    assert by_route.loc["MA->SP", "needed_orders"] == 82
+    assert by_route.loc["PR->BA", "needed_orders"] == 56
+    assert by_route.loc["SP->TO", "needed_orders"] == 5
+    # red xếp trước theo late_orders: PR->BA (40), MA->SP (30), rồi amber SP->TO (22).
+    assert by_route.loc["PR->BA", "flagged_rank"] == 1
+    assert by_route.loc["MA->SP", "flagged_rank"] == 2
+    assert by_route.loc["SP->TO", "flagged_rank"] == 3
+
+    assert bool(by_route.loc["OK->SM", "in_flagged"]) is False
+    assert by_route.loc["OK->SM", "level"] == "ok"
+    assert by_route.loc["OK->SM", "status"] == "cần thêm dữ liệu"
+    assert check.attrs["n_flagged_total"] == 3
+    assert set(check.attrs["flagged_routes"]) == {"MA->SP", "PR->BA", "SP->TO"}
+
+    with pytest.raises(ValueError):
+        M.route_flag_check(pd.DataFrame(), ["MA->SP"])
+    with pytest.raises(ValueError):
+        M.route_flag_check(frame, ["MA->SP"], min_orders=0)
+    with pytest.raises(ValueError):
+        M.route_flag_check(frame, ["MA->SP"], low_sample_threshold=0)
 
 
 def test_low_sample_targets_rejects_bad_input():
