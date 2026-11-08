@@ -47,8 +47,8 @@ AUC/time-split/replay, các badge UI v2.
 
 ## Còn lại
 
-- U1 hoàn tất phần code và wording: ba thẻ API DSS, mọi nhóm Decision Brief, GMV kèm hậu tố R$, và nhãn đơn-tuyến. Không chạy kiểm tra giao diện theo yêu cầu.
-- V2 report code đã thêm tần suất transit rank #1 cấp hệ thống. `reports/dss_eval_raw.txt` hiện hành vẫn chưa có x/500 vì không tái sinh theo yêu cầu; không dùng số tự suy tính.
+- U1 hoàn tất phần code và wording: ba thẻ API DSS, mọi nhóm Decision Brief, GMV ghi R$ trước số và là tham chiếu toàn tuyến/nhóm, owner được hiển thị, xếp hạng seller được ghi rõ, và nhãn đơn-tuyến. Bộ lọc năm được truyền tới cả `/brief`, `/sellers`, `/promise-policy` và áp dụng tại API; thẻ hiển thị năm đang chọn/toàn bộ dữ liệu. Root Cause ghi rõ chưa chuẩn hoá theo khoảng cách. Không chạy kiểm tra giao diện theo yêu cầu.
+- V2 raw eval hiện hành ghi transit rank #1 cấp hệ thống 500/500; không nhầm với thống kê theo tuyến 165/226.
 - Wilson CI giả định các đơn độc lập; bootstrap route-level ở V2 phản ánh nhiễu lấy mẫu tuyến nhưng không loại bỏ mọi phụ thuộc.
 - `PROMPT_AI_TIEP_TUC.md` đang bị xoá ở worktree (chưa stage) — người dùng quyết định.
 
@@ -59,42 +59,41 @@ Branch: `dss-v2` (tag `before-optimize` tại 32a34ca). Deadline 15/11/2026 23:5
 - [x] F1 [x] F2 [x] F3 [x] F4 [x] F5 [x] F6 [x] F7 [x] F8 [x] F9
 - [x] D1 [x] D2
 - [x] S1 [x] S2 [x] S3 [x] S4 [x] S5 [x] S6 [x] S7 [x] S8 [x]
-- [x] V1 dropped [ ] V2 raw frequency pending [x] V3 dropped [x] V4
+- [x] V1 dropped [x] V2 [x] V3 dropped [x] V4
 - [x] A1 [x] U1 [x] U2 dropped
 - [x] X1 [x] X2 [x] X3
 
-NEXT: user chạy `.\scripts\check.ps1` để cập nhật raw eval có tần suất V2 system-bootstrap x/500; paste `reports/CHECK_OUTPUT.txt`. Không chạy thay user.
+NEXT: cleanup, then report/slides.
 
 Schema facts đã xác minh (06/11/2026):
 - `data/processed/`: 5 CSV gồm dim_time, dim_location, dim_product, dim_seller, fact_delivery_sla.
 - `cleaned_fact_orders.csv`: grain item; có seller_id, price, shipping_limit_date, promise_days, total_lead_days, handoff_slack_days, distance_km.
 - `load_orders()` gộp về (order_id, route), route = seller_state->cust_state; loại stage âm/NaN.
 
-## Phase 1 — đã được người dùng xác nhận
+## Phase 1 — snapshot kiểm chứng gần nhất
 
-- `reports/CHECK_OUTPUT.txt`: pytest 77/77, Django 22/22, regen_eval pass; raw eval 56.630 bytes; L1–L3 pass.
+- `reports/CHECK_OUTPUT.txt`: pytest 78/78, Django 22/22; `regen_eval` skipped do `-Quick`; L1–L3 pass.
 - Đã có Decision Brief GMV, A1 API và báo cáo V2/V4; không tự chạy lại check hoặc tái tạo raw eval.
 
 ## Phase 2 — tài liệu đã đồng bộ
 
 - X1: `reports/dss_formulas.md` và `reports/dss_results.md` có phần attribution/Shapley, promise, feasible cut, seller, low-sample, S8, V2, V4 và hạn chế; số đánh giá lấy từ raw eval hiện hành.
-- X2: `reports/defense/CHEAT_SHEET.md`, `QA_BANK.md`, `DEMO_SCRIPT.md` đã đồng bộ; QA_BANK bổ sung Q&A về Shapley/benchmarks, q=0,75, GROSS/NET, CI-feasibility, seller confounding và sign test.
+- X2: `reports/defense/CHEAT_SHEET.md`, `QA_BANK.md` (71 Q&A), `DEMO_SCRIPT.md` đã đồng bộ; bổ sung câu hỏi về Shapley/benchmarks, q=0,75, GROSS/NET, CI-feasibility, seller confounding, sign test và các giới hạn UI/API.
 - X3: README, run guide, TOM_TAT và tài liệu defense đã cập nhật endpoint, khối DSS, số liệu hiện hành và số kiểm thử từ CHECK_OUTPUT.
 - Không chạy test, regenerate eval, commit, stage hoặc server theo yêu cầu code-edit-only.
 
 ## Deviations pending
 
-- V1, V3, U2 bị drop theo yêu cầu.
-- Fact 21 cột và số lượng 5 bảng/CSV là metadata cấu trúc được đối chiếu từ DDL/ETL, không được in trong `reports/dss_eval_raw.txt`. Đã giữ các thông tin được yêu cầu ở tài liệu và ghi rõ nguồn cấu trúc; để đáp ứng nghiêm ngặt quy tắc mọi số lấy từ raw eval, cần bổ sung các metadata này vào raw-eval report hoặc bỏ chúng khỏi tài liệu.
-- Raw eval cũ chưa chứa tần suất transit rank #1 cấp hệ thống x/500. Tính toán/report code đã được cập nhật, nhưng cần người dùng tái sinh raw eval để có số thực tế; không suy ra số bằng tay.
-- Raw eval cũ còn cột “CI không chứa 0” cho cause shares; report code mới đã bỏ nhãn này vì shares không âm theo định nghĩa. Không diễn giải cột cũ trước khi tái sinh.
-- U1 code hoàn tất; không chạy kiểm tra giao diện theo yêu cầu.
+- V1, V3, U2 bị drop theo yêu cầu; lý do được ghi tại `reports/dss_requirements.md` và `reports/FINAL_G4.md`.
+- Metadata cấu trúc 21 cột/5 bảng/CSV lấy từ DDL/ETL, không phải raw eval.
+- Check gần nhất dùng `-Quick`, nên không xác nhận raw eval được tái sinh sau các thay đổi; raw eval ghi transit rank #1 cấp hệ thống 500/500.
+- Không chạy kiểm tra giao diện hoặc test theo yêu cầu code-edit-only.
 
 ## Phase 3 — thực hiện code/docs, chưa chạy kiểm tra
 
-- U1: ba thẻ DSS gọi `/brief`, `/sellers`, `/promise-policy`; Decision Brief hiển thị đủ năm nhóm, tối đa ba dòng mỗi nhóm kèm phạm vi; các GMV có hậu tố R$; wording promise và đếm tuyến đã sửa. Dashboard/OLAP/ETL vẫn mock. Chưa chạy kiểm tra giao diện.
-- V2: report phân biệt 165/226 theo tuyến (tập tuyến `late>0` sau lọc stage âm) với tần suất rank #1 bootstrap cấp hệ thống. CI được mô tả là nhiễu lấy mẫu giữa tuyến tại q=0,5; không phải độ nhạy benchmark. Numeric x/500 chờ raw eval mới.
+- U1: ba thẻ DSS gọi `/brief`, `/sellers`, `/promise-policy`; Decision Brief hiển thị đủ năm nhóm, tối đa ba dòng mỗi nhóm kèm phạm vi, owner và GMV tham chiếu; câu route ghi rõ cả ba giai đoạn về peer P25. GMV hiển thị theo dạng `R$ 3.451.815`. Bộ lọc năm áp dụng cả ba thẻ. Seller ghi “Xếp theo số đơn trễ”; Root Cause ghi rõ so với trung bình hệ thống nhưng chưa chuẩn hoá theo khoảng cách. Dashboard/OLAP/ETL vẫn mock. Evidence: ảnh người dùng 08/11.
+- V2: raw eval “Bootstrap route-level (V2)” ghi transit rank #1 cấp hệ thống 500/500; 165/226 là tỷ lệ theo tuyến trong tập `late>0`. CI mô tả nhiễu lấy mẫu giữa tuyến tại q=0,5, không phải độ nhạy benchmark.
 - V4: report nói rõ giả định độc lập theo tháng và p-value có thể lạc quan do tương quan tháng liền kề.
-- Requirements đã ghi evidence/status cho A1, V2, V4, U1, X1–X3; V1/V3/U2 được ghi dropped kèm phạm vi.
-- `reports/FINAL_G4.md` tổng hợp trạng thái và các mục còn chờ.
+- Requirements ghi A1, V2, V4, U1, X1–X3 là done; V1/V3/U2 dropped kèm lý do. `reports/FINAL_G4.md` tổng hợp trạng thái và giới hạn.
+- Đã ghi sáu giới hạn UI/API vào `reports/dss_results.md` và thêm sáu Q&A vào `reports/defense/QA_BANK.md`. `scripts/clear_action_log.py` chỉ xoá ActionLog khi truyền `--yes`, cảnh báo rằng thao tác xoá toàn bộ bản ghi; chưa chạy script.
 - Không chạy test, browser, raw-eval regeneration, commit, stage hoặc server theo chỉ thị code-edit-only.

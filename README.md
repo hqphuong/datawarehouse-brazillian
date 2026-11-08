@@ -28,8 +28,8 @@ Hệ thống gồm 4 phần:
   thật; 3 tab còn lại vẫn là mock (xem cảnh báo bên dưới).
 - **Mockup UI**: `web/Olist_Logistics_DSS_v3.html` — mở trực tiếp bằng trình duyệt.
 - **Prisma**: schema mô tả DW và Prisma Client (dùng cho tooling/Node).
-- **Kiểm thử lần xác nhận hiện hành**: pytest 77/77, Django 22/22 và
-  `regen_eval` pass; xem `reports/CHECK_OUTPUT.txt`.
+- **Kiểm thử gần nhất**: pytest 78/78, Django 22/22; lần chạy `-Quick` đã bỏ qua
+  `regen_eval`, nên không xác nhận raw eval được tái tạo; xem `reports/CHECK_OUTPUT.txt`.
 
 ### Các khối DSS và API
 
@@ -54,8 +54,8 @@ lấn và không phải tổng đơn tránh được. Nội dung what-if là “
 - Backtest min_orders=30: 16/19 kỳ, weighted diff +8,2826 pp (tương quan
   hồi cứu, không phải hiệu quả can thiệp).
 - V4 sign test vs through: 12 dương / 4 âm, n=16; p hai phía 0,07681.
-- V2 route bootstrap: 500 lần, seed 42, q=0,50; CI và attribution chi tiết ở
-  `reports/dss_eval_raw.txt`.
+- V2 route bootstrap: 500 lần, seed 42, q=0,50; transit đứng đầu cấp hệ thống
+  500/500 lần. CI và attribution chi tiết ở `reports/dss_eval_raw.txt`.
 
 > **⚠️ Nhãn cảnh báo giao diện:**
 > - Tab **Dashboard**, **OLAP**, **ETL Monitor** hiển thị **dữ liệu mẫu** (mock

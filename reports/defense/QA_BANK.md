@@ -1,4 +1,4 @@
-# QA BANK — 65 câu thầy có thể hỏi
+# QA BANK — 71 câu thầy có thể hỏi
 
 > Mỗi câu trả lời ≤ 4 câu, kèm locator để mở code/báo cáo ngay.
 > Nguyên tắc: **không bịa**. Nếu là đề xuất chưa làm → nói thẳng "chưa có trong repo".
@@ -70,13 +70,13 @@ Vì mức trễ nền thay đổi theo thời gian; ngưỡng tuyệt đối s�
 Là ngưỡng chống kết luận từ mẫu quá nhỏ, chọn theo kinh nghiệm; backtest dùng 30 vì chia theo tháng, production vẫn 100 vì chạy full data. `etl/dss_models.py:94,129`; `reports/dss_results.md:119`.
 
 ### 21. Wilson interval để làm gì?
-Tính khoảng tin cậy 95% cho tỷ lệ trễ của từng tuyến, không cho cận âm và ổn định khi `n` nhỏ. `etl/dss_models.py:79-90`.
+Tính khoảng tin cậy 95% cho tỷ lệ trễ của từng tuyến, không cho cận âm và ổn định khi `n` nhỏ. Cách tính không hiệu chỉnh phụ thuộc giữa đơn cùng tuyến/cụm nên mức bất định thực tế có thể lớn hơn. `etl/dss_models.py:79-90`.
 
 ### 22. Vì sao không dùng `p ± 1,96·√(p(1−p)/n)`?
-Vì xấp xỉ chuẩn có thể cho cận âm hoặc vượt 1 khi `p` gần 0 và `n` nhỏ — đúng tình huống các tuyến 124–8.108 đơn. Wilson là lựa chọn an toàn hơn. `etl/dss_models.py:79-90`.
+Vì xấp xỉ chuẩn có thể cho cận âm hoặc vượt 1 khi `p` gần 0 và `n` nhỏ — đúng tình huống các tuyến 124–8.108 đơn. Wilson là lựa chọn an toàn hơn về miền giá trị, nhưng vẫn giả định các đơn độc lập và không xử lý clustering. `etl/dss_models.py:79-90`.
 
 ### 23. `low_sample` và `uncertain` khác nhau thế nào?
-`low_sample` = dưới 200 đơn; `uncertain` = Wilson CI chứa ngưỡng phân loại. Hai cờ **độc lập**: PR→RJ có 994 đơn nhưng vẫn `uncertain=True`; cả hai chỉ cảnh báo, không đổi nhãn. `etl/dss_models.py:141-150`; `reports/dss_results.md:257,268`.
+`low_sample` = dưới 200 đơn; `uncertain` = Wilson CI chứa ngưỡng phân loại. Hai cờ **độc lập**: PR→RJ có 994 đơn nhưng vẫn `uncertain=True`; Wilson giả định đơn độc lập nên không hiệu chỉnh clustering. `etl/dss_models.py:141-150`; `reports/dss_results.md:257,268`.
 
 ### 24. Red-first là gì và tại sao cần?
 Là trả **tất cả tuyến đỏ trước** (sắp theo số đơn trễ), rồi mới thêm vàng cho đủ `top`; nếu số đỏ > `top` thì trả hết đỏ. Mục tiêu là không che tuyến đỏ chỉ vì giới hạn hiển thị. `etl/dss_models.py:101-105,152-166`.
@@ -147,7 +147,7 @@ Chứng minh kết luận "14 tuyến" không bất biến: toàn lưới cho **
 Chỉ mang tính tham khảo; báo cáo đã ghi rõ. Circular block còn nối kỳ cuối với kỳ đầu, là xấp xỉ. `reports/dss_results.md:222`.
 
 ### 46. Vì sao dùng Wilson cho từng tuyến mà không dùng bootstrap?
-Wilson có công thức đóng, nhanh cho 14 tuyến và phù hợp tỷ lệ nhị phân; bootstrap dùng cho hiệu số backtest phức tạp hơn. Hai mục đích khác nhau. `etl/dss_models.py:79-90`; `etl/dss_eval.py:605-646`.
+Wilson có công thức đóng, nhanh cho 14 tuyến và phù hợp tỷ lệ nhị phân; bootstrap dùng cho hiệu số backtest phức tạp hơn. Wilson vẫn giả định đơn độc lập, còn bootstrap theo tuyến không loại bỏ mọi phụ thuộc. `etl/dss_models.py:79-90`; `etl/dss_eval.py:605-646`.
 
 ## E. "Sao không dùng ML?" / nhân quả (6 câu)
 
@@ -184,7 +184,7 @@ Nếu tín hiệu gắn cờ không còn khi đổi `min_orders`/ngưỡng, ho�
 Chỉ **DSS Action Center** gọi API Django thật; Dashboard, OLAP, ETL Monitor là mock tĩnh. Nói rõ trước khi thầy bấm. `web/Olist_Logistics_DSS_v3.html:427`; `reports/run_guide.md:93-96`.
 
 ### 57. Nếu thầy yêu cầu chạy lại ngay bây giờ?
-Chạy `.\scripts\check.ps1`; nếu muốn bỏ qua tái tạo raw eval thì thêm `-Quick`. Lần xác nhận hiện hành có 77 pytest, 22 Django tests và regen eval pass. `reports/CHECK_OUTPUT.txt`.
+Chạy `.\scripts\check.ps1`; nếu muốn bỏ qua tái tạo raw eval thì thêm `-Quick`. Check gần nhất có 78 pytest, 22 Django tests; `regen_eval` bị bỏ qua vì lần đó dùng `-Quick`. `reports/CHECK_OUTPUT.txt`.
 
 ### 58. Shapley attribution dùng benchmark peer nào?
 Approval benchmark theo `payment_type`, prep theo `weight_band`, transit theo decile khoảng cách xuyên tuyến; kết quả Shapley là tỷ trọng trong tập đơn trễ. Fallback dùng median toàn cục của cùng giai đoạn khi peer thiếu mẫu/NA. `reports/dss_eval_raw.txt`, mục Attribution.
@@ -202,13 +202,31 @@ Không. CI của S4 phản ánh sampling noise quanh mô phỏng; CI hẹp khôn
 Không. Scorecard chỉ dùng đơn single-seller; khác biệt có thể do route mix và thành phần đơn. Đây là liên hệ, không phải quy kết nguyên nhân. Seller excess cũng khác tập/ý nghĩa với route-avoidable, không cộng hay so sánh. `reports/dss_eval_raw.txt`, mục Seller scorecard.
 
 ### 63. Sign test vs through nói gì, và vì sao vẫn “chưa đủ bằng chứng”?
-Sign test có 12 dấu dương, 4 âm, n=16; p một phía 0,03841, hai phía 0,07681. Nó đếm hướng chênh lệch theo kỳ, không đo độ lớn; bootstrap CI vs through chứa 0, nên chưa đủ bằng chứng DSS tốt hơn through. `reports/dss_eval_raw.txt`, mục Sign test (V4).
+Sign test có 12 dấu dương, 4 âm, n=16; p một phía 0,03841, hai phía 0,07681. Nó đếm hướng chênh lệch theo kỳ, không đo độ lớn; bootstrap CI vs through chứa 0, nên chưa đủ bằng chứng DSS tốt hơn through. Phép thử giả định các tháng độc lập, trong khi tháng liền kề có thể tương quan nên p-value có thể lạc quan. `reports/dss_eval_raw.txt`, mục Sign test (V4).
 
 ### 64. Bootstrap V2 lấy mẫu gì?
-Lấy mẫu lại tuyến 500 lần với seed 42 ở q=0,50; CI là bất định của tỷ trọng nguyên nhân trong tổng tập đơn trễ. Transit xếp #1 ở 165/226 tuyến. `reports/dss_eval_raw.txt`, mục Bootstrap route-level (V2).
+Lấy mẫu lại tuyến 500 lần với seed 42 ở q=0,50; CI là bất định lấy mẫu giữa tuyến của tỷ trọng nguyên nhân trong tổng tập đơn trễ, không đo độ nhạy benchmark theo q. Promise share khoảng 1–13% khi đổi q=0,25/0,50. Transit xếp #1 theo tuyến ở 165/226 tuyến có ít nhất một đơn trễ sau lọc stage âm; ở cấp hệ thống đứng đầu 500/500 lần bootstrap. `reports/dss_eval_raw.txt`, mục Bootstrap route-level (V2).
 
 ### 65. Bao nhiêu tuyến được gắn cờ ở cấu hình mặc định?
 14 tuyến tại min_orders=100, red=2,0, amber=1,5; 6 đỏ và 8 vàng. MA→SP, PR→BA, SP→TO vẫn hiện “cần thêm dữ liệu” và không tính trùng vào ưu tiên chính. `reports/dss_eval_raw.txt`, mục S7/S8.
+
+### 66. Vì sao có hai cách nhìn tuyến, và SP→SP đứng đầu đơn tránh được nhưng không nằm trong 14 tuyến gắn cờ?
+`route_priority` xếp theo tỷ lệ trễ, còn Decision Brief xếp tác động theo số đơn trong mô phỏng P25. Vì vậy SP→SP có thể đứng đầu theo số đơn tránh ước tính mà không thuộc nhóm 14 tuyến có tỷ lệ trễ cao theo ngưỡng. Đây là hai câu hỏi khác nhau, không phải mâu thuẫn. `reports/dss_eval_raw.txt`, mục S4/S8.
+
+### 67. Root Cause card có dùng peer benchmark theo khoảng cách không?
+Không. Thẻ hiện so với trung bình toàn hệ thống, chưa chuẩn hoá theo khoảng cách; `/api/dss/attribution` có phân tích peer-based nhưng UI chưa nối endpoint đó. Cần trình bày rõ đây là hai khối khác nhau. `etl/dss_models.py::root_cause`; `backend/dss/views.py`; `web/Olist_Logistics_DSS_v3.html`.
+
+### 68. Scenario có giả định thời gian cắt chuyển 1:1 sang ngày giao không?
+Có, đây là giả định 1:1: nếu… thì ước tính ngày giao sớm hơn tương ứng, có chặn theo thời lượng từng chặng. Thực tế có thể có buffer hoặc lịch carrier, nên kết quả không phải phản thực nghiệm. `etl/dss_models.py::scenario`; `reports/dss_formulas.md`, mục 4.
+
+### 69. Ai chịu trách nhiệm cho một route action?
+Brief hiện ghép owner của ba giai đoạn thành danh sách; đó không phải một cá nhân/đơn vị duy nhất chịu trách nhiệm cho toàn tuyến. Cần phân công vận hành cụ thể trước khi dùng ngoài demo. `etl/dss_brief.py::_route_actions`; `reports/dss_eval_raw.txt`, mục Decision Brief.
+
+### 70. Dashboard, OLAP và ETL Monitor có dùng dữ liệu thật không?
+Không. Chỉ tab DSS nối API; Dashboard, OLAP và ETL Monitor vẫn là mock. Nên nói rõ trước khi trình diễn. `web/Olist_Logistics_DSS_v3.html`; `reports/run_guide.md`.
+
+### 71. Nút “Ghi nhận khuyến nghị” có thực thi hành động không?
+Không. Nút chỉ ghi bản ghi vào ActionLog; nó không thay đổi promise, tuyến, seller hay quy trình giao hàng. `backend/dss/views.py` (`/api/dss/actions`); `backend/dss/models.py::ActionLog`.
 
 ## G. Đóng góp nhóm — điền trước khi bảo vệ
 

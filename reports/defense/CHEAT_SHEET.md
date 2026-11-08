@@ -8,7 +8,7 @@
 1. Tỷ lệ trễ là **8,1556% theo đơn-tuyến** và **8,1950% theo đơn duy nhất**; hai mẫu số khác nhau.
 2. Nhóm xây kho dữ liệu hình sao từ 9 bảng CSV gốc, grain **1 dòng = 1 item**, Fact là *accumulating snapshot* đo 3 chặng: duyệt, seller chuẩn bị, vận chuyển.
 3. DSS có các khối route priority, attribution/Shapley, promise calibration, feasible cut, seller scorecard/portfolio, low-sample, threshold sensitivity và Decision Brief.
-4. V4: **16/19 kỳ** nhóm gắn cờ cao hơn kỳ sau; weighted diff **+8,2826 pp**. Đây là tương quan hồi cứu.
+4. V4: **16/19 kỳ** nhóm gắn cờ cao hơn kỳ sau; weighted diff **+8,2826 pp**. Đây là tương quan hồi cứu; sign test giả định tháng độc lập nên p-value có thể lạc quan.
 5. Hệ thống là **mô phỏng theo luật**, không phải nhân quả và không dự báo bằng ML; simulation không phải counterfactual.
 
 ## 2. Mười con số đầu bảng
@@ -22,7 +22,7 @@
 | 5 | **14 tuyến: 6 đỏ + 8 vàng** | cờ mặc định; không phải tổng ổn định qua mọi ngưỡng | `reports/dss_eval_raw.txt` |
 | 6 | **9 endpoint DSS** | 4 endpoint cũ + brief, attribution, promise-policy, sellers, portfolio | `reports/api_dss.md` |
 | 7 | **3.751 GROSS / 2.867 NET** | Promise calibration; có 884 đơn trễ mới | `reports/dss_eval_raw.txt`, mục S3 |
-| 8 | q=0,50: transit **69,9162%** | tỷ trọng trong tập đơn trễ; V2 CI 95% [56,4003%; 83,5136%] | `reports/dss_eval_raw.txt` |
+| 8 | q=0,50: transit **69,9162%** | tỷ trọng trong tập đơn trễ; V2 CI 95% [56,4003%; 83,5136%], nhiễu lấy mẫu tuyến tại q=0,50 | `reports/dss_eval_raw.txt` |
 | 9 | **16/19**, weighted **+8,2826 pp** | backtest `min_orders=30` | `reports/dss_eval_raw.txt` |
 | 10 | CI vs through **[−0,50; +2,52] pp** | chứa 0 → **chưa đủ bằng chứng** | `reports/dss_eval_raw.txt`, mục bootstrap |
 
@@ -31,7 +31,13 @@
 2.878, còn S3 NET toàn bộ ô là 2.867 — khác tập nên không đối chiếu như cùng
 một tổng. S8 tại min_orders=100 dao động 10–21 tuyến qua năm cặp ngưỡng; bộ
 100/2,5/2,0 giữ lõi 6.
-**Test:** **77 pytest / 22 Django**, regen eval pass (`reports/CHECK_OUTPUT.txt`).
+**Test gần nhất:** **78 pytest / 22 Django**; `regen_eval` skipped do `-Quick`
+(`reports/CHECK_OUTPUT.txt`).
+
+V2: 165/226 là tỷ lệ tuyến có transit đứng đầu; 226 tuyến có ít nhất một đơn trễ
+sau lọc stage âm. Ở cấp hệ thống, transit đứng đầu 500/500 lần bootstrap. CI tại
+q=0,50 đo nhiễu lấy mẫu giữa tuyến, không đo độ nhạy benchmark theo q; promise
+thay đổi khoảng 1–13% giữa q=0,25/0,50.
 
 ## 3. Ba câu bắt buộc phải nói khi bảo vệ
 
@@ -53,8 +59,8 @@ Kết quả what-if là tác động thực tế · seller excess là đơn trá
 | **Degenerate dimension** | Chiều không có bảng riêng, nằm ngay trong Fact: `payment_type`. |
 | **Late rate** | Tỷ lệ đơn có `delay_days > 0` (giao sau ngày cam kết). |
 | **Excess** | `mean(chặng của tuyến) − mean(chặng toàn hệ thống)`, đơn vị ngày. |
-| **Wilson CI** | Khoảng tin cậy 95% cho tỷ lệ, không cho cận âm, ổn định khi `n` nhỏ. |
-| **uncertain** | Wilson CI chứa ngưỡng phân loại → nhãn đỏ/vàng chưa được CI xác nhận. |
+| **Wilson CI** | Khoảng tin cậy 95% cho tỷ lệ, không cho cận âm, ổn định khi `n` nhỏ; giả định các đơn độc lập nên có thể đánh giá thấp bất định khi đơn cùng tuyến/cụm liên hệ. |
+| **uncertain** | Wilson CI chứa ngưỡng phân loại → nhãn đỏ/vàng chưa được CI xác nhận; Wilson giả định đơn độc lập nên không hiệu chỉnh clustering. |
 | **low_sample** | Tuyến có `< 200` đơn; chỉ cảnh báo, **không** đổi nhãn. |
 | **Red-first** | Trả hết tuyến đỏ trước, rồi vàng cho đủ `top`; không che tuyến đỏ. |
 | **Scenario / sensitivity** | Mô phỏng cắt `c` ngày ở một chặng / quét `c = 0..5`. |
@@ -77,4 +83,5 @@ print(M.goal_seek_promise(o, "SP->BA"), M.goal_seek_cut(o, "SP->BA", "transit"))
 '@ | .\backend\env\Scripts\python.exe -
 ```
 
-Kết quả lần kiểm tra hiện hành: pytest 77/77, Django 22/22, regen eval pass.
+Kết quả check gần nhất: pytest 78/78, Django 22/22; `regen_eval` skipped do
+`-Quick`.

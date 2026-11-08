@@ -37,7 +37,7 @@ Hệ thống hỗ trợ:
 | Giao diện DSS | `web/Olist_Logistics_DSS_v3.html` — 4 tab, tab DSS gọi API thật |
 | Frontend Vite | Vẫn là scaffold mặc định, chưa phải giao diện DSS thật |
 | ML | Đã gỡ: không còn `etl/dss_ml.py`, endpoint `at-risk`, `scikit-learn`, `joblib` |
-| Kiểm thử | **77 pytest + 22 Django test**, raw eval tái tạo thành công |
+| Kiểm thử gần nhất | **78 pytest + 22 Django test**; lần check dùng `-Quick` nên không tái tạo raw eval |
 | Git | Working tree còn nhiều thay đổi chưa commit sau khi gỡ ML |
 
 ---
@@ -224,7 +224,7 @@ Luồng xử lý:
 | Hàm | Vai trò |
 |---|---|
 | `load_orders()` | Đọc Fact + 4 Dim, trả về bảng 1 dòng = 1 đơn-tuyến |
-| `wilson_interval(k, n)` | Khoảng tin cậy Wilson 95% cho tỷ lệ trễ |
+| `wilson_interval(k, n)` | Khoảng tin cậy Wilson 95% cho tỷ lệ trễ; giả định các đơn độc lập, không hiệu chỉnh clustering |
 | `route_priority(...)` | Khối 1: xếp hạng tuyến đỏ/vàng |
 | `root_cause(o, route)` | Khối 2: tìm giai đoạn nghẽn |
 | `scenario(o, route, cut)` | Khối 3: mô phỏng What-if |
@@ -374,7 +374,7 @@ thật.
 
 | Bộ test | Số lượng | Lệnh |
 |---|---:|---|
-| pytest toàn repo | **77 passed** | `python -m pytest -q` |
+| pytest toàn repo | **78 passed** | `python -m pytest -q` |
 | Django app `dss analytics` | **22 tests OK** | `cd backend; ..\backend\env\Scripts\python.exe manage.py test dss analytics` |
 | Regen eval | **pass** | `.\scripts\check.ps1` |
 
@@ -537,4 +537,5 @@ Kết quả: **0 dòng khớp**.
 Đây là đồ án **Data Warehouse + DSS logistics** ở tầng dữ liệu, ETL, backend API
 và mô hình ra quyết định dựa trên luật; giao diện DSS thật đã nối API, còn
 frontend Vite và 3 tab phụ vẫn là mock/scaffold. Toàn bộ phần ML đã được gỡ;
-lần xác nhận hiện hành có **77 pytest + 22 Django tests** và regen eval pass.
+check gần nhất có **78 pytest + 22 Django tests**; `regen_eval` bị bỏ qua do
+dùng `-Quick`, nên không xác nhận raw eval vừa được tái tạo.

@@ -63,7 +63,7 @@ print(len(f), f.order_id.nunique(), round((f.delay_days>0).mean()*100,4))
 
 ### 5:00–6:10 — Khối 2: Root cause
 **Click:** cùng màn hình, nhìn card **2. Root Cause**.
-**Nói:** "Attribution dùng benchmark peer và Shapley; ở q=0,50, transit chiếm **69,9162% tỷ trọng trong tập đơn trễ**. Bootstrap route-level cho thấy transit xếp #1 ở 165/226 tuyến."
+**Nói:** "Attribution dùng benchmark peer và Shapley; ở q=0,50, transit chiếm **69,9162% tỷ trọng trong tập đơn trễ**. Theo từng tuyến có ít nhất một đơn trễ sau lọc stage âm, transit xếp #1 ở 165/226 tuyến; riêng cấp hệ thống, transit đứng đầu 500/500 lần bootstrap."
 **Tự nêu điểm yếu trước khi bị hỏi:** "Đây là phân rã mô tả, không phải kết luận nhân quả; tỷ trọng trong tập đơn trễ không phải tỷ lệ trễ."
 **Chỉ:** `reports/dss_eval_raw.txt`, mục Attribution và Bootstrap route-level (V2).
 
@@ -81,7 +81,7 @@ print(len(f), f.order_id.nunique(), round((f.delay_days>0).mean()*100,4))
 
 ### 8:05–9:05 — Đánh giá: 1 phút
 **Nói 3 câu, không mở bảng:**
-1. "Backtest min_orders=30: **16/19 kỳ** nhóm gắn cờ có tỷ lệ trễ kỳ sau cao hơn; weighted diff **+8,2826 pp**."
+1. "Backtest min_orders=30: **16/19 kỳ** nhóm gắn cờ có tỷ lệ trễ kỳ sau cao hơn; weighted diff **+8,2826 pp**. Sign test giả định tháng độc lập; tháng liền kề có thể tương quan nên p-value có thể lạc quan."
 2. "So baseline `through`, CI chứa 0 nên **chưa đủ bằng chứng** DSS tốt hơn."
 3. "Ở min_orders=100, năm cặp ngưỡng quanh mặc định cho **10–21 tuyến**; 14 luôn phải đi cùng cấu hình 100/2,0/1,5."
 **Chỉ:** `reports/dss_eval_raw.txt`, mục Backtest, Bootstrap, S8.

@@ -224,6 +224,8 @@ với $T$ = tập kỳ có thể so sánh (có ít nhất một tuyến gắn c�
 
 **Chú thích trọng số `weighted_diff`:** trọng số $= N_{t+1} = |\,O_{t+1}|$ (tổng số đơn-tuyến kỳ $t+1$, không phân biệt nhóm). Cách thay thế trọng số theo đơn-tuyến nhóm flagged cho weighted diff +10,4624 pp trong lần chạy hiện hành; đây là một ước lượng khác, không phải hiệu quả can thiệp.
 
+Raw eval gọi cách thay thế này là `weighted_diff_flagged`; con số hiện hành là **+10,4624 pp**. Chỉ số chính `weighted_diff` dùng trọng số toàn bộ đơn-tuyến ở kỳ kế tiếp, nên không thay bằng con số flagged-weighted.
+
 ### Lọc kỳ
 
 | Điều kiện bỏ qua kỳ $t$ | Lý do |
@@ -250,13 +252,12 @@ Tham số cố định: $B = 10\,000$, seed = 42, weight\_col = `total_orders`. 
 
 Bootstrap so sánh DSS với **0**, với **prior** và với **through**; **through là so sánh chính** (baseline through dùng cùng lượng thông tin với DSS). Kết quả pair bootstrap:
 
-| So sánh | CI 95% (pp) | Kết luận |
-| --- | --- | --- |
-| vs 0 | [+3,68; +12,40] | Không chứa 0 → có thể nói "vượt 0" |
-| vs prior | [+0,45; +5,79] | Không chứa 0 → có thể nói "vượt prior" |
-| vs through (chính) | [−0,58; +2,35] | Chứa 0 → không dùng chữ "vượt" |
+| Loại bootstrap | vs 0 | vs prior | vs through (chính) |
+| --- | --- | --- | --- |
+| Pair (resample kỳ) | [+3,77; +12,55] pp | [+0,52; +5,92] pp | [−0,50; +2,52] pp |
+| Block (khối 3 tháng, circular) | [+2,08; +13,46] pp | [+0,69; +6,29] pp | [−0,30; +2,35] pp |
 
-Chỉ dùng chữ "vượt" khi CI không chứa 0.
+CI của hai cách resample so với through đều chứa 0; diễn giải là **chưa đủ bằng chứng** DSS tốt hơn through. Các CI của vs 0 và vs prior không chứa 0 trong lần chạy này, nhưng đây vẫn là chênh lệch tương quan hồi cứu, không phải hiệu quả can thiệp.
 
 Kỳ không có tuyến nào gắn cờ được ghi lại trong `periods` với `diff = NaN` và **không** tính vào `periods_evaluated`.
 
@@ -347,7 +348,9 @@ MA→SP, PR→BA và SP→TO đều thuộc 14 tuyến gắn cờ mặc định 
 
 ### V2 — Bootstrap route-level
 
-Bootstrap lấy mẫu lại tuyến (500 lần, seed 42), q=0,50; CI dưới đây là CI 95% cho tỷ trọng nguyên nhân trong tổng tập đơn trễ. Transit xếp hạng #1 ở 165/226 tuyến (73,01%).
+Bootstrap lấy mẫu lại tuyến (500 lần, seed 42), q=0,50; CI 95% đo nhiễu lấy mẫu giữa các tuyến tại q=0,50, không đo độ nhạy benchmark theo q. Tỷ trọng promise thay đổi khoảng 1–13% khi đổi q từ 0,25 sang 0,50; đây là độ nhạy benchmark riêng, không suy ra từ CI V2.
+
+Transit là stage đứng đầu ở 165/226 tuyến (73,01%). Đây là thống kê theo từng tuyến: 226 tuyến có ít nhất một đơn trễ trong mẫu phân tích sau khi loại thời gian giai đoạn âm; 165 đếm các tuyến mà transit có tỷ trọng attribution lớn nhất. Riêng ở cấp hệ thống, transit đứng đầu trong 500/500 lần bootstrap tại q=0,5.
 
 | Tỷ trọng | Ước lượng | CI 95% |
 | --- | ---: | ---: |
@@ -356,7 +359,7 @@ Bootstrap lấy mẫu lại tuyến (500 lần, seed 42), q=0,50; CI dưới đ�
 | Transit | 69,9162% | [56,4003%; 83,5136%] |
 | Promise | 13,3402% | [4,4096%; 23,1705%] |
 
-CI mô tả bất định lấy mẫu theo tuyến; không diễn giải thành tác động nhân quả. Mọi CI chứa 0 phải được mô tả là “chưa đủ bằng chứng”.
+CI mô tả bất định lấy mẫu theo tuyến; không diễn giải thành tác động nhân quả. Tỷ trọng là không âm theo định nghĩa, nên CI share không phải kiểm định khác 0 và không gắn trạng thái “CI không chứa 0”. Raw eval hiện hành chỉ báo cáo ước lượng và CI share, không có cột trạng thái kiểm định khác 0.
 
 ### V4 — Sign test và tương quan hồi cứu
 
@@ -368,7 +371,7 @@ Backtest dùng `min_orders=30`; 19 kỳ đủ điều kiện. Với min_orders=1
 | DSS so với prior | 12/5 | 17 | 0,07173 | 0,14346 |
 | DSS so với through | 12/4 | 16 | 0,03841 | 0,07681 |
 
-Weighted diff DSS là +8,2826 pp (mean +7,2403 pp; trọng số theo flagged orders +10,4624 pp). Với through, chênh lệch ước lượng không có CI bootstrap loại trừ 0: pair CI [−0,50; +2,52] pp và block CI [−0,30; +2,35] pp. Sign test so dấu từng kỳ không thay thế CI cho độ lớn chênh lệch; kết quả là tương quan hồi cứu và không xác định tác động can thiệp.
+Weighted diff DSS là +8,2826 pp (mean +7,2403 pp; `weighted_diff_flagged`, trọng số theo flagged orders, +10,4624 pp). Với through, chênh lệch ước lượng không có CI bootstrap loại trừ 0: pair CI [−0,50; +2,52] pp và block CI [−0,30; +2,35] pp. Sign test so dấu từng kỳ không thay thế CI cho độ lớn chênh lệch; kết quả là tương quan hồi cứu và không xác định tác động can thiệp. Exact sign test giả định các tháng độc lập; tháng liền kề có thể tương quan, nên p-value có thể lạc quan và không phải bằng chứng độc lập theo tháng.
 
 ### Hạn chế
 

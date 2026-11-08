@@ -10,11 +10,12 @@
 - Dữ liệu: 110.173 dòng cấp item; 96.981 đơn-tuyến trước lọc; 95.591 sau khi
   loại 1.390 đơn-tuyến có thời gian âm. Tỷ lệ trễ là 8,1556% theo đơn-tuyến và
   8,1950% theo đơn duy nhất trên 95.082 đơn.
-- Kiểm tra: pytest 77/77, Django `dss analytics` 22/22, regen eval pass.
+- Kiểm tra gần nhất trong `reports/CHECK_OUTPUT.txt`: pytest 78/78, Django `dss analytics` 22/22; `regen_eval` bị bỏ qua do `-Quick`, nên snapshot này không xác nhận raw eval vừa được tái tạo.
 - V4: `min_orders=30`, 19 kỳ; `min_orders=100`, 13 kỳ đủ điều kiện. Exact sign
   test (không tính hòa): DSS so 0 là 16/3, n=19, p một phía 0,00221 và hai phía
   0,00443; so prior 12/5, n=17, p=0,07173/0,14346; so through 12/4, n=16,
-  p=0,03841/0,07681. Đây là tương quan hồi cứu.
+  p=0,03841/0,07681. Đây là tương quan hồi cứu; sign test giả định các tháng
+  độc lập, nhưng tháng liền kề có thể tương quan nên p-value có thể lạc quan.
 
 | So sánh V4 | Dương/âm | n | p một phía | p hai phía |
 |---|---:|---:|---:|---:|
@@ -26,7 +27,12 @@
 - V2: route-level bootstrap 500 lần, seed 42, q=0,50. CI 95% tỷ trọng trong
   tập đơn trễ: approval 1,5799% [1,0753%; 1,9991%], prep 15,1638%
   [10,6215%; 19,1531%], transit 69,9162% [56,4003%; 83,5136%], promise
-  13,3402% [4,4096%; 23,1705%]. Transit đứng #1 ở 165/226 tuyến.
+  13,3402% [4,4096%; 23,1705%]. CI đo nhiễu lấy mẫu giữa tuyến tại q=0,50,
+  không đo độ nhạy benchmark theo q; promise ≈1–13% qua q=0,25/0,50.
+  Transit đứng đầu ở 165/226 tuyến có ít nhất một đơn trễ sau lọc stage âm
+  (thống kê theo tuyến, không phải tần suất bootstrap cấp hệ thống). Ở cấp hệ
+  thống, transit đứng đầu 500/500 lần bootstrap. Share không âm theo định nghĩa;
+  CI mô tả nhiễu lấy mẫu, không phải kiểm định khác 0.
 - S8: tại min_orders=100, năm cặp ngưỡng quanh mặc định cho 10–21 tuyến; bộ
   100/2,5/2,0 giữ lõi 6 tuyến. Toàn lưới cho 4–30 tuyến.
 - Decision Brief: các tổng là top-N, có thể chồng lấn và không phải tổng đơn
@@ -75,22 +81,30 @@ seller có thể bị confound bởi route mix; seller excess không phải số
 
 Backtest là tương quan hồi cứu; không có ROI hay đối chứng can thiệp.
 Simulation không phải counterfactual. Mỗi đơn có một carrier date; Wilson CI
-giả định đơn độc lập. CI của S4 chỉ mô tả sampling noise, không chứng minh tính
+giả định đơn độc lập. Các tháng liền kề trong V4 có thể tương quan, làm p-value
+sign test lạc quan. CI của S4 chỉ mô tả sampling noise, không chứng minh tính
 khả thi vận hành.
+
+- **Hai góc nhìn tuyến:** Route Priority xếp theo tỷ lệ trễ; Decision Brief xếp tác động theo số đơn trong mô phỏng P25. SP→SP đứng đầu nhóm đơn tránh ước tính nhưng không thuộc 14 tuyến gắn cờ theo tỷ lệ. Câu trả lời mẫu: “Hai khối trả lời hai câu hỏi khác nhau: tỷ lệ rủi ro và quy mô tác động ước tính.”
+- **Root Cause trên UI:** thẻ so với trung bình toàn hệ thống, chưa chuẩn hoá theo khoảng cách; `/api/dss/attribution` có peer-based attribution nhưng UI chưa dùng. Câu trả lời mẫu: “Đây là chẩn đoán thô theo trung bình chung; xem attribution API khi cần so peer.”
+- **Scenario 1:1:** mô hình giả định ngày tiết kiệm ở một chặng chuyển tương ứng thành ngày giao sớm hơn, có chặn theo thời lượng chặng. Câu trả lời mẫu: “Nếu… thì ước tính theo giả định 1:1; chưa mô hình hoá buffer hoặc lịch carrier.”
+- **Owner của route action:** trường owner là danh sách ghép từ ba đơn vị theo ba giai đoạn, không phải một chủ thể duy nhất. Câu trả lời mẫu: “Đây là đầu mối theo từng chặng; cần phân công một người chịu trách nhiệm khi triển khai.”
+- **Các tab mock:** Dashboard, OLAP và ETL Monitor chưa nối dữ liệu/API thật. Câu trả lời mẫu: “Chỉ tab DSS là live; ba tab còn lại là mock.”
+- **Nút ghi nhận:** “Ghi nhận khuyến nghị” chỉ tạo bản ghi ActionLog, không thực thi thao tác vận hành. Câu trả lời mẫu: “Nút ghi nhật ký để theo dõi, không đổi promise hay điều phối tuyến.”
 
 ## 1) Test results
 **Pytest (repo root):**
 ```bash
 .\backend\env\Scripts\python.exe -m pytest -q
 ```
-Result hiện hành: **77 passed** (xác nhận trong `reports/CHECK_OUTPUT.txt`).
+Result gần nhất: **78 passed** (xác nhận trong `reports/CHECK_OUTPUT.txt`; check dùng `-Quick`).
 
 **Django API tests (dss app):**
 ```bash
 cd backend
 ..\backend\env\Scripts\python.exe manage.py test dss analytics
 ```
-Result hiện hành: **22 tests OK** cho `dss analytics`.
+Result gần nhất: **22 tests OK** cho `dss analytics`.
 
 ## 2) Backtest (tuyến gắn cờ kỳ t vs tỷ lệ trễ kỳ t+1)
 **Method:** For each period `t` (from 2017 onward, `min_period_orders=500`), `route_priority` is run on data of period `t` with selected `min_orders`. Routes flagged as red/amber are compared against others in period `t+1`. Periods with no flags or too few flagged orders are recorded but not counted in `periods_evaluated`.
@@ -295,16 +309,14 @@ Hai loại bootstrap:
 
 | Loại bootstrap | vs 0 (DSS > 0) | vs prior | vs through *(so sánh chính)* |
 | --- | --- | --- | --- |
-| Pair (hiện hành) | [**+3.77; +12.55**] pp | [+0.52; +5.92] pp | [**−0.50; +2.52**] pp |
-| Block (3 tháng), through | — | — | [**−0.30; +2.35**] pp |
+| Pair (resample kỳ) | [+3,77; +12,55] pp | [+0,52; +5,92] pp | [−0,50; +2,52] pp |
+| Block (khối 3 tháng, circular) | [+2,08; +13,46] pp | [+0,69; +6,29] pp | [−0,30; +2,35] pp |
 
 **Đọc CI:**
 - Nếu CI chứa 0, kết luận là **chưa đủ bằng chứng** về chênh lệch.
 - **vs through:** pair CI hiện hành `[−0.50; +2.52]` và block CI `[−0.30; +2.35]` chứa 0; chưa đủ bằng chứng DSS tốt hơn through.
 
 **Quy tắc báo cáo:** với CI chứa 0, dùng “chưa đủ bằng chứng”; không diễn giải thành DSS vượt baseline.
-
-**Độ khớp số tự chạy:** với vs prior, chỉ **cận dưới** khớp số tôi tự chạy (+0,45 pp); cận trên +5,79 pp lệch 0,08 pp so với +5,87 pp.
 
 **Cảnh báo 19 kỳ:** chỉ có 19 kỳ nên CI chỉ mang tính tham khảo; circular block nối kỳ cuối với kỳ đầu.
 
@@ -355,7 +367,7 @@ Trong 14 tuyến, **7/14 có `uncertain=True`**: SP->PI, SP->SE, PR->BA, PR->RJ,
 **Vì sao `transit_goal_cut` của SP->BA (10) và SP->ES (9) trùng `promise_days`?** Không phải lỗi cột. `goal_seek_cut` tìm `x` nhỏ nhất trên lưới 0,5 sao cho `scenario` ≤ 5%; `goal_seek_promise` lấy `ceil(quantile(0,95))`. Với SP->BA, cả hai cho 10 và projected trùng `promise_late_after` (0,047059). Với SP->ES, cả hai cho 9 nhưng projected là 0,045922, khác `promise_late_after` 0,044551 vì `scenario` chặn mức cắt bởi transit thực tế của từng đơn. Trùng số là do cùng ngưỡng đuôi, không phải copy nhầm.
 
 ### 4a) Wilson 95% và cờ mẫu nhỏ cho 6 tuyến đỏ
-`route_priority`/`/api/dss/routes` trả thêm `ci_low`, `ci_high` (Wilson 95%) và `low_sample` (`orders < 200`); **không đổi nhãn đỏ/vàng và ngưỡng**. UI hiển thị dạng `late_rate [ci_low–ci_high]` kèm cảnh báo mẫu nhỏ.
+`route_priority`/`/api/dss/routes` trả thêm `ci_low`, `ci_high` (Wilson 95%) và `low_sample` (`orders < 200`); **không đổi nhãn đỏ/vàng và ngưỡng**. Wilson giả định đơn độc lập và không hiệu chỉnh clustering, nên CI có thể hẹp hơn bất định thực tế. UI hiển thị dạng `late_rate [ci_low–ci_high]` kèm cảnh báo mẫu nhỏ.
 
 | route | orders | late_orders | late_rate | ci_low | ci_high | low_sample |
 | --- | --- | --- | --- | --- | --- | --- |
