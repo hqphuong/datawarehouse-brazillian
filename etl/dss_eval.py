@@ -487,10 +487,24 @@ def backtest(
 
 def threshold_sensitivity(
     o: pd.DataFrame,
-    min_orders_values=(50, 100, 200),
-    threshold_pairs=((2.0, 1.5), (1.5, 1.25)),
+    min_orders_values=(50, 100, 150, 200),
+    threshold_pairs=(
+        (2.0, 1.5),  # mặc định
+        (2.5, 1.5),  # chỉ siết red
+        (2.0, 1.25),  # chỉ nới amber
+        (1.5, 1.25),  # nới cả hai
+        (2.0, 1.75),  # chỉ siết amber
+        (2.5, 2.0),  # siết cả hai
+    ),
 ) -> pd.DataFrame:
-    """Số tuyến đỏ/vàng theo các tổ hợp ``min_orders`` và ngưỡng ``(red, amber)``."""
+    """S8: số tuyến đỏ/vàng theo lưới ``min_orders`` × cặp ngưỡng ``(red, amber)``.
+
+    Sáu cặp ngưỡng là thiết kế **một-nhân-tố-mỗi-lần + kết hợp** quanh mặc
+    định ``(2,0; 1,5)``: giữ nguyên một ngưỡng và đổi ngưỡng kia, rồi đổi cả
+    hai theo hai hướng. Mục đích là cho thấy số tuyến bị gắn cờ phụ thuộc vào
+    quy ước ngưỡng, **không phải** một chân lý; mặc định chỉ là lựa chọn vận
+    hành. Cột ``is_default`` đánh dấu dòng mặc định.
+    """
     rows = []
     for min_orders in min_orders_values:
         for red, amber in threshold_pairs:
@@ -509,9 +523,42 @@ def threshold_sensitivity(
                     "flagged_routes": len(flagged),
                     "red_routes": int((flagged["level"] == "red").sum()),
                     "amber_routes": int((flagged["level"] == "amber").sum()),
+                    "is_default": bool(red == 2.0 and amber == 1.5),
                 }
             )
     return pd.DataFrame(rows)
+
+
+def threshold_sensitivity_report(o: pd.DataFrame) -> None:
+    """In S8: bảng nhạy ngưỡng đầy đủ và cảnh báo ngưỡng chỉ là quy ước."""
+    table = threshold_sensitivity(o)
+    print("\n## Độ nhạy ngưỡng (S8: min_orders × red/amber)")
+    print(
+        "- Lưới: min_orders ∈ {50, 100, 150, 200} × 6 cặp ngưỡng, thiết kế "
+        "một-nhân-tố-mỗi-lần + kết hợp quanh mặc định (2,0; 1,5)."
+    )
+    print(
+        "- Sáu cặp: mặc định (2,0; 1,5); chỉ siết red (2,5; 1,5); chỉ nới "
+        "amber (2,0; 1,25); nới cả hai (1,5; 1,25); chỉ siết amber "
+        "(2,0; 1,75); siết cả hai (2,5; 2,0)."
+    )
+    print(
+        "- Ngưỡng đỏ/vàng là QUY ƯỚC vận hành, không phải chân lý; bảng này "
+        "cho thấy số tuyến bị gắn cờ thay đổi theo cả min_orders và ngưỡng."
+    )
+    at50 = table[table["min_orders"] == 50]
+    print(
+        f"- Tại min_orders=50: {at50['flagged_routes'].min()}–"
+        f"{at50['flagged_routes'].max()} tuyến bị gắn cờ; toàn lưới: "
+        f"{table['flagged_routes'].min()}–{table['flagged_routes'].max()}."
+    )
+    default = table[(table["min_orders"] == 100) & table["is_default"]].iloc[0]
+    print(
+        f"- Mặc định min_orders=100 / red=2,0 / amber=1,5: "
+        f"{int(default['flagged_routes'])} tuyến "
+        f"({int(default['red_routes'])} đỏ, {int(default['amber_routes'])} vàng)."
+    )
+    print(_md_table(table))
 
 
 def top_routes_report(
@@ -1287,8 +1334,7 @@ def main() -> None:
     print(f"  DSS vs 0:     CI=[{lo_z:+.2f}; {hi_z:+.2f}] → {'CI không chứa 0 → có thể nói vượt 0' if lo_z > 0 else 'CI chứa 0 → không nói vượt'}")
     print(f"  DSS vs through: CI=[{lo_t:+.2f}; {hi_t:+.2f}] → {'CI không chứa 0 → DSS vượt through' if lo_t > 0 else 'CI chứa 0 → không nói vượt through'}")
 
-    print("\n## Độ nhạy ngưỡng")
-    print(_md_table(threshold_sensitivity(o)))
+    threshold_sensitivity_report(o)
 
     print("\n## Top 3 tuyến")
     print(_md_table(top_routes_report(o, n=3)))

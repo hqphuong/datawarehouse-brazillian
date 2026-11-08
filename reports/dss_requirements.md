@@ -1,6 +1,6 @@
 # DSS Requirements — nguồn sự thật duy nhất
 
-Cập nhật: 07/11/2026 (sau G2 — S1 redesign). Trạng thái: `todo` | `doing` | `done` | `changed` | `dropped`.
+Cập nhật: 08/11/2026 (sau Checkpoint C — S3, S4, S5, S7, S8). Trạng thái: `todo` | `doing` | `done` | `changed` | `dropped`.
 Mọi thay đổi trạng thái phải kèm evidence (lệnh chạy/file). Không đổi âm thầm.
 
 ## DATA
@@ -35,7 +35,7 @@ Mọi thay đổi trạng thái phải kèm evidence (lệnh chạy/file). Khôn
 | S5 | P1 | done | `seller_scorecard` + `seller_portfolio` **chỉ đơn single-seller** (đơn vị đơn hàng unique `order_id`; `is_late`=max, `gmv`=tổng). Loại 502 đơn nhiều seller + 0 thiếu `seller_id` = 0,5280% đơn / 1,0576% đơn-tuyến; dùng 94.580/95.082 đơn, 2.948 seller. Đủ mẫu (≥30): 609 seller. Phân khúc: ưu tiên 252 seller / 33.863 đơn / 4.117 trễ (52,86% đơn trễ); ổn định 357 / 44.733 / 2.332 (29,94%); cần thêm dữ liệu 2.339 / 15.984 / 1.339 (17,19%). Top 10 seller = 15,36% số đơn trễ / 9,79% GMV. Wilson CI + level red/amber/ok; `bad_review_rate` chỉ là liên hệ. Evidence: `reports/dss_eval_raw.txt` mục \"Seller scorecard\"; 62 pytest / 16 Django. |
 | S6 | P0 | todo | /brief: actions route/payment/promise (+seller), owner, CI, Vietnamese text |
 | S7 | P1 | done | `low_sample_targets`: tách tuyến có orders < 200 thành nhóm "cần thêm dữ liệu" (level tạm theo cùng bội số, Wilson CI, `needed_orders`), **không đổi** `route_priority`. 357/406 tuyến mẫu nhỏ; 89 có tín hiệu (red/amber tạm) với 382/670 đơn trễ của nhóm. Top: MA→SP 118 đơn/31 trễ (đỏ tạm, thiếu 82), SP→TO 195/25 (vàng, thiếu 5), PR→BA 144/24 (đỏ, thiếu 56). Evidence: `reports/dss_eval_raw.txt` mục "Tuyến mẫu nhỏ"; 64 pytest / 16 Django. |
-| S8 | P1 | todo | bảng nhạy ngưỡng min_orders × (red,amber) (H8) |
+| S8 | P1 | done | `threshold_sensitivity` mở rộng lưới min_orders {50, 100, 150, 200} × 6 cặp ngưỡng (mặc định 2,0/1,5; chỉ siết red 2,5/1,5; chỉ nới amber 2,0/1,25; nới cả hai 1,5/1,25; chỉ siết amber 2,0/1,75; siết cả hai 2,5/2,0), thêm cột `is_default`. Tại min_orders=50: 7–30 tuyến gắn cờ; toàn lưới 4–30. Mặc định 100/2,0/1,5 = 14 tuyến (6 đỏ, 8 vàng). Evidence: `reports/dss_eval_raw.txt` mục "Độ nhạy ngưỡng"; 64 pytest / 16 Django. |
 
 ## VALIDATION
 

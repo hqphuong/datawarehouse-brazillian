@@ -129,15 +129,38 @@ Kết luận pair bootstrap:
   DSS vs 0:     CI=[+3.77; +12.55] → CI không chứa 0 → có thể nói vượt 0
   DSS vs through: CI=[-0.50; +2.52] → CI chứa 0 → không nói vượt through
 
-## Độ nhạy ngưỡng
-| min_orders | red | amber | flagged_routes | red_routes | amber_routes |
-| --- | --- | --- | --- | --- | --- |
-| 50 | 2 | 1.5 | 21 | 7 | 14 |
-| 50 | 1.5 | 1.25 | 30 | 21 | 9 |
-| 100 | 2 | 1.5 | 14 | 6 | 8 |
-| 100 | 1.5 | 1.25 | 21 | 14 | 7 |
-| 200 | 2 | 1.5 | 11 | 4 | 7 |
-| 200 | 1.5 | 1.25 | 16 | 11 | 5 |
+## Độ nhạy ngưỡng (S8: min_orders × red/amber)
+- Lưới: min_orders ∈ {50, 100, 150, 200} × 6 cặp ngưỡng, thiết kế một-nhân-tố-mỗi-lần + kết hợp quanh mặc định (2,0; 1,5).
+- Sáu cặp: mặc định (2,0; 1,5); chỉ siết red (2,5; 1,5); chỉ nới amber (2,0; 1,25); nới cả hai (1,5; 1,25); chỉ siết amber (2,0; 1,75); siết cả hai (2,5; 2,0).
+- Ngưỡng đỏ/vàng là QUY ƯỚC vận hành, không phải chân lý; bảng này cho thấy số tuyến bị gắn cờ thay đổi theo cả min_orders và ngưỡng.
+- Tại min_orders=50: 7–30 tuyến bị gắn cờ; toàn lưới: 4–30.
+- Mặc định min_orders=100 / red=2,0 / amber=1,5: 14 tuyến (6 đỏ, 8 vàng).
+| min_orders | red | amber | flagged_routes | red_routes | amber_routes | is_default |
+| --- | --- | --- | --- | --- | --- | --- |
+| 50 | 2 | 1.5 | 21 | 7 | 14 | True |
+| 50 | 2.5 | 1.5 | 21 | 4 | 17 | False |
+| 50 | 2 | 1.25 | 30 | 7 | 23 | False |
+| 50 | 1.5 | 1.25 | 30 | 21 | 9 | False |
+| 50 | 2 | 1.75 | 13 | 7 | 6 | False |
+| 50 | 2.5 | 2 | 7 | 4 | 3 | False |
+| 100 | 2 | 1.5 | 14 | 6 | 8 | True |
+| 100 | 2.5 | 1.5 | 14 | 3 | 11 | False |
+| 100 | 2 | 1.25 | 21 | 6 | 15 | False |
+| 100 | 1.5 | 1.25 | 21 | 14 | 7 | False |
+| 100 | 2 | 1.75 | 10 | 6 | 4 | False |
+| 100 | 2.5 | 2 | 6 | 3 | 3 | False |
+| 150 | 2 | 1.5 | 12 | 4 | 8 | True |
+| 150 | 2.5 | 1.5 | 12 | 2 | 10 | False |
+| 150 | 2 | 1.25 | 17 | 4 | 13 | False |
+| 150 | 1.5 | 1.25 | 17 | 12 | 5 | False |
+| 150 | 2 | 1.75 | 8 | 4 | 4 | False |
+| 150 | 2.5 | 2 | 4 | 2 | 2 | False |
+| 200 | 2 | 1.5 | 11 | 4 | 7 | True |
+| 200 | 2.5 | 1.5 | 11 | 2 | 9 | False |
+| 200 | 2 | 1.25 | 16 | 4 | 12 | False |
+| 200 | 1.5 | 1.25 | 16 | 11 | 5 | False |
+| 200 | 2 | 1.75 | 8 | 4 | 4 | False |
+| 200 | 2.5 | 2 | 4 | 2 | 2 | False |
 
 ## Top 3 tuyến
 | route | orders | late_orders | baseline | level | stage | has_bottleneck | excess_approval | excess_prep | excess_transit | excess_ratio_approval | excess_ratio_prep | excess_ratio_transit | stage_ratio_diff | approval_cut_1 | approval_cut_3 | approval_cut_5 | approval_goal_cut | prep_cut_1 | prep_cut_3 | prep_cut_5 | prep_goal_cut | transit_cut_1 | transit_cut_3 | transit_cut_5 | transit_goal_cut | promise_days | promise_late_after |

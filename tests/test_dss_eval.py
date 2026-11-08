@@ -102,7 +102,7 @@ def test_backtest_handles_period_without_flagged_routes(o):
 def test_threshold_sensitivity_contract(o):
     table = E.threshold_sensitivity(o)
 
-    assert len(table) == 6
+    assert len(table) == 24  # 4 mức min_orders × 6 cặp ngưỡng
     assert list(table.columns) == [
         "min_orders",
         "red",
@@ -110,8 +110,24 @@ def test_threshold_sensitivity_contract(o):
         "flagged_routes",
         "red_routes",
         "amber_routes",
+        "is_default",
     ]
+    assert set(table["min_orders"]) == {50, 100, 150, 200}
+    assert table.groupby("min_orders").size().eq(6).all()
+    assert len(table[["red", "amber"]].drop_duplicates()) == 6
+    assert table["is_default"].sum() == 4  # một dòng mặc định mỗi min_orders
     assert (table["flagged_routes"] == table["red_routes"] + table["amber_routes"]).all()
+
+    # Mặc định 100 / 2,0 / 1,5 phải khớp con số đã công bố.
+    default = table[(table["min_orders"] == 100) & table["is_default"]].iloc[0]
+    assert default["flagged_routes"] == 14
+    assert default["red_routes"] == 6
+    assert default["amber_routes"] == 8
+
+    # H8: tại min_orders=50, số tuyến gắn cờ chạy 7–30 trên 6 cặp ngưỡng.
+    at50 = table[table["min_orders"] == 50]
+    assert at50["flagged_routes"].min() == 7
+    assert at50["flagged_routes"].max() == 30
 
 
 def test_top_routes_include_sp_rj(o):
