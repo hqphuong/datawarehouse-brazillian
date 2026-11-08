@@ -30,14 +30,14 @@ Hệ thống hỗ trợ:
 
 | Hạng mục | Trạng thái |
 |---|---|
-| ETL | Hoàn chỉnh, sinh 4 CSV trong `data/processed/` và nạp được PostgreSQL |
-| Data Warehouse | 4 bảng đã tạo và nạp dữ liệu |
-| Backend Django | App `analytics` ánh xạ DW + app `dss` với 4 API endpoint thật |
-| DSS rule-based | Hoàn chỉnh: 4 khối chức năng, có backtest và kiểm thử |
+| ETL | Hoàn chỉnh, sinh 5 CSV trong `data/processed/` và nạp được PostgreSQL |
+| Data Warehouse | 5 bảng đã tạo và nạp dữ liệu |
+| Backend Django | App `analytics` ánh xạ DW + app `dss` với 9 API endpoint thật |
+| DSS rule-based | Có route priority, attribution/Shapley, promise, feasible cut, seller scorecard/portfolio, low-sample, threshold sensitivity và Decision Brief |
 | Giao diện DSS | `web/Olist_Logistics_DSS_v3.html` — 4 tab, tab DSS gọi API thật |
 | Frontend Vite | Vẫn là scaffold mặc định, chưa phải giao diện DSS thật |
 | ML | Đã gỡ: không còn `etl/dss_ml.py`, endpoint `at-risk`, `scikit-learn`, `joblib` |
-| Kiểm thử | **26 pytest + 16 Django test** |
+| Kiểm thử | **77 pytest + 22 Django test**, raw eval tái tạo thành công |
 | Git | Working tree còn nhiều thay đổi chưa commit sau khi gỡ ML |
 
 ---
@@ -55,7 +55,7 @@ Olist CSV gốc (9 file)
         │
         ▼
  PostgreSQL — Star Schema
- Dim_Time / Dim_Location / Dim_Product / Fact_Delivery_SLA
+ Dim_Time / Dim_Location / Dim_Product / Dim_Seller / Fact_Delivery_SLA
         │
         ├──► Django ORM (analytics, managed=False)
         │
@@ -100,7 +100,7 @@ Brazillian/
 │
 ├── data/
 │   ├── raw/                  # 9 CSV Olist gốc (gitignore)
-│   └── processed/            # 4 CSV sau ETL (gitignore)
+│   └── processed/            # 5 CSV sau ETL (gitignore)
 │
 ├── etl/
 │   ├── config.py             # đường dẫn + cấu hình PostgreSQL
@@ -114,7 +114,7 @@ Brazillian/
 │   ├── dss_models.py         # Model Base DSS rule-based
 │   └── dss_eval.py           # backtest, bootstrap, threshold sensitivity
 │
-├── sql/create_tables.sql     # DDL 4 bảng DW
+├── sql/create_tables.sql     # DDL 5 bảng DW
 ├── prisma/schema.prisma      # mô hình DW cho Prisma Client
 │
 ├── backend/
@@ -212,7 +212,7 @@ Luồng xử lý:
    - `seller_prep_time_days`: từ duyệt đến khi bàn giao carrier.
    - `carrier_transit_time_days`: từ carrier nhận đến khi giao.
 4. Tính `delay_days` so với ngày giao cam kết.
-5. Sinh 4 bảng Dim/Fact.
+5. Sinh 5 bảng Dim/Fact.
 6. `load_data.py` nạp vào PostgreSQL.
 
 ---
@@ -223,7 +223,7 @@ Luồng xử lý:
 
 | Hàm | Vai trò |
 |---|---|
-| `load_orders()` | Đọc Fact + 3 Dim, trả về bảng 1 dòng = 1 (đơn, tuyến) |
+| `load_orders()` | Đọc Fact + 4 Dim, trả về bảng 1 dòng = 1 đơn-tuyến |
 | `wilson_interval(k, n)` | Khoảng tin cậy Wilson 95% cho tỷ lệ trễ |
 | `route_priority(...)` | Khối 1: xếp hạng tuyến đỏ/vàng |
 | `root_cause(o, route)` | Khối 2: tìm giai đoạn nghẽn |
@@ -247,7 +247,7 @@ Hằng số:
 - Sắp xếp **red-first**: trả hết tuyến đỏ trước, rồi vàng cho đủ `top`.
 - Cờ `low_sample`: mẫu nhỏ.
 - Cờ `uncertain`: cận dưới Wilson CI nằm dưới ngưỡng phân loại → nhãn chưa
-  chắc chắn.
+  được CI xác nhận.
 
 **Khối 2 — Root Cause**
 - Tính thời gian trung bình từng giai đoạn toàn hệ thống.
@@ -292,40 +292,35 @@ Hằng số:
 ## 10. Kết quả đã kiểm chứng
 
 ### Số liệu chính
-- Tỷ lệ trễ toàn hệ thống: **8,0727%**
-- Ngưỡng đỏ: **16,1454%** (= 2,0 × overall)
-- Ngưỡng vàng: **12,1091%** (= 1,5 × overall)
-- Số tuyến gắn cờ: **14** — gồm **6 đỏ, 8 vàng**
-- `uncertain`: **7/14 tuyến**
-- `low_sample`: **3/14 tuyến**
-- Transit excess của 14 tuyến: **1,43 → 12,54 ngày** (MA→SP đến SP→AL)
-- `excess_ratio`: **0/14 tuyến đổi stage** so với cách tính excess tuyệt đối
-- Goal seek cắt giảm:
-  - SP→BA = **10 ngày**
-  - SP→ES = **9 ngày**
-  - SP→RJ = **None** (không đạt trong 10 ngày)
+- Tỷ lệ trễ: **8,1556% theo đơn-tuyến** và **8,1950% theo đơn duy nhất** trên
+  95.082 đơn duy nhất.
+- Raw eval ghi nhận 110.173 dòng cấp item; 96.981 đơn-tuyến trước lọc và
+  95.591 sau khi loại 1.390 đơn-tuyến có thời gian âm.
+- Tại `min_orders=100`, `red=2,0`, `amber=1,5`: **14 tuyến** gắn cờ (6 đỏ,
+  8 vàng). Đây là một cấu hình vận hành, không phải con số bất biến.
+- Fact `Fact_Delivery_SLA` có 21 cột theo DDL; DW có 5 bảng và ETL sinh 5 CSV.
 
 ### Backtest
-- Chạy theo tháng, `min_orders = 30`.
-- **16/19 kỳ** có tỷ lệ trễ kỳ sau của nhóm bị gắn cờ cao hơn nhóm còn lại.
-- `weighted_diff` (trọng số tổng đơn): **+8,14 điểm phần trăm**
-- `mean_diff`: **+7,13 điểm phần trăm**
-- `weighted_diff_flagged`: **+10,32 điểm phần trăm**
+- Chạy theo kỳ, `min_orders = 30`; **16/19 kỳ** nhóm gắn cờ có tỷ lệ trễ kỳ
+  sau cao hơn nhóm còn lại.
+- `weighted_diff`: **+8,2826 pp**; `mean_diff`: **+7,2403 pp**;
+  `weighted_diff_flagged`: **+10,4624 pp**.
+- Đây là tương quan hồi cứu, không chứng minh tác động của can thiệp.
 
 ### Bootstrap CI
-- So với 0: **[+3,68; +12,40]** → dương rõ ràng.
-- So với baseline `prior`: **[+0,45; +5,79]** → dương.
-- So với baseline `through`: **[−0,58; +2,35]** → **chứa 0**, nên **không thể
-  khẳng định vượt baseline through**.
+- So với 0: **[+3,77; +12,55] pp**.
+- So với baseline `prior`: **[+0,52; +5,92] pp**.
+- So với baseline `through`: **[−0,50; +2,52] pp**, chứa 0 nên **chưa đủ bằng
+  chứng** DSS tốt hơn through.
 
 ### Threshold sensitivity
-Đã chạy các tổ hợp `min_orders ∈ {50, 100, 200}` ×
-`(red, amber) ∈ {(2.0, 1.5), (1.5, 1.25)}`. Khi nới ngưỡng, số tuyến bị gắn cờ
-tăng đáng kể (ví dụ 100/2.0/1.5 → 14 tuyến; 50/1.5/1.25 → 30 tuyến).
+Ở `min_orders=100`, năm cặp ngưỡng quanh mặc định làm số tuyến gắn cờ dao động
+10–21; bộ 100/2,5/2,0 giữ lõi 6 tuyến. Toàn lưới cho kết quả 4–30. Xem
+`reports/dss_eval_raw.txt` để biết từng cấu hình.
 
 ---
 
-## 11. API DSS — 4 endpoint
+## 11. API DSS — 9 endpoint
 
 Base URL: `http://127.0.0.1:8000/api/dss/`
 
@@ -335,6 +330,11 @@ Base URL: `http://127.0.0.1:8000/api/dss/`
 | GET | `/scenario` | `route`, `year`, `approval`, `prep`, `transit` | tỷ lệ trễ dự báo, bottleneck, chuỗi sensitivity |
 | GET | `/promise` | `route`, `year`, `target` | số ngày cần kéo dài cam kết |
 | GET/POST | `/actions` | POST: `action`, `route`, `level`, `detail` | ghi log / trả 50 hành động gần nhất |
+| GET | `/brief` | tham số lọc theo API | Decision Brief gồm nhóm hành động và GMV |
+| GET | `/attribution` | `q=0.25` hoặc `q=0.5` | Phân rã Shapley theo peer benchmark; q=0.75 trả 400 |
+| GET | `/promise-policy` | mức phục vụ 85/90/95% | Bảng calibration, không phải khuyến nghị đặt promise |
+| GET | `/sellers` | tham số lọc seller | Seller scorecard |
+| GET | `/portfolio` | `k` | Portfolio seller; `k=102` bao phủ 50,10% đơn trễ |
 
 Đặc điểm kỹ thuật:
 - Dữ liệu kho được load **một lần khi module `views.py` được import**.
@@ -342,9 +342,6 @@ Base URL: `http://127.0.0.1:8000/api/dss/`
 - NaN/Infinity được chuyển thành `null` để JSON hợp lệ.
 - `actions` được `csrf_exempt`.
 - Lỗi tham số trả JSON `{"error": "..."}` với HTTP 400.
-
-> **Lưu ý:** `README.md` vẫn còn câu “chưa có API endpoint” — câu này đã **lỗi
-> thời** so với code hiện tại.
 
 ---
 
@@ -377,15 +374,16 @@ thật.
 
 | Bộ test | Số lượng | Lệnh |
 |---|---:|---|
-| pytest toàn repo | **26 passed** | `python -m pytest -q` |
-| Django app `dss` | **16 tests OK** | `cd backend; python manage.py test dss -v 2` |
+| pytest toàn repo | **77 passed** | `python -m pytest -q` |
+| Django app `dss analytics` | **22 tests OK** | `cd backend; ..\backend\env\Scripts\python.exe manage.py test dss analytics` |
+| Regen eval | **pass** | `.\scripts\check.ps1` |
 
 File test:
 - `tests/test_dss_models.py` — test Model Base, ngưỡng, Wilson, uncertain,
   scenario, goal seek.
 - `tests/test_dss_eval.py` — test backtest, bootstrap, threshold sensitivity.
 - `tests/test_models.py` — test model DW.
-- `backend/dss/tests.py` — test 4 endpoint API.
+- `backend/dss/tests.py` — kiểm thử API DSS.
 
 ---
 
@@ -466,7 +464,7 @@ python manage.py test dss
 | `PROMPT_AI_TIEP_TUC.md` | Ngữ cảnh cho phiên làm việc tiếp theo |
 | `reports/dss_formulas.md` | Công thức và giả định toàn bộ hàm DSS |
 | `reports/dss_results.md` | Kết quả test, backtest, threshold, 14 tuyến, bootstrap, hạn chế |
-| `reports/api_dss.md` | Tài liệu chi tiết 4 endpoint DSS |
+| `reports/api_dss.md` | Tài liệu chi tiết 9 endpoint DSS |
 | `reports/run_guide.md` | Hướng dẫn chạy và test |
 | `reports/dss_eval_raw.txt` | Output thô của đánh giá |
 
@@ -474,10 +472,9 @@ python manage.py test dss
 
 ## 16. Git & thay đổi gần nhất
 
-- Branch: `dss`
-- HEAD: `bf1f2f9` — “DSS: dss_formulas + dss_results (through chinh, bootstrap,
-  uncertain, excess_ratio)”
-- Tag: `backup-co-ml` trỏ cùng HEAD
+- Branch theo phạm vi công việc: `dss-v2`.
+- Các thay đổi Phase 1/2 được kiểm tra bằng `reports/CHECK_OUTPUT.txt`; không
+  tạo commit trong lượt cập nhật tài liệu này.
 
 Các thay đổi chưa commit sau khi gỡ ML:
 
@@ -530,18 +527,14 @@ Kết quả: **0 dòng khớp**.
 - Giao diện: còn **6 huy hiệu** cần xử lý theo ghi chú trong `STATE.md`.
 - `frontend/` Vite chưa nối API, chưa phải giao diện thật.
 - 3 tab Dashboard / OLAP / ETL vẫn dùng dữ liệu mẫu.
-- `README.md` cần cập nhật vài chỗ lỗi thời:
-  - “Backend chưa có API endpoint” → thực tế đã có 4 endpoint DSS.
-  - Tên file mockup cũ `Olist Logistics DSS.html` → thực tế là
-    `web/Olist_Logistics_DSS_v3.html`.
+- API DSS hiện có 9 endpoint; Dashboard/OLAP/ETL Monitor vẫn là mock.
 - Working tree chưa commit sau khi gỡ ML.
 
 ---
 
 ## Tóm tắt một câu
 
-Đây là đồ án **Data Warehouse + DSS logistics** hoàn chỉnh ở tầng dữ liệu, ETL,
-backend API và mô hình ra quyết định dựa trên luật; giao diện DSS thật đã nối
-API, còn frontend Vite và 3 tab phụ vẫn là mock/scaffold. Toàn bộ phần ML đã được
-gỡ, hệ thống hiện chạy thuần **DSS luật + mô phỏng**, với **26 pytest + 16 Django
-test** đều pass.
+Đây là đồ án **Data Warehouse + DSS logistics** ở tầng dữ liệu, ETL, backend API
+và mô hình ra quyết định dựa trên luật; giao diện DSS thật đã nối API, còn
+frontend Vite và 3 tab phụ vẫn là mock/scaffold. Toàn bộ phần ML đã được gỡ;
+lần xác nhận hiện hành có **77 pytest + 22 Django tests** và regen eval pass.

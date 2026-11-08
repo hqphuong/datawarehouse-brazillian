@@ -99,14 +99,26 @@ hoặc kéo thả file vào trình duyệt. Giao diện gọi `http://localhost:
 
 ## 4. Chạy kiểm thử
 
-### 4.1 pytest (unit test + eval test, không cần DB)
+### 4.1 Bộ kiểm tra tổng hợp
+
+```powershell
+# Từ thư mục gốc Brazillian/
+.\scripts\check.ps1
+```
+
+Script chạy pytest, Django tests cho `dss analytics`, tái tạo raw eval và ghi
+tóm tắt vào `reports/CHECK_OUTPUT.txt`. Lần xác nhận hiện hành: **77 pytest
+passed, 22 Django tests OK, regen_eval pass**. Dùng `.\scripts\check.ps1 -Quick`
+để bỏ qua bước tái tạo raw eval. Console chỉ in `OK` hoặc tên phần thất bại.
+
+### 4.2 pytest riêng (unit test + eval test, không cần DB)
 
 ```powershell
 # Từ thư mục gốc Brazillian/
 .\backend\env\Scripts\python.exe -m pytest -q
 ```
 
-Kết quả kỳ vọng: **26 passed** (~5–7 giây).
+Kết quả lần xác nhận hiện hành: **77 passed**.
 
 Chạy verbose hơn:
 
@@ -115,10 +127,10 @@ Chạy verbose hơn:
 ```
 
 Danh sách test:
-- `tests/test_dss_models.py` — 19 test kiểm tra hợp đồng dữ liệu các hàm mô hình
-- `tests/test_dss_eval.py` — 7 test kiểm tra backtest, threshold sensitivity, top routes, negative time
+- `tests/test_dss_models.py` — hợp đồng dữ liệu các hàm mô hình
+- `tests/test_dss_eval.py` — backtest, threshold sensitivity, top routes, negative time
 
-### 4.2 Django test (`manage.py test dss`) — cần PostgreSQL
+### 4.3 Django test — cần PostgreSQL
 
 ```powershell
 cd backend
@@ -131,7 +143,7 @@ hoặc với output chi tiết:
 .\env\Scripts\python.exe manage.py test dss -v 2
 ```
 
-Kết quả kỳ vọng: **16 tests OK** (~10–30 giây do phải tạo/xóa test database).
+Kết quả lần xác nhận hiện hành: **22 tests OK** (~10–30 giây do phải tạo/xóa test database).
 
 > Django test tạo một database tạm (`test_Brazillian`) trên PostgreSQL, chạy xong tự xóa. Cần PostgreSQL đang chạy và user có quyền `CREATEDB`.
 

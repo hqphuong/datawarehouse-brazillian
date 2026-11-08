@@ -22,12 +22,40 @@ Hệ thống gồm 4 phần:
   `Fact_Delivery_SLA` đã được tạo và nạp dữ liệu.
 - **Backend**: Django + app `analytics` (model ánh xạ DW, `managed = False`) và
   app `dss`. API DSS tại `/api/dss/` gồm `routes`, `scenario`, `promise`,
-  `actions`; tài liệu: `reports/api_dss.md`.
+  `actions`, `brief`, `attribution`, `promise-policy`, `sellers`, `portfolio`;
+  tài liệu: `reports/api_dss.md`.
 - **Frontend**: `web/Olist_Logistics_DSS_v3.html` — tab **DSS** gọi API Django
   thật; 3 tab còn lại vẫn là mock (xem cảnh báo bên dưới).
 - **Mockup UI**: `web/Olist_Logistics_DSS_v3.html` — mở trực tiếp bằng trình duyệt.
 - **Prisma**: schema mô tả DW và Prisma Client (dùng cho tooling/Node).
-- **Kiểm thử**: 38 pytest, 16 Django test (`manage.py test dss`).
+- **Kiểm thử lần xác nhận hiện hành**: pytest 77/77, Django 22/22 và
+  `regen_eval` pass; xem `reports/CHECK_OUTPUT.txt`.
+
+### Các khối DSS và API
+
+| Endpoint | Chức năng |
+|---|---|
+| `/routes`, `/scenario`, `/promise`, `/actions` | Tuyến, mô phỏng, promise và ghi nhận hành động |
+| `/brief` | Decision Brief gồm các nhóm hành động và GMV |
+| `/attribution` | Attribution theo peer benchmark; `q` chỉ nhận `0.25` hoặc `0.5` |
+| `/promise-policy` | Bảng mức phục vụ 85/90/95%, không phải khuyến nghị đặt promise |
+| `/sellers`, `/portfolio` | Seller scorecard và danh mục seller; `k=102` bao phủ 50,10% đơn trễ |
+
+Decision Brief chỉ dùng NET cho promise; tổng các nhóm là top-N, có thể chồng
+lấn và không phải tổng đơn tránh được. Nội dung what-if là “nếu… thì ước tính”;
+đổi promise là đổi định nghĩa trễ, không rút ngắn thời gian giao.
+
+### Snapshot đánh giá hiện hành
+
+- Fact có 21 cột theo DDL; raw eval ghi nhận 110.173 dòng cấp item.
+- Sau lọc 1.390 đơn-tuyến có stage time âm, còn 95.591 đơn-tuyến trên
+  95.082 đơn duy nhất.
+- Tỷ lệ trễ: 8,1556% theo đơn-tuyến; 8,1950% theo đơn duy nhất.
+- Backtest min_orders=30: 16/19 kỳ, weighted diff +8,2826 pp (tương quan
+  hồi cứu, không phải hiệu quả can thiệp).
+- V4 sign test vs through: 12 dương / 4 âm, n=16; p hai phía 0,07681.
+- V2 route bootstrap: 500 lần, seed 42, q=0,50; CI và attribution chi tiết ở
+  `reports/dss_eval_raw.txt`.
 
 > **⚠️ Nhãn cảnh báo giao diện:**
 > - Tab **Dashboard**, **OLAP**, **ETL Monitor** hiển thị **dữ liệu mẫu** (mock
