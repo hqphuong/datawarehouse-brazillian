@@ -156,6 +156,9 @@ function DSS({ toast }) {
   const [pmError, setPmError] = useState('');
   const [actionMsg, setActionMsg] = useState('');
   const [applying, setApplying] = useState(false);
+  const [insightData, setInsightData] = useState({});
+  const [insightErrors, setInsightErrors] = useState({});
+  const [insightLoading, setInsightLoading] = useState(true);
 
   const route = pri.some(p => p.route === sel) ? sel : (pri[0] && pri[0].route);
   const chosen = pri.find(p => p.route === route) || null;
@@ -164,6 +167,42 @@ function DSS({ toast }) {
   const pct = v => (v == null ? '—' : (v * 100).toFixed(1).replace('.', ',') + '%');
   const pct1 = v => (v == null ? '—' : (v * 100).toFixed(1).replace('.', ',') + '%');
   const fixed = (v, d = 2) => (v == null ? '—' : Number(v).toFixed(d).replace('.', ','));
+
+  useEffect(() => {
+    let cancelled = false;
+    const q = year === 'all' ? '' : `?year=${encodeURIComponent(year)}`;
+    const endpoints = {
+      brief: `${DSS_API}/brief${q}`,
+      sellers: `${DSS_API}/sellers${q}`,
+      policy: `${DSS_API}/promise-policy${q}`,
+    };
+    setInsightData({});
+    setInsightErrors({});
+    setInsightLoading(true);
+    Promise.all(Object.entries(endpoints).map(async ([key, url]) => {
+      try {
+        const response = await fetch(url);
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
+        return [key, { data: body }];
+      } catch (error) {
+        return [key, { error: error.message }];
+      }
+    })).then(results => {
+      if (cancelled) return;
+      const data = {};
+      const errors = {};
+      results.forEach(([key, result]) => {
+        if (result.data) data[key] = result.data;
+        if (result.error) errors[key] = result.error;
+      });
+      setInsightData(data);
+      setInsightErrors(errors);
+    }).finally(() => {
+      if (!cancelled) setInsightLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [year]);
 
   // Khối 1: nạp danh sách tuyến từ Django API.
   useEffect(() => {
@@ -302,6 +341,38 @@ function DSS({ toast }) {
 
   const lv = { red: 'bg-red-50/60 border-red-100 text-red-500', amber: 'bg-amber-50/60 border-amber-100 text-amber-500' };
   const excessMax = root ? Math.max(...DS_ST.map(s => Math.abs((root.excess && root.excess[s.k]) || 0)), 0.001) : 1;
+  const briefGroups = insightData.brief ? [
+    {
+      key: 'route_actions',
+      title: 'Theo tuyến',
+      scope: `Tối đa 3 dòng trong top ${insightData.brief.parameters?.top_routes ?? 5} tuyến theo S4 peer P25.`,
+      rows: insightData.brief.route_actions || [],
+    },
+    {
+      key: 'payment_actions',
+      title: 'Theo loại thanh toán',
+      scope: `Tối đa 3 dòng trong top ${insightData.brief.parameters?.top_payment ?? 5} payment_type, chỉ approval và tác động thấp.`,
+      rows: insightData.brief.payment_actions || [],
+    },
+    {
+      key: 'promise_actions',
+      title: 'Theo promise',
+      scope: `Tối đa 3 dòng trong top ${insightData.brief.parameters?.top_routes ?? 5} ô tuyến × weight_band theo NET.`,
+      rows: insightData.brief.promise_actions || [],
+    },
+    {
+      key: 'seller_actions',
+      title: 'Theo seller',
+      scope: `Tối đa 3 dòng trong top ${insightData.brief.parameters?.top_sellers ?? 5} seller theo excess; chỉ đơn single-seller.`,
+      rows: insightData.brief.seller_actions || [],
+    },
+    {
+      key: 'low_sample_actions',
+      title: 'Cần thêm dữ liệu',
+      scope: `Tối đa 3 dòng trong top ${insightData.brief.parameters?.top_low_sample ?? 5} tuyến mẫu nhỏ có tín hiệu (<${insightData.brief.parameters?.low_sample_threshold ?? 200} đơn).`,
+      rows: insightData.brief.low_sample_actions || [],
+    },
+  ] : [];
 
   return (
     <div className="space-y-6 fade">
@@ -314,6 +385,98 @@ function DSS({ toast }) {
 
       {listError && <div className="rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 text-sm text-red-500">{listError}</div>}
 
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <Card title="Decision Brief">
+          {insightLoading && !insightData.brief && <div className="text-sm text-slate-400">Đang tải Decision Brief…</div>}
+          {insightErrors.brief && <div className="text-sm text-red-500">Không tải được /brief: {insightErrors.brief}</div>}
+          {insightData.brief && <>
+            <div className="text-xs text-slate-500 mb-3">
+              S3 NET toàn bộ ô đủ mẫu (tham chiếu, không phải tổng nhóm top-N): {insightData.brief.promise_summary?.net_avoided_orders ?? '—'} đơn-tuyến; đổi định nghĩa trễ, không rút ngắn thời gian giao.
+            </div>
+            <div className="space-y-4">
+              {briefGroups.map(group => (
+                <section key={group.key} className="border-t border-slate-100 pt-3">
+                  <h4 className="text-xs font-semibold text-slate-700">{group.title}</h4>
+                  <p className="text-xs text-slate-400 mt-1">{group.scope}</p>
+                  <div className="space-y-2 mt-2">
+                    {group.rows.slice(0, 3).map((row, i) => {
+                      const gmv = `${Number(row.gmv || 0).toLocaleString('vi-VN')} R$`;
+                      const action = row.action?.replace(
+                        /(GMV (?:tuyến|nhóm|ô|seller) [\d.]+)/g,
+                        '$1 R$'
+                      );
+                      let label;
+                      if (group.key === 'route_actions') {
+                        label = `Tuyến ${row.route} · ${row.avoided_orders} đơn-tuyến · GMV ${gmv}`;
+                      } else if (group.key === 'payment_actions') {
+                        label = `${row.payment_type} · ${row.avoided_orders} đơn-tuyến · GMV ${gmv}`;
+                      } else if (group.key === 'promise_actions') {
+                        label = `${row.route} × ${row.weight_band} · NET ${row.net_avoided_orders} đơn-tuyến · GMV ${gmv}`;
+                      } else if (group.key === 'seller_actions') {
+                        label = `Seller ${String(row.seller_id).slice(0, 8)}… · excess ${row.estimated_excess_late_orders} (liên hệ) · GMV ${gmv}`;
+                      } else {
+                        label = `Tuyến ${row.route} · ${row.late_orders}/${row.orders} đơn-tuyến trễ · GMV ${gmv}`;
+                      }
+                      return (
+                        <div key={`${group.key}-${i}`} className="border-t border-slate-100 pt-2">
+                          <div className="text-xs font-medium text-slate-700">{label}</div>
+                          {action && <div className="text-xs text-slate-500 mt-1">{action}</div>}
+                          {row.status && <div className="text-xs text-slate-400 mt-1">{row.status === 'có cơ sở' ? 'ước lượng ổn định' : row.status}</div>}
+                        </div>
+                      );
+                    })}
+                    {!group.rows.length && <div className="text-xs text-slate-400">Không có mục trong nhóm này.</div>}
+                  </div>
+                </section>
+              ))}
+            </div>
+            <p className="text-xs text-slate-400 mt-3">Các nhóm có thể chồng lấn trên cùng tập đơn trễ, không cộng tổng giữa nhóm; seller excess là liên hệ, không phải số đơn tránh được.</p>
+          </>}
+        </Card>
+
+        <Card title="Seller Scorecard">
+          {insightLoading && !insightData.sellers && <div className="text-sm text-slate-400">Đang tải Seller Scorecard…</div>}
+          {insightErrors.sellers && <div className="text-sm text-red-500">Không tải được /sellers: {insightErrors.sellers}</div>}
+          {insightData.sellers && <>
+            <div className="text-xs text-slate-500 mb-3">
+              {insightData.sellers.summary?.n_sellers_scored ?? '—'} seller đủ mẫu (tối thiểu {insightData.sellers.summary?.min_orders ?? 30} đơn); scorecard chỉ dùng đơn single-seller.
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="text-slate-400"><tr><th className="pb-2">Seller</th><th className="pb-2">Đơn trễ</th><th className="pb-2">Tỷ lệ trễ</th><th className="pb-2">Phân khúc</th></tr></thead>
+                <tbody>{(insightData.sellers.rows || []).slice(0, 5).map(row => (
+                  <tr key={row.seller_id} className="border-t border-slate-100">
+                    <td className="py-2 pr-2 font-mono text-slate-600">{String(row.seller_id).slice(0, 8)}…</td>
+                    <td className="py-2">{row.late_orders}</td><td className="py-2">{pct(row.late_rate)}</td>
+                    <td className="py-2">{row.segment}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+            <p className="text-xs text-slate-400 mt-3">{insightData.sellers.note}</p>
+          </>}
+        </Card>
+
+        <Card title="Promise Policy" right={<span className="text-xs text-slate-400">Mức phục vụ</span>}>
+          {insightLoading && !insightData.policy && <div className="text-sm text-slate-400">Đang tải Promise Policy…</div>}
+          {insightErrors.policy && <div className="text-sm text-red-500">Không tải được /promise-policy: {insightErrors.policy}</div>}
+          {insightData.policy && <>
+            <p className="text-xs text-slate-500 mb-3">{insightData.policy.label}. {insightData.policy.note}</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="text-slate-400"><tr><th className="pb-2">Tuyến</th><th className="pb-2">Mức</th><th className="pb-2">Ngày</th><th className="pb-2">Tỷ lệ trễ</th></tr></thead>
+                <tbody>{(insightData.policy.rows || []).slice(0, 9).map((row, i) => (
+                  <tr key={`${row.route}-${row.service_level}-${i}`} className="border-t border-slate-100">
+                    <td className="py-2">{row.route}</td><td className="py-2">{pct(row.service_level)}</td>
+                    <td className="py-2">{row.needed_days}</td><td className="py-2">{pct(row.late_rate)}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          </>}
+        </Card>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card title="1. Route Priority" right={<span className="text-xs text-slate-400">red ≥ 2× · amber ≥ 1.5× system late rate</span>}>
           {loadingPri && <div className="text-sm text-slate-400 py-6 text-center">Đang tải danh sách tuyến…</div>}
@@ -323,7 +486,7 @@ function DSS({ toast }) {
               className={`w-full text-left rounded-xl border p-3 flex items-center gap-3 ${lv[p.level]} ${route === p.route ? 'ring-2 ring-blue-200' : ''}`}>
               <Icon n="alert" className="shrink-0" />
               <div className="flex-1"><div className="text-sm font-medium text-slate-800">{p.route}</div>
-                <div className="text-xs text-slate-500">{p.late_orders} late of {p.orders} orders</div></div>
+                <div className="text-xs text-slate-500">{p.late_orders} trễ / {p.orders} đơn-tuyến</div></div>
               <div className="text-right shrink-0">
                 <div className="text-sm font-semibold text-slate-700 whitespace-nowrap">
                   {pct1(p.late_rate)} <span className="text-xs font-normal text-slate-400">[{pct1(p.ci_low)}–{pct1(p.ci_high)}]</span>
@@ -368,7 +531,7 @@ function DSS({ toast }) {
               <div className="flex items-center justify-between text-sm mt-4"><span className="text-slate-600">Target late rate</span><span className="font-semibold text-slate-800">{target}%</span></div>
               <input type="range" min="1" max="20" step="1" value={target} onChange={e => setTarget(+e.target.value)} className="w-full mt-2" />
               <div className="mt-3 p-4 rounded-xl bg-slate-50 border border-slate-100 text-sm text-slate-600">
-                {pm ? <>Extend the delivery promise by <b className="text-slate-800">{pm.extra_days} day(s)</b> → late rate falls to <b className="text-slate-800">{pct(pm.late_after)}</b>.</>
+                {pm ? <>Nếu đổi cam kết +<b className="text-slate-800">{pm.extra_days}</b> ngày thì tỷ lệ trễ theo định nghĩa mới ước tính <b className="text-slate-800">{pct(pm.late_after)}</b>; đổi định nghĩa trễ, không rút ngắn thời gian giao.</>
                   : <span>{loadingPm ? 'Đang tính goal seek…' : 'Chưa có kết quả goal seek.'}</span>}
               </div>
               {pmError && <div className="text-xs text-red-500 mt-2">{pmError}</div>}

@@ -41,16 +41,16 @@ AUC/time-split/replay, các badge UI v2.
 
 ## Deviation đã duyệt (G1/G2)
 
-- G1: bỏ U2; U1 chỉ 3 thẻ chính; X2 chỉ sửa số headline; V1/V3 hoãn nếu hết giờ. Giữ P0 S3, S4, S6, A1, X1; không cắt S1, S3, S4, S6.
+- G1: bỏ U2; U1 chỉ 3 thẻ chính; X2 chỉ sửa số headline; V1/V3 được loại khỏi phạm vi. Giữ P0 S3, S4, S6, A1, X1; không cắt S1, S3, S4, S6.
 - G2: thêm X3 (P1): đồng bộ docs còn số cũ MỘT LẦN sau Checkpoint D, dùng số cuối; không sửa rải rác. Không đánh done khi chưa evidence.
 - G2b: đã duyệt phương án (2) và triển khai: transit benchmark xuyên tuyến theo decile khoảng cách; approval theo `payment_type`; prep theo `weight_band`; bỏ within-route dispersion (ghi hạn chế).
 
 ## Còn lại
 
-- UI còn chữ "đơn-tuyến" (F4 → U1).
-- Wilson CI giả định đơn độc lập; V2 xử lý route-level.
+- U1 hoàn tất phần code và wording: ba thẻ API DSS, mọi nhóm Decision Brief, GMV kèm hậu tố R$, và nhãn đơn-tuyến. Không chạy kiểm tra giao diện theo yêu cầu.
+- V2 report code đã thêm tần suất transit rank #1 cấp hệ thống. `reports/dss_eval_raw.txt` hiện hành vẫn chưa có x/500 vì không tái sinh theo yêu cầu; không dùng số tự suy tính.
+- Wilson CI giả định các đơn độc lập; bootstrap route-level ở V2 phản ánh nhiễu lấy mẫu tuyến nhưng không loại bỏ mọi phụ thuộc.
 - `PROMPT_AI_TIEP_TUC.md` đang bị xoá ở worktree (chưa stage) — người dùng quyết định.
-- 6 huy hiệu giao diện (checkpoint E).
 
 ## DSS optimize progress
 
@@ -59,11 +59,11 @@ Branch: `dss-v2` (tag `before-optimize` tại 32a34ca). Deadline 15/11/2026 23:5
 - [x] F1 [x] F2 [x] F3 [x] F4 [x] F5 [x] F6 [x] F7 [x] F8 [x] F9
 - [x] D1 [x] D2
 - [x] S1 [x] S2 [x] S3 [x] S4 [x] S5 [x] S6 [x] S7 [x] S8 [x]
-- [ ] V1 [ ] V2 [ ] V3 [ ] V4
-- [ ] A1 [ ] U1 [ ] U2
-- [ ] X1 [ ] X2 [ ] X3
+- [x] V1 dropped [ ] V2 raw frequency pending [x] V3 dropped [x] V4
+- [x] A1 [x] U1 [x] U2 dropped
+- [x] X1 [x] X2 [x] X3
 
-NEXT (trước Phase 1): A1 — API `/brief` + các endpoint P0 (dùng `dss_brief.decision_brief`), rồi V2/V4 nếu còn thời gian. Không mở X3 trước Checkpoint D.
+NEXT: user chạy `.\scripts\check.ps1` để cập nhật raw eval có tần suất V2 system-bootstrap x/500; paste `reports/CHECK_OUTPUT.txt`. Không chạy thay user.
 
 Schema facts đã xác minh (06/11/2026):
 - `data/processed/`: 5 CSV gồm dim_time, dim_location, dim_product, dim_seller, fact_delivery_sla.
@@ -86,6 +86,15 @@ Schema facts đã xác minh (06/11/2026):
 
 - V1, V3, U2 bị drop theo yêu cầu.
 - Fact 21 cột và số lượng 5 bảng/CSV là metadata cấu trúc được đối chiếu từ DDL/ETL, không được in trong `reports/dss_eval_raw.txt`. Đã giữ các thông tin được yêu cầu ở tài liệu và ghi rõ nguồn cấu trúc; để đáp ứng nghiêm ngặt quy tắc mọi số lấy từ raw eval, cần bổ sung các metadata này vào raw-eval report hoặc bỏ chúng khỏi tài liệu.
-- Phase 3 (U1, requirements/status rows, FINAL_G4) chưa bắt đầu.
+- Raw eval cũ chưa chứa tần suất transit rank #1 cấp hệ thống x/500. Tính toán/report code đã được cập nhật, nhưng cần người dùng tái sinh raw eval để có số thực tế; không suy ra số bằng tay.
+- Raw eval cũ còn cột “CI không chứa 0” cho cause shares; report code mới đã bỏ nhãn này vì shares không âm theo định nghĩa. Không diễn giải cột cũ trước khi tái sinh.
+- U1 code hoàn tất; không chạy kiểm tra giao diện theo yêu cầu.
 
-NEXT: chờ người dùng yêu cầu “phase 3”.
+## Phase 3 — thực hiện code/docs, chưa chạy kiểm tra
+
+- U1: ba thẻ DSS gọi `/brief`, `/sellers`, `/promise-policy`; Decision Brief hiển thị đủ năm nhóm, tối đa ba dòng mỗi nhóm kèm phạm vi; các GMV có hậu tố R$; wording promise và đếm tuyến đã sửa. Dashboard/OLAP/ETL vẫn mock. Chưa chạy kiểm tra giao diện.
+- V2: report phân biệt 165/226 theo tuyến (tập tuyến `late>0` sau lọc stage âm) với tần suất rank #1 bootstrap cấp hệ thống. CI được mô tả là nhiễu lấy mẫu giữa tuyến tại q=0,5; không phải độ nhạy benchmark. Numeric x/500 chờ raw eval mới.
+- V4: report nói rõ giả định độc lập theo tháng và p-value có thể lạc quan do tương quan tháng liền kề.
+- Requirements đã ghi evidence/status cho A1, V2, V4, U1, X1–X3; V1/V3/U2 được ghi dropped kèm phạm vi.
+- `reports/FINAL_G4.md` tổng hợp trạng thái và các mục còn chờ.
+- Không chạy test, browser, raw-eval regeneration, commit, stage hoặc server theo chỉ thị code-edit-only.

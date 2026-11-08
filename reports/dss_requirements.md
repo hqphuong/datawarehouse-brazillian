@@ -41,23 +41,23 @@ Mọi thay đổi trạng thái phải kèm evidence (lệnh chạy/file). Khôn
 
 | ID | Ưu tiên | Trạng thái | Evidence |
 |---|---|---|---|
-| V1 | P1 | todo | AUC rank-based từng stage excess, flagged vs unflagged |
-| V2 | P1 | todo | bootstrap 500× route-level: CI cause shares + top-stage rank |
-| V3 | P1 | todo | time-split replay cutoff 2018-01-01 |
-| V4 | P1 | todo | backtest per-period + binomial sign test 16/19 (H13) |
+| V1 | P1 | dropped | Được chủ động loại khỏi phạm vi; không triển khai AUC rank-based theo stage excess. |
+| V2 | P1 | doing | `etl/dss_eval.py::route_level_bootstrap` + report: bootstrap route-level, reps mặc định 500, seed 42, CI share q=0,5 và tần suất transit rank #1 theo tuyến/cấp hệ thống; đã bỏ nhãn CI khác 0 cho shares. `165/226` là per-route trên tập tuyến có `late>0`; raw eval cũ còn cột trạng thái share và chưa có x/500 cấp hệ thống vì chưa tái sinh. |
+| V3 | P1 | dropped | Được chủ động loại khỏi phạm vi; không triển khai time-split replay cutoff 2018-01-01. |
+| V4 | P1 | done | `etl/dss_eval.py::sign_test_v4_report`, mục “Sign test (V4)” trong `reports/dss_eval_raw.txt`; min_orders=30 có 19 kỳ, 100 có 13; exact sign test đã qua check Phase 1. Ghi rõ giả định tháng độc lập và nguy cơ p-value lạc quan do tháng liền kề tương quan. |
 
 ## API / UI
 
 | ID | Ưu tiên | Trạng thái | Evidence |
 |---|---|---|---|
-| A1 | P0 | todo | /attribution, /promise-policy, /brief (P0); /sellers, /portfolio (P1); giữ 4 endpoint cũ |
-| U1 | P1 | todo | DSS tab: Decision Brief, Seller Scorecard, Promise Policy |
-| U2 | P2 | todo | nối BI tab vào API thật — chỉ khi gate G4 duyệt |
+| A1 | P0 | done | `backend/dss/views.py` + `backend/dss/urls.py`: `/brief`, `/attribution`, `/promise-policy`, `/sellers`, `/portfolio`, giữ `/routes`, `/scenario`, `/promise`, `/actions`; Phase 1 `CHECK_OUTPUT.txt`: Django 22/22 pass. |
+| U1 | P1 | doing | `web/Olist_Logistics_DSS_v3.html`: thêm đúng 3 thẻ DSS gọi API thật (`/brief`, `/sellers`, `/promise-policy`); hiển thị lỗi endpoint; Dashboard/OLAP/ETL giữ mock. Chưa có kiểm tra giao diện sau chỉnh sửa. |
+| U2 | P2 | dropped | Không nối BI/Dashboard vào API; theo phạm vi đã chốt, chỉ DSS dùng API thật và Dashboard/OLAP/ETL vẫn mock. |
 
 ## DOCS
 
 | ID | Ưu tiên | Trạng thái | Evidence |
 |---|---|---|---|
-| X1 | P0 | todo | append mục tiếng Việt vào dss_formulas.md + dss_results.md (số từ raw eval) |
-| X2 | P1 | todo | refresh CHEAT_SHEET.md, QA_BANK.md (≥57 Q), DEMO_SCRIPT.md |
-| X3 | P1 | todo | Deviation đã duyệt (G2): đồng bộ số cũ (README, run_guide, TOM_TAT, dss_results.md, defense files) MỘT LẦN sau Checkpoint D, dùng số cuối từ `dss_eval_raw.txt` (test hiện tại 50/16). Ưu tiên nếu hết giờ: README, run_guide, TOM_TAT, QA_BANK. Không done khi chưa evidence. |
+| X1 | P0 | done | `reports/dss_formulas.md`, `reports/dss_results.md`: attribution/Shapley, q sensitivity, promise, feasible cut, sellers, low-sample, V2/V4 và hạn chế; V2 CI được giới hạn đúng là nhiễu tuyến tại q=0,5, V4 ghi giả định độc lập tháng. Các số định lượng lấy từ raw eval; tần suất system-bootstrap mới chờ raw eval tái sinh. |
+| X2 | P1 | done | `reports/defense/CHEAT_SHEET.md`, `QA_BANK.md` (65 Q&A), `DEMO_SCRIPT.md`: headline/câu trả lời về Shapley, q=0,75, GROSS/NET, CI-feasibility, seller confounding, sign test; đã bổ sung caveat V2/V4 và không bịa x/500. |
+| X3 | P1 | done | Đã đồng bộ một lần sau Checkpoint D: `README.md`, `reports/run_guide.md`, `TOM_TAT_DU_AN.md`, `reports/dss_results.md`, và các defense files; evidence về endpoint, DSS blocks, số liệu raw eval và test từ `reports/CHECK_OUTPUT.txt`. |
