@@ -510,9 +510,9 @@ function DSS({ toast }) {
     },
   ] : [];
   const weeklyActions = insightData.brief ? [
-    { title: 'Theo tuyến', row: insightData.brief.route_actions?.[0] },
-    { title: 'Theo promise', row: insightData.brief.promise_actions?.[0] },
-    { title: 'Cần thêm dữ liệu', row: insightData.brief.low_sample_actions?.[0] },
+    { title: 'Theo tuyến', row: insightData.brief.route_actions?.[0], label: insightData.brief.route_actions?.[0]?.route },
+    { title: 'Theo promise', row: insightData.brief.promise_actions?.[0], label: insightData.brief.promise_actions?.[0] ? `${insightData.brief.promise_actions[0].route} × ${insightData.brief.promise_actions[0].weight_band}` : '', note: '(mức phục vụ, không phải khuyến nghị đặt promise)' },
+    { title: 'Cần thêm dữ liệu', row: insightData.brief.low_sample_actions?.[0], label: insightData.brief.low_sample_actions?.[0]?.route },
   ] : [];
 
   return (
@@ -526,11 +526,11 @@ function DSS({ toast }) {
 
       {listError && <div className="rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 text-sm text-red-500">{listError}</div>}
 
-      {insightData.brief && <Card title="3 việc nên làm tuần này">
+      {insightData.brief && <Card title="3 mục đáng xem tuần này (mô phỏng)">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {weeklyActions.map(item => <div key={item.title} className="rounded-lg bg-slate-50 p-3">
             <div className="text-xs font-medium text-slate-600 mb-1">{item.title}</div>
-            <p className="text-xs leading-5 text-slate-600">{item.row?.action || 'Không có mục trong nhóm này.'}</p>
+            <p className="text-xs leading-5 text-slate-600">{item.row?.action ? <>{item.label && <><b>{item.label}</b>{' '}</>}{item.row.action}{item.note && <> {item.note}</>}</> : 'Không có mục trong nhóm này.'}</p>
           </div>)}
         </div>
       </Card>}
