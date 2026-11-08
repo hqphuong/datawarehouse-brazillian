@@ -45,7 +45,7 @@ không phải số đơn tránh được theo tuyến.
 
 ### Response 200
 
-Mảng các object, mỗi phần tử là một tuyến được gắn cờ đỏ hoặc vàng. Response có thêm `ci_low`, `ci_high` (Wilson 95%), `low_sample` (`orders < 200`) và `uncertain` (cảnh báo nhãn đỏ/vàng chưa chắc chắn theo CI).
+Mảng các object, mỗi phần tử là một tuyến được gắn cờ đỏ hoặc vàng. Response có thêm `ci_low`, `ci_high` (Wilson 95%), `low_sample` (`orders < 200`) và `uncertain` (cảnh báo nhãn đỏ/vàng chưa chắc chắn theo CI). Wilson giả định các đơn độc lập và không hiệu chỉnh phụ thuộc trong cùng tuyến/cụm; CI có thể hẹp hơn mức bất định thực tế.
 
 **Số liệu xác nhận trên dữ liệu hiện tại:** toàn bộ dữ liệu có **14 tuyến gắn cờ (6 đỏ, 8 vàng)**; `top=10` mặc định trả **10 tuyến**; **7/14 tuyến có `uncertain=true`**; `excess` của giai đoạn `transit` trên 14 tuyến nằm trong khoảng **1,43–12,54 ngày**.
 

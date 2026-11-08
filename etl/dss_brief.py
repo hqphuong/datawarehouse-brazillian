@@ -128,13 +128,6 @@ def _gmv_map(o: pd.DataFrame, keys) -> dict:
     }
 
 
-def _dominant_stage(cuts: dict[str, float]) -> str:
-    positive = {s: v for s, v in cuts.items() if v > 0}
-    if not positive:
-        return max(cuts, key=cuts.get)
-    return max(positive, key=positive.get)
-
-
 def _route_actions(
     route_table: pd.DataFrame, route_gmv: dict | None = None
 ) -> pd.DataFrame:
@@ -144,8 +137,7 @@ def _route_actions(
     rows = []
     for _, r in route_table.iterrows():
         cuts = {s: float(r.get(f"cut_{s}", 0.0)) for s in M.STAGES}
-        stage = _dominant_stage(cuts)
-        cut = cuts[stage]
+        shown_cuts = {stage: round(days, 2) for stage, days in cuts.items()}
         avoided = int(r["avoided_orders"])
         lo = int(r["avoided_ci_low"])
         hi = int(r["avoided_ci_high"])
@@ -153,14 +145,17 @@ def _route_actions(
         rows.append(
             {
                 "route": r["route"],
-                "stage": stage,
-                "owner": M.OWNER[stage],
+                "stage": "approval + prep + transit",
+                "owner": " + ".join(M.OWNER[key] for key in M.STAGES),
                 "gmv": gmv,
                 "action": (
-                    f"Nếu rút ngắn {stage} của tuyến {r['route']} khoảng "
-                    f"{cut:.2f} ngày (về peer P25), thì ước tính tránh "
-                    f"{avoided} đơn trễ (CI {lo}–{hi}); GMV tuyến "
-                    f"{_fmt_gmv(gmv)}."
+                    f"Nếu cả 3 giai đoạn về peer P25 "
+                    f"(approval {shown_cuts['approval']:.2f} + "
+                    f"prep {shown_cuts['prep']:.2f} + "
+                    f"transit {shown_cuts['transit']:.2f} = "
+                    f"{sum(shown_cuts.values()):.2f} ngày), thì ước tính tránh "
+                    f"{avoided} đơn trễ (CI {lo}–{hi}); GMV toàn tuyến "
+                    f"(tham chiếu): R$ {_fmt_gmv(gmv)}."
                 ),
                 "avoided_orders": avoided,
                 "avoided_ci_low": lo,
@@ -196,8 +191,8 @@ def _payment_actions(
                 "action": (
                     f"Nếu rút ngắn duyệt thanh toán cho {r['payment_type']} "
                     f"khoảng {cut:.2f} ngày (về peer P25), thì ước tính tránh "
-                    f"{avoided} đơn trễ (CI {lo}–{hi}); GMV nhóm "
-                    f"{_fmt_gmv(gmv)}."
+                    f"{avoided} đơn trễ (CI {lo}–{hi}); GMV toàn nhóm "
+                    f"(tham chiếu): R$ {_fmt_gmv(gmv)}."
                 ),
                 "avoided_orders": avoided,
                 "avoided_ci_low": lo,
@@ -257,7 +252,8 @@ def _promise_actions(
                     f"{r['route']} × {r['weight_band']}, thì ước tính NET "
                     f"{net} đơn trễ được phân loại lại là đúng hạn theo "
                     f"promise mới (phát sinh {new} đơn trễ mới); đổi định nghĩa "
-                    f"trễ, không rút ngắn thời gian giao. GMV ô {_fmt_gmv(gmv)}."
+                    f"trễ, không rút ngắn thời gian giao. GMV ô "
+                    f"(tham chiếu): R$ {_fmt_gmv(gmv)}."
                 ),
                 "needed_days": int(r["needed_days"]),
                 "net_avoided_orders": net,
@@ -301,7 +297,7 @@ def _seller_actions(
                     f"{float(r['late_rate']):.2%} (CI {float(r['wilson_low']):.2%}–"
                     f"{float(r['wilson_high']):.2%}); ước tính "
                     f"{excess} đơn trễ vượt mức hệ thống (liên hệ, không phải "
-                    f"đơn tránh được); GMV seller "
+                    f"đơn tránh được); GMV toàn seller (tham chiếu): R$ "
                     f"{_fmt_gmv(seller_gmv.get(r['seller_id'], r['gmv']))}."
                 ),
                 "orders": int(r["orders"]),
@@ -354,8 +350,8 @@ def _low_sample_actions(
                 "action": (
                     f"Thu thập thêm {needed} đơn cho tuyến {r['route']} rồi "
                     f"đánh giá lại (hiện {int(r['orders'])} đơn, "
-                    f"{int(r['late_orders'])} trễ; GMV tuyến "
-                    f"{_fmt_gmv(route_gmv.get(r['route'], 0))})."
+                    f"{int(r['late_orders'])} trễ; GMV toàn tuyến "
+                    f"(tham chiếu): R$ {_fmt_gmv(route_gmv.get(r['route'], 0))})."
                 ),
                 "orders": int(r["orders"]),
                 "late_orders": int(r["late_orders"]),
@@ -475,11 +471,11 @@ def decision_brief(
         "KHÔNG cộng 'đơn tránh được' giữa route / payment / promise / seller: "
         "tổng các nhóm KHÔNG phải tổng đơn tránh được (chồng lấn trên cùng tập "
         "đơn trễ). Chỉ cộng trong cùng một loại.",
-        f"Tập mỗi tổng là riêng: route = top {top_routes} tuyến theo S4 peer P25; "
+        f"Tập mỗi tổng là riêng: route = top {top_routes} tuyến theo peer P25; "
         f"payment = top {top_payment} payment_type, chỉ approval và tác động "
         f"thấp; promise = top {top_routes} ô route×weight_band theo NET; seller = "
-        f"top {top_sellers} seller theo excess. Các top-N khác S4 top-10 và S3 "
-        "NET toàn bộ ô đủ mẫu.",
+        f"top {top_sellers} seller theo excess. Các top-N khác danh sách 10 tuyến "
+        "P25 và NET toàn bộ ô đủ mẫu.",
         "Số đếm theo tuyến là đơn-tuyến; số seller là đơn single-seller.",
         "Promise chỉ dùng NET (đã trừ đơn trễ mới do siết ô loose), không dùng GROSS; "
         "đổi định nghĩa trễ, không rút ngắn thời gian giao.",

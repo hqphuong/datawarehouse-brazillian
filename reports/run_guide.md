@@ -107,8 +107,8 @@ hoặc kéo thả file vào trình duyệt. Giao diện gọi `http://localhost:
 ```
 
 Script chạy pytest, Django tests cho `dss analytics`, tái tạo raw eval và ghi
-tóm tắt vào `reports/CHECK_OUTPUT.txt`. Lần xác nhận hiện hành: **77 pytest
-passed, 22 Django tests OK, regen_eval pass**. Dùng `.\scripts\check.ps1 -Quick`
+tóm tắt vào `reports/CHECK_OUTPUT.txt`. Check gần nhất: **78 pytest passed,
+22 Django tests OK; `regen_eval` skipped do dùng `-Quick`**. Dùng `.\scripts\check.ps1 -Quick`
 để bỏ qua bước tái tạo raw eval. Console chỉ in `OK` hoặc tên phần thất bại.
 
 ### 4.2 pytest riêng (unit test + eval test, không cần DB)
@@ -118,7 +118,7 @@ passed, 22 Django tests OK, regen_eval pass**. Dùng `.\scripts\check.ps1 -Quick
 .\backend\env\Scripts\python.exe -m pytest -q
 ```
 
-Kết quả lần xác nhận hiện hành: **77 passed**.
+Kết quả check gần nhất: **78 passed**.
 
 Chạy verbose hơn:
 

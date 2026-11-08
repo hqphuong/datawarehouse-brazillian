@@ -92,10 +92,12 @@ Schema facts đã xác minh (06/11/2026):
 
 ## Phase 3 — thực hiện code/docs, chưa chạy kiểm tra
 
-- U1: ba thẻ DSS gọi `/brief`, `/sellers`, `/promise-policy`; Decision Brief hiển thị đủ năm nhóm, tối đa ba dòng mỗi nhóm kèm phạm vi, owner và GMV tham chiếu; câu route ghi rõ cả ba giai đoạn về peer P25. GMV hiển thị theo dạng `R$ 3.451.815`. Bộ lọc năm áp dụng cả ba thẻ. Seller ghi “Xếp theo số đơn trễ”; Root Cause ghi rõ so với trung bình hệ thống nhưng chưa chuẩn hoá theo khoảng cách. Dashboard/OLAP/ETL vẫn mock. Evidence: ảnh người dùng 08/11.
+- U1: ba thẻ DSS gọi `/brief`, `/sellers`, `/promise-policy`; Decision Brief hiển thị đủ năm nhóm, tối đa ba dòng mỗi nhóm kèm phạm vi, owner và GMV tham chiếu; bộ lọc năm áp dụng. Root Cause hiển thị tỷ trọng attribution theo tuyến tại q=0,5 và độ nhạy q=0,25 từ `/api/dss/attribution`, với tối thiểu 100 đơn-tuyến; số system-average thu gọn. Dashboard/OLAP/ETL vẫn mock.
 - V2: raw eval “Bootstrap route-level (V2)” ghi transit rank #1 cấp hệ thống 500/500; 165/226 là tỷ lệ theo tuyến trong tập `late>0`. CI mô tả nhiễu lấy mẫu giữa tuyến tại q=0,5, không phải độ nhạy benchmark.
 - V4: report nói rõ giả định độc lập theo tháng và p-value có thể lạc quan do tương quan tháng liền kề.
 - Requirements ghi A1, V2, V4, U1, X1–X3 là done; V1/V3/U2 dropped kèm lý do. `reports/FINAL_G4.md` tổng hợp trạng thái và giới hạn.
 - Đã ghi sáu giới hạn UI/API vào `reports/dss_results.md` và thêm sáu Q&A vào `reports/defense/QA_BANK.md`. `scripts/clear_action_log.py` chỉ xoá ActionLog khi truyền `--yes`, cảnh báo rằng thao tác xoá toàn bộ bản ghi; chưa chạy script.
 - UI strip đổi tiêu đề thành “3 mục đáng xem tuần này (mô phỏng)”, thêm nhãn đậm tên tuyến/ô promise trước action text hiện có và chú thích promise về mức phục vụ. Không đổi API text.
+- Root Cause card dùng per-route rows hiện có từ `/api/dss/attribution`; `attribution_summary` đã trả `cause_share_approval/prep/transit` và `share_promise`, nên không cần sửa endpoint hay thêm test backend. Đã cập nhật phần hạn chế, Q&A, requirements và STATE.
+- Root Cause bars giữ share âm trong nhãn số nhưng kẹp độ dài thanh ở 0; thêm chú thích diễn giải share âm và cảnh báo khi `late_rate × orders < 30`. Promise bar lấy `share_promise`; không đổi API.
 - Không chạy test, browser, raw-eval regeneration, commit, stage hoặc server theo chỉ thị code-edit-only.

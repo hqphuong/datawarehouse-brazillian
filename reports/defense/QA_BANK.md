@@ -214,7 +214,7 @@ Lấy mẫu lại tuyến 500 lần với seed 42 ở q=0,50; CI là bất đị
 `route_priority` xếp theo tỷ lệ trễ, còn Decision Brief xếp tác động theo số đơn trong mô phỏng P25. Vì vậy SP→SP có thể đứng đầu theo số đơn tránh ước tính mà không thuộc nhóm 14 tuyến có tỷ lệ trễ cao theo ngưỡng. Đây là hai câu hỏi khác nhau, không phải mâu thuẫn. `reports/dss_eval_raw.txt`, mục S4/S8.
 
 ### 67. Root Cause card có dùng peer benchmark theo khoảng cách không?
-Không. Thẻ hiện so với trung bình toàn hệ thống, chưa chuẩn hoá theo khoảng cách; `/api/dss/attribution` có phân tích peer-based nhưng UI chưa nối endpoint đó. Cần trình bày rõ đây là hai khối khác nhau. `etl/dss_models.py::root_cause`; `backend/dss/views.py`; `web/Olist_Logistics_DSS_v3.html`.
+Có. Card “2. Nguyên nhân” hiển thị tỷ trọng trong đơn trễ theo peer cho tuyến đang chọn ở q=0,5 và dòng độ nhạy q=0,25; `/api/dss/attribution` trả các tỷ trọng theo tuyến. Chỉ hiển thị phân rã khi có ít nhất 100 đơn-tuyến; số so với trung bình hệ thống được giữ trong phần thu gọn và chưa chuẩn hoá khoảng cách. Đây là phân rã theo quy tắc, không phải nhân quả. `web/Olist_Logistics_DSS_v3.html`; `backend/dss/views.py::attribution`; `etl/dss_attrib.py::attribution_summary`.
 
 ### 68. Scenario có giả định thời gian cắt chuyển 1:1 sang ngày giao không?
 Có, đây là giả định 1:1: nếu… thì ước tính ngày giao sớm hơn tương ứng, có chặn theo thời lượng từng chặng. Thực tế có thể có buffer hoặc lịch carrier, nên kết quả không phải phản thực nghiệm. `etl/dss_models.py::scenario`; `reports/dss_formulas.md`, mục 4.

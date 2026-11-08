@@ -51,7 +51,7 @@ Mọi thay đổi trạng thái phải kèm evidence (lệnh chạy/file). Khôn
 | ID | Ưu tiên | Trạng thái | Evidence |
 |---|---|---|---|
 | A1 | P0 | done | `backend/dss/views.py` + `backend/dss/urls.py`: `/brief`, `/attribution`, `/promise-policy`, `/sellers`, `/portfolio`, giữ `/routes`, `/scenario`, `/promise`, `/actions`; Phase 1 `CHECK_OUTPUT.txt`: Django 22/22 pass. |
-| U1 | P1 | done | `web/Olist_Logistics_DSS_v3.html`: đúng 3 thẻ DSS gọi API thật (`/brief`, `/sellers`, `/promise-policy`), route priority phân biệt xếp hạng theo tỷ lệ với tác động theo số đơn, Decision Brief có đủ nhóm, GMV/owner, lời nhắc action log và promise. Bộ lọc năm áp dụng trên ba thẻ. Evidence UI: ảnh người dùng 08/11; Dashboard/OLAP/ETL vẫn mock. |
+| U1 | P1 | done | `web/Olist_Logistics_DSS_v3.html`: DSS gọi API thật; Root Cause hiển thị attribution theo route tại q=0,5 và sensitivity q=0,25 từ `/api/dss/attribution`, yêu cầu ≥100 đơn-tuyến; số system-average nằm trong details. Decision Brief đủ nhóm/GMV/owner, route priority phân biệt tỷ lệ với tác động theo số đơn, bộ lọc năm áp dụng. Dashboard/OLAP/ETL vẫn mock. |
 | U2 | P2 | dropped | Không nối BI/Dashboard vào API; theo phạm vi đã chốt, chỉ DSS dùng API thật và Dashboard/OLAP/ETL vẫn mock. |
 
 ## DOCS

@@ -59,6 +59,38 @@ def test_brief_action_tables_contract(brief):
         ).all()
 
 
+def test_route_brief_text_describes_all_three_p25_cuts():
+    route_table = pd.DataFrame(
+        [
+            {
+                "route": "SP->SP",
+                "cut_approval": 0.1,
+                "cut_prep": 0.5,
+                "cut_transit": 2.27,
+                "avoided_orders": 1023,
+                "avoided_ci_low": 962,
+                "avoided_ci_high": 1089,
+                "delta_pp": 3.4,
+                "delta_ci_low_pp": 3.2,
+                "delta_ci_high_pp": 3.6,
+                "status": "ước lượng ổn định (CI hẹp)",
+                "peer_p50_total_days": 10.0,
+            }
+        ]
+    )
+
+    action = B._route_actions(route_table, route_gmv={"SP->SP": 3451815}).iloc[0]
+
+    assert action["action"].startswith(
+        "Nếu cả 3 giai đoạn về peer P25 "
+        "(approval 0.10 + prep 0.50 + transit 2.27 = 2.87 ngày),"
+    )
+    assert "ước tính tránh 1023 đơn trễ (CI 962–1089)" in action["action"]
+    assert "GMV toàn tuyến (tham chiếu): R$ 3.451.815" in action["action"]
+    assert action["stage"] == "approval + prep + transit"
+    assert action["owner"] == "Duyệt thanh toán + Người bán + Đơn vị vận chuyển"
+
+
 def test_brief_promise_uses_net_only(brief):
     ps = brief["promise_summary"]
     assert ps["late_orders_before"] == ps["late_orders_after"] + ps["net_avoided_orders"]

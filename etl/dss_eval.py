@@ -883,9 +883,12 @@ def route_level_bootstrap(
     point = shares(route_values)
     rng = np.random.default_rng(seed)
     samples = {key: np.empty(reps) for key in point}
+    system_rank_1_reps = 0
     for i in range(reps):
         indexes = rng.integers(0, len(route_values), size=len(route_values))
         draw = shares(route_values[indexes])
+        if max(draw, key=draw.get) == "share_transit":
+            system_rank_1_reps += 1
         for key in samples:
             samples[key][i] = draw[key]
 
@@ -909,6 +912,8 @@ def route_level_bootstrap(
         "transit_rank_1_frequency": float((top_stage == "transit").mean()),
         "transit_rank_1_routes": int((top_stage == "transit").sum()),
         "routes_with_late_orders": int(len(grouped)),
+        "transit_system_rank_1_reps": int(system_rank_1_reps),
+        "transit_system_rank_1_frequency": float(system_rank_1_reps / reps),
     }
 
 
@@ -968,7 +973,9 @@ def sign_test_v4_report(o: pd.DataFrame) -> None:
     print(
         "- Backtest là tương quan hồi cứu; min_orders=30. "
         f"Ở min_orders=100 có {summary_100['periods_evaluated']} kỳ đủ điều kiện. "
-        "n trong bảng là số đơn-tuyến ở kỳ kế tiếp."
+        "n trong bảng là số đơn-tuyến ở kỳ kế tiếp. Exact sign test giả định "
+        "các kỳ độc lập; các tháng liền kề có thể tương quan, nên p-value "
+        "có thể lạc quan."
     )
     view = frame[
         [
@@ -1001,7 +1008,8 @@ def route_level_bootstrap_report(o: pd.DataFrame, reps: int = 500) -> None:
     print("\n## Bootstrap route-level (V2)")
     print(
         f"- Resample tuyến, q=0.5, {result['reps']} lần, seed={result['seed']}; "
-        "CI percentile 95% cho tỷ trọng trong đơn trễ."
+        "CI percentile 95% cho tỷ trọng trong đơn trễ; chỉ đo nhiễu lấy mẫu "
+        "giữa các tuyến tại q=0.5, không đo độ nhạy benchmark theo q."
     )
     rows = []
     for cause, values in result["shares"].items():
@@ -1011,18 +1019,28 @@ def route_level_bootstrap_report(o: pd.DataFrame, reps: int = 500) -> None:
                 "estimate": values["estimate"],
                 "ci_low": values["ci_low"],
                 "ci_high": values["ci_high"],
-                "status": (
-                    "chưa đủ bằng chứng"
-                    if values["ci_low"] <= 0 <= values["ci_high"]
-                    else "CI không chứa 0"
-                ),
             }
         )
     print(_md_table(pd.DataFrame(rows)))
     print(
-        "- Tần suất transit xếp hạng #1 theo tuyến: "
+        "- Hạng #1 theo tuyến (chia số tuyến có đơn trễ mà transit là top stage "
+        "cho tổng số tuyến có đơn trễ): "
         f"{result['transit_rank_1_routes']}/{result['routes_with_late_orders']} "
         f"({result['transit_rank_1_frequency']:.2%})."
+    )
+    print(
+        "- Tập tuyến ở thống kê trên: các tuyến có ít nhất một đơn trễ "
+        "(late > 0) trong mẫu phân tích, sau khi loại thời gian giai đoạn âm."
+    )
+    print(
+        f"- Hạng #1 cấp hệ thống: transit đứng đầu trong "
+        f"{result['transit_system_rank_1_reps']}/{result['reps']} lần bootstrap "
+        f"({result['transit_system_rank_1_frequency']:.2%}); đây là tần suất "
+        "trong phân phối bootstrap tại q=0.5."
+    )
+    print(
+        "- Tỷ trọng là đại lượng không âm theo định nghĩa; CI không phải kiểm "
+        "định khác 0, nên không gắn nhãn ý nghĩa thống kê."
     )
 
 
