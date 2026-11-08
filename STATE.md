@@ -88,6 +88,7 @@ Schema facts đã xác minh (06/11/2026):
 - Metadata cấu trúc 21 cột/5 bảng/CSV lấy từ DDL/ETL, không phải raw eval.
 - Check gần nhất dùng `-Quick`, nên không xác nhận raw eval được tái sinh sau các thay đổi; raw eval ghi transit rank #1 cấp hệ thống 500/500.
 - Không chạy kiểm tra giao diện hoặc test theo yêu cầu code-edit-only.
+- Bỏ qua định dạng số kiểu Việt trong action text của `etl/dss_brief.py`: yêu cầu là tùy chọn nhưng cần sửa cả brief module và `tests/test_dss_brief.py`; giữ nguyên API/action text.
 
 ## Phase 3 — thực hiện code/docs, chưa chạy kiểm tra
 
@@ -96,4 +97,5 @@ Schema facts đã xác minh (06/11/2026):
 - V4: report nói rõ giả định độc lập theo tháng và p-value có thể lạc quan do tương quan tháng liền kề.
 - Requirements ghi A1, V2, V4, U1, X1–X3 là done; V1/V3/U2 dropped kèm lý do. `reports/FINAL_G4.md` tổng hợp trạng thái và giới hạn.
 - Đã ghi sáu giới hạn UI/API vào `reports/dss_results.md` và thêm sáu Q&A vào `reports/defense/QA_BANK.md`. `scripts/clear_action_log.py` chỉ xoá ActionLog khi truyền `--yes`, cảnh báo rằng thao tác xoá toàn bộ bản ghi; chưa chạy script.
+- UI strip đổi tiêu đề thành “3 mục đáng xem tuần này (mô phỏng)”, thêm nhãn đậm tên tuyến/ô promise trước action text hiện có và chú thích promise về mức phục vụ. Không đổi API text.
 - Không chạy test, browser, raw-eval regeneration, commit, stage hoặc server theo chỉ thị code-edit-only.
