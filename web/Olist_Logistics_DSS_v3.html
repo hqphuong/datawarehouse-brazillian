@@ -137,6 +137,141 @@ const DS_ST = [
   { k: 'prep', f: 'pr', l: 'Seller preparation', tip: 'Work with the sellers on this route to shorten preparation time.' },
   { k: 'transit', f: 'tr', l: 'Carrier transit', tip: 'Review the carrier for this route or adjust the delivery promise.' },
 ];
+const nf = n => Number(n || 0).toLocaleString('vi-VN');
+const pctf = v => (v == null ? '—' : (v * 100).toFixed(1).replace('.', ',') + '%');
+const PILL = {
+  ok: 'bg-emerald-50 text-emerald-700 ring-emerald-100',
+  warn: 'bg-amber-50 text-amber-700 ring-amber-100',
+  info: 'bg-slate-100 text-slate-600 ring-slate-200',
+  red: 'bg-red-50 text-red-600 ring-red-100',
+};
+const Pill = ({ tone = 'info', children }) => (
+  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${PILL[tone]}`}>{children}</span>
+);
+const statusPill = s => {
+  if (!s) return null;
+  const t = s === 'có cơ sở' ? 'ước lượng ổn định' : s;
+  return <Pill tone={t.includes('ổn định') ? 'ok' : 'warn'}>{t}</Pill>;
+};
+const SellerId = ({ id, toast }) => {
+  const s = String(id);
+  const copy = () => {
+    try { navigator.clipboard.writeText(s); toast && toast('Đã sao chép mã seller'); } catch (e) { toast && toast('Không sao chép được'); }
+  };
+  return (
+    <div className="min-w-0">
+      <div className="flex items-center gap-2">
+        <span className="font-mono text-sm font-semibold text-slate-800">{s.slice(0, 8)}</span>
+        <button onClick={copy} title="Sao chép mã đầy đủ" className="text-[11px] text-blue-500 hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded">Sao chép</button>
+      </div>
+      <div className="font-mono text-[10px] leading-4 text-slate-400 break-all">{s}</div>
+    </div>
+  );
+};
+const GROUP_META = {
+  route_actions: { n: r => r.avoided_orders, cap: 'đơn trễ ước tính tránh được', title: r => r.route },
+  payment_actions: { n: r => r.avoided_orders, cap: 'đơn trễ ước tính tránh được', title: r => r.payment_type },
+  promise_actions: { n: r => r.net_avoided_orders, cap: 'đơn trễ được phân loại lại (NET)', title: r => `${r.route} · nhóm cân nặng ${r.weight_band}` },
+  seller_actions: { n: r => r.estimated_excess_late_orders, cap: 'đơn trễ vượt mức hệ thống (liên hệ)', title: null },
+  low_sample_actions: { n: r => r.late_orders, cap: r => `đơn-tuyến trễ trên ${r.orders} đơn-tuyến`, title: r => r.route },
+};
+function BriefPanel({ brief, groups, period, toast }) {
+  const [tab, setTab] = useState('route_actions');
+  const g = groups.find(x => x.key === tab) || groups[0];
+  const meta = GROUP_META[g.key];
+  return (
+    <Card title={`Decision Brief · ${period}`} right={<Pill tone="info">Tổng đơn trễ có thể phân loại lại nếu đổi promise: {nf(brief.promise_summary?.net_avoided_orders)} đơn-tuyến</Pill>}>
+      <div className="flex flex-wrap gap-2 mb-3" role="tablist">
+        {groups.map(x => (
+          <button key={x.key} role="tab" aria-selected={x.key === g.key} onClick={() => setTab(x.key)}
+            className={`rounded-full px-3 py-1.5 text-xs font-medium border focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 ${x.key === g.key ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
+            {x.title} <span className="opacity-60">{Math.min(x.rows.length, 3)}</span>
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-slate-500 mb-4">{g.scope}</p>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {g.rows.slice(0, 3).map((row, i) => (
+          <div key={i} className="rounded-xl border border-slate-200 bg-white p-4 flex flex-col gap-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">{meta.title ? <div className="text-sm font-semibold text-slate-800">{meta.title(row)}</div> : <SellerId id={row.seller_id} toast={toast} />}</div>
+              {statusPill(row.status)}
+            </div>
+            <div>
+              <div className="text-3xl font-semibold tracking-tight text-slate-800 tabular-nums">{nf(meta.n(row))}</div>
+              <div className="text-xs text-slate-500">{typeof meta.cap === 'function' ? meta.cap(row) : meta.cap}</div>
+            </div>
+            {row.action && <p className="text-xs leading-5 text-slate-600">{row.action}</p>}
+            <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 border-t border-slate-100 pt-2">
+              {row.owner && <span>Phụ trách: <b className="font-medium text-slate-700">{row.owner}</b></span>}
+              <span>GMV tham chiếu: R$ {nf(row.gmv)}</span>
+            </div>
+          </div>
+        ))}
+        {!g.rows.length && <div className="text-sm text-slate-400">Không có mục trong nhóm này.</div>}
+      </div>
+      <p className="text-xs text-slate-400 mt-4">Các nhóm chồng lấn trên cùng tập đơn trễ nên không cộng tổng giữa nhóm. Phần vượt mức của seller là liên hệ, không phải số đơn tránh được.</p>
+    </Card>
+  );
+}
+function SellerPanel({ data, period, toast }) {
+  const rows = (data.rows || []).slice(0, 5);
+  const max = Math.max(...rows.map(r => r.late_rate || 0), 0.001);
+  const base = data.summary?.overall_late_rate ?? data.summary?.late_rate ?? null;
+  const seg = s => (s === 'ưu tiên' ? 'red' : s === 'ổn định' ? 'ok' : 'info');
+  return (
+    <Card title={`Seller Scorecard · ${period}`}>
+      <p className="text-xs text-slate-500 mb-3">{data.summary?.n_sellers_scored ?? '—'} seller đủ mẫu (từ {data.summary?.min_orders ?? 30} đơn), chỉ tính đơn một seller. Xếp theo số đơn trễ.</p>
+      <ol className="divide-y divide-slate-100">
+        {rows.map((r, i) => (
+          <li key={r.seller_id} className="py-3 flex items-center gap-3">
+            <span className="w-5 text-xs text-slate-400 tabular-nums">{i + 1}</span>
+            <div className="flex-1 min-w-0">
+              <SellerId id={r.seller_id} toast={toast} />
+              <div className="mt-2 h-1.5 rounded-full bg-slate-100 relative">
+                <div className="h-1.5 rounded-full bg-blue-300" style={{ width: `${Math.max(4, (r.late_rate || 0) / max * 100)}%` }} />
+                {base != null && <div className="absolute -top-0.5 h-2.5 w-0.5 bg-slate-500" style={{ left: `${Math.min(100, base / max * 100)}%` }} title={`Trung bình hệ thống ${pctf(base)}`} />}
+              </div>
+            </div>
+            <div className="text-right shrink-0">
+              <div className="text-sm font-semibold text-slate-800 tabular-nums">{pctf(r.late_rate)}</div>
+              <div className="text-[11px] text-slate-500 tabular-nums">{nf(r.late_orders)} đơn trễ</div>
+              <div className="mt-1"><Pill tone={seg(r.segment)}>{r.segment}</Pill></div>
+            </div>
+          </li>
+        ))}
+      </ol>
+      <p className="text-xs text-slate-400 mt-3">{base != null ? 'Vạch đậm: tỷ lệ trễ trung bình hệ thống. ' : ''}{data.note}</p>
+    </Card>
+  );
+}
+function PolicyPanel({ data, period }) {
+  const rows = data.rows || [];
+  const levels = [...new Set(rows.map(r => r.service_level))].sort((a, b) => a - b);
+  const routes = [...new Set(rows.map(r => r.route))];
+  const cell = (rt, lv) => rows.find(r => r.route === rt && r.service_level === lv);
+  return (
+    <Card title={`Promise Policy · ${period}`} right={<Pill tone="info">Mức phục vụ</Pill>}>
+      <p className="text-xs text-slate-500 mb-3">{data.label}. {data.note}</p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead><tr className="text-slate-400 text-left"><th className="pb-2 font-medium">Tuyến</th>{levels.map(l => <th key={l} className="pb-2 font-medium text-right">Phục vụ đúng hạn {Math.round(l * 100)}%</th>)}</tr></thead>
+          <tbody>{routes.map(rt => (
+            <tr key={rt} className="border-t border-slate-100">
+              <td className="py-3 font-semibold text-slate-800 whitespace-nowrap">{rt}</td>
+              {levels.map(l => { const c = cell(rt, l); return (
+                <td key={l} className="py-3 text-right tabular-nums">
+                  <div className="text-base font-semibold text-slate-800">{c ? c.needed_days : '—'}<span className="text-[11px] font-normal text-slate-400"> ngày</span></div>
+                  <div className="text-[11px] text-slate-500">trễ {c ? pctf(c.late_rate) : '—'}</div>
+                </td>); })}
+            </tr>))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
 const DSS_API = 'http://localhost:8000/api/dss';
 
 function DSS({ toast }) {
@@ -167,6 +302,7 @@ function DSS({ toast }) {
   const pct = v => (v == null ? '—' : (v * 100).toFixed(1).replace('.', ',') + '%');
   const pct1 = v => (v == null ? '—' : (v * 100).toFixed(1).replace('.', ',') + '%');
   const fixed = (v, d = 2) => (v == null ? '—' : Number(v).toFixed(d).replace('.', ','));
+  const selectedPeriod = year === 'all' ? 'toàn bộ dữ liệu' : `năm ${year}`;
 
   useEffect(() => {
     let cancelled = false;
@@ -327,8 +463,8 @@ function DSS({ toast }) {
       })
       .then(async d => {
         if (!d.ok) throw new Error('server không xác nhận hành động');
-        setActionMsg(`Server đã ghi: kéo dài cam kết ${pm.extra_days} ngày cho ${route} (target ${target}%).`);
-        toast(`Đã ghi hành động cho ${route}`);
+        setActionMsg(`Đã ghi nhận khuyến nghị cho ${route}; không thực thi thay đổi vận hành.`);
+        toast(`Đã ghi nhận khuyến nghị cho ${route}`);
         const list = await fetch(`${DSS_API}/actions`);
         if (list.ok) setLog(await list.json());
       })
@@ -345,7 +481,7 @@ function DSS({ toast }) {
     {
       key: 'route_actions',
       title: 'Theo tuyến',
-      scope: `Tối đa 3 dòng trong top ${insightData.brief.parameters?.top_routes ?? 5} tuyến theo S4 peer P25.`,
+      scope: 'Tác động theo số đơn: cắt cả 3 giai đoạn về peer P25 (mô phỏng).',
       rows: insightData.brief.route_actions || [],
     },
     {
@@ -373,6 +509,11 @@ function DSS({ toast }) {
       rows: insightData.brief.low_sample_actions || [],
     },
   ] : [];
+  const weeklyActions = insightData.brief ? [
+    { title: 'Theo tuyến', row: insightData.brief.route_actions?.[0] },
+    { title: 'Theo promise', row: insightData.brief.promise_actions?.[0] },
+    { title: 'Cần thêm dữ liệu', row: insightData.brief.low_sample_actions?.[0] },
+  ] : [];
 
   return (
     <div className="space-y-6 fade">
@@ -385,100 +526,35 @@ function DSS({ toast }) {
 
       {listError && <div className="rounded-xl border border-red-100 bg-red-50/60 px-4 py-3 text-sm text-red-500">{listError}</div>}
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <Card title="Decision Brief">
-          {insightLoading && !insightData.brief && <div className="text-sm text-slate-400">Đang tải Decision Brief…</div>}
-          {insightErrors.brief && <div className="text-sm text-red-500">Không tải được /brief: {insightErrors.brief}</div>}
-          {insightData.brief && <>
-            <div className="text-xs text-slate-500 mb-3">
-              S3 NET toàn bộ ô đủ mẫu (tham chiếu, không phải tổng nhóm top-N): {insightData.brief.promise_summary?.net_avoided_orders ?? '—'} đơn-tuyến; đổi định nghĩa trễ, không rút ngắn thời gian giao.
-            </div>
-            <div className="space-y-4">
-              {briefGroups.map(group => (
-                <section key={group.key} className="border-t border-slate-100 pt-3">
-                  <h4 className="text-xs font-semibold text-slate-700">{group.title}</h4>
-                  <p className="text-xs text-slate-400 mt-1">{group.scope}</p>
-                  <div className="space-y-2 mt-2">
-                    {group.rows.slice(0, 3).map((row, i) => {
-                      const gmv = `${Number(row.gmv || 0).toLocaleString('vi-VN')} R$`;
-                      const action = row.action?.replace(
-                        /(GMV (?:tuyến|nhóm|ô|seller) [\d.]+)/g,
-                        '$1 R$'
-                      );
-                      let label;
-                      if (group.key === 'route_actions') {
-                        label = `Tuyến ${row.route} · ${row.avoided_orders} đơn-tuyến · GMV ${gmv}`;
-                      } else if (group.key === 'payment_actions') {
-                        label = `${row.payment_type} · ${row.avoided_orders} đơn-tuyến · GMV ${gmv}`;
-                      } else if (group.key === 'promise_actions') {
-                        label = `${row.route} × ${row.weight_band} · NET ${row.net_avoided_orders} đơn-tuyến · GMV ${gmv}`;
-                      } else if (group.key === 'seller_actions') {
-                        label = `Seller ${String(row.seller_id).slice(0, 8)}… · excess ${row.estimated_excess_late_orders} (liên hệ) · GMV ${gmv}`;
-                      } else {
-                        label = `Tuyến ${row.route} · ${row.late_orders}/${row.orders} đơn-tuyến trễ · GMV ${gmv}`;
-                      }
-                      return (
-                        <div key={`${group.key}-${i}`} className="border-t border-slate-100 pt-2">
-                          <div className="text-xs font-medium text-slate-700">{label}</div>
-                          {action && <div className="text-xs text-slate-500 mt-1">{action}</div>}
-                          {row.status && <div className="text-xs text-slate-400 mt-1">{row.status === 'có cơ sở' ? 'ước lượng ổn định' : row.status}</div>}
-                        </div>
-                      );
-                    })}
-                    {!group.rows.length && <div className="text-xs text-slate-400">Không có mục trong nhóm này.</div>}
-                  </div>
-                </section>
-              ))}
-            </div>
-            <p className="text-xs text-slate-400 mt-3">Các nhóm có thể chồng lấn trên cùng tập đơn trễ, không cộng tổng giữa nhóm; seller excess là liên hệ, không phải số đơn tránh được.</p>
-          </>}
-        </Card>
-
-        <Card title="Seller Scorecard">
-          {insightLoading && !insightData.sellers && <div className="text-sm text-slate-400">Đang tải Seller Scorecard…</div>}
-          {insightErrors.sellers && <div className="text-sm text-red-500">Không tải được /sellers: {insightErrors.sellers}</div>}
-          {insightData.sellers && <>
-            <div className="text-xs text-slate-500 mb-3">
-              {insightData.sellers.summary?.n_sellers_scored ?? '—'} seller đủ mẫu (tối thiểu {insightData.sellers.summary?.min_orders ?? 30} đơn); scorecard chỉ dùng đơn single-seller.
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="text-slate-400"><tr><th className="pb-2">Seller</th><th className="pb-2">Đơn trễ</th><th className="pb-2">Tỷ lệ trễ</th><th className="pb-2">Phân khúc</th></tr></thead>
-                <tbody>{(insightData.sellers.rows || []).slice(0, 5).map(row => (
-                  <tr key={row.seller_id} className="border-t border-slate-100">
-                    <td className="py-2 pr-2 font-mono text-slate-600">{String(row.seller_id).slice(0, 8)}…</td>
-                    <td className="py-2">{row.late_orders}</td><td className="py-2">{pct(row.late_rate)}</td>
-                    <td className="py-2">{row.segment}</td>
-                  </tr>
-                ))}</tbody>
-              </table>
-            </div>
-            <p className="text-xs text-slate-400 mt-3">{insightData.sellers.note}</p>
-          </>}
-        </Card>
-
-        <Card title="Promise Policy" right={<span className="text-xs text-slate-400">Mức phục vụ</span>}>
-          {insightLoading && !insightData.policy && <div className="text-sm text-slate-400">Đang tải Promise Policy…</div>}
-          {insightErrors.policy && <div className="text-sm text-red-500">Không tải được /promise-policy: {insightErrors.policy}</div>}
-          {insightData.policy && <>
-            <p className="text-xs text-slate-500 mb-3">{insightData.policy.label}. {insightData.policy.note}</p>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="text-slate-400"><tr><th className="pb-2">Tuyến</th><th className="pb-2">Mức</th><th className="pb-2">Ngày</th><th className="pb-2">Tỷ lệ trễ</th></tr></thead>
-                <tbody>{(insightData.policy.rows || []).slice(0, 9).map((row, i) => (
-                  <tr key={`${row.route}-${row.service_level}-${i}`} className="border-t border-slate-100">
-                    <td className="py-2">{row.route}</td><td className="py-2">{pct(row.service_level)}</td>
-                    <td className="py-2">{row.needed_days}</td><td className="py-2">{pct(row.late_rate)}</td>
-                  </tr>
-                ))}</tbody>
-              </table>
-            </div>
-          </>}
-        </Card>
+      {insightData.brief && <Card title="3 việc nên làm tuần này">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {weeklyActions.map(item => <div key={item.title} className="rounded-lg bg-slate-50 p-3">
+            <div className="text-xs font-medium text-slate-600 mb-1">{item.title}</div>
+            <p className="text-xs leading-5 text-slate-600">{item.row?.action || 'Không có mục trong nhóm này.'}</p>
+          </div>)}
+        </div>
+      </Card>}
+      {insightData.brief ? <BriefPanel brief={insightData.brief} groups={briefGroups} period={selectedPeriod} toast={toast} />
+        : <Card title={`Decision Brief · ${selectedPeriod}`}>
+            {insightLoading && <div className="text-sm text-slate-400">Đang tải Decision Brief…</div>}
+            {insightErrors.brief && <div className="text-sm text-red-500">Không tải được /brief: {insightErrors.brief}</div>}
+          </Card>}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        {insightData.sellers ? <SellerPanel data={insightData.sellers} period={selectedPeriod} toast={toast} />
+          : <Card title={`Seller Scorecard · ${selectedPeriod}`}>
+              {insightLoading && <div className="text-sm text-slate-400">Đang tải Seller Scorecard…</div>}
+              {insightErrors.sellers && <div className="text-sm text-red-500">Không tải được /sellers: {insightErrors.sellers}</div>}
+            </Card>}
+        {insightData.policy ? <PolicyPanel data={insightData.policy} period={selectedPeriod} />
+          : <Card title={`Promise Policy · ${selectedPeriod}`}>
+              {insightLoading && <div className="text-sm text-slate-400">Đang tải Promise Policy…</div>}
+              {insightErrors.policy && <div className="text-sm text-red-500">Không tải được /promise-policy: {insightErrors.policy}</div>}
+            </Card>}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card title="1. Route Priority" right={<span className="text-xs text-slate-400">red ≥ 2× · amber ≥ 1.5× system late rate</span>}>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card title="1. Rủi ro theo tỷ lệ trễ" right={<span className="text-xs text-slate-400">đỏ ≥ 2× · vàng ≥ 1,5× tỷ lệ trễ chung · tối thiểu 100 đơn-tuyến</span>}>
+          <p className="text-xs text-slate-400 mb-3">Xếp theo tỷ lệ: tuyến nhỏ có thể đỏ nhưng ít đơn trễ. Tác động theo số đơn nằm ở Decision Brief (nhóm 'Theo tuyến').</p>
           {loadingPri && <div className="text-sm text-slate-400 py-6 text-center">Đang tải danh sách tuyến…</div>}
           {!loadingPri && !pri.length && !listError && <div className="text-sm text-slate-400 py-6 text-center">No route exceeds the thresholds.</div>}
           <div className="space-y-2">{pri.map(p => (
@@ -522,7 +598,7 @@ function DSS({ toast }) {
                     <div className="absolute top-[-2px] h-3 w-0.5 bg-blue-400 left-0" /></div>
                 </div>);
               })}</div>
-              <div className="text-xs text-slate-400 mt-3">Bar = phần vượt so với trung bình hệ thống; vạch xanh = mức trung bình.</div>
+              <div className="text-xs text-slate-400 mt-3">So với trung bình toàn hệ thống, chưa chuẩn hoá theo khoảng cách.</div>
             </Card>
 
             <Card title="4. Recommendation & Action">
@@ -534,17 +610,20 @@ function DSS({ toast }) {
                 {pm ? <>Nếu đổi cam kết +<b className="text-slate-800">{pm.extra_days}</b> ngày thì tỷ lệ trễ theo định nghĩa mới ước tính <b className="text-slate-800">{pct(pm.late_after)}</b>; đổi định nghĩa trễ, không rút ngắn thời gian giao.</>
                   : <span>{loadingPm ? 'Đang tính goal seek…' : 'Chưa có kết quả goal seek.'}</span>}
               </div>
+              <p className="text-xs text-slate-400 mt-2">Đây là mức cam kết cần để đạt tỷ lệ trễ mục tiêu theo định nghĩa mới, không phải khuyến nghị đặt promise. Xem Promise Policy cho mức phục vụ 85/90/95%.</p>
               {pmError && <div className="text-xs text-red-500 mt-2">{pmError}</div>}
               <button onClick={apply} disabled={!pm || applying || loadingPm}
+                title="Chỉ ghi vào nhật ký, không thực thi gì"
                 className="mt-4 inline-flex items-center gap-2 text-sm px-3.5 py-1.5 rounded-lg border bg-white text-slate-700 border-slate-200 hover:bg-slate-50 disabled:opacity-50">
-                <Icon n="check" size={15} />{applying ? 'Đang ghi…' : 'Apply'}</button>
+                <Icon n="check" size={15} />{applying ? 'Đang ghi…' : 'Ghi nhận khuyến nghị'}</button>
               {actionMsg && <div className="text-xs text-slate-500 mt-3">{actionMsg}</div>}
+              <div className="text-xs font-medium text-slate-500 mt-4">Nhật ký ghi nhận (không tự thực thi)</div>
               {log.length > 0 && <ul className="mt-3 text-xs text-slate-500 space-y-1">{log.slice(0, 3).map((l, i) => (
                 <li key={i}>{l.created_at ? new Date(l.created_at).toLocaleString() : ''} · {l.action} · {l.route}</li>))}</ul>}
             </Card>
           </div>
 
-          <div className="lg:col-span-3">
+          <div className="lg:col-span-2">
             <Card title="3. Scenario (What-if)" right={<span className="text-xs text-slate-400">cut stage time (days) → projected late rate</span>}>
               <div className="grid md:grid-cols-2 gap-8">
                 <div className="space-y-5">{DS_ST.map(s => (
