@@ -846,6 +846,186 @@ def _attrib_shares(frame: pd.DataFrame) -> dict:
     return out
 
 
+def route_level_bootstrap(
+    o: pd.DataFrame, reps: int = 500, seed: int = 42, alpha: float = 0.05
+) -> dict:
+    """Bootstrap system-wide cause shares by resampling routes, not orders."""
+    if reps < 1:
+        raise ValueError("reps phải >= 1")
+    if not 0 < alpha < 1:
+        raise ValueError("alpha phải trong (0, 1)")
+    benchmarks = ATTRIB.fit_benchmarks(o, quantile=0.5)
+    attributed = ATTRIB.attribute(o, benchmarks)
+    grouped = attributed.groupby("route").agg(
+        late=("late_actual", "sum"),
+        promise=("late_benchmark", "sum"),
+        **{stage: (f"phi_{stage}", "sum") for stage in ATTRIB.STAGES},
+    )
+    grouped = grouped[grouped["late"] > 0]
+    if grouped.empty:
+        raise ValueError("Không có đơn trễ theo tuyến để bootstrap")
+
+    route_values = grouped[
+        [*ATTRIB.STAGES, "promise", "late"]
+    ].to_numpy(dtype=float)
+
+    def shares(sample: np.ndarray) -> dict[str, float]:
+        totals = sample.sum(axis=0)
+        denominator = totals[-1]
+        return {
+            **{
+                f"share_{stage}": float(totals[i] / denominator)
+                for i, stage in enumerate(ATTRIB.STAGES)
+            },
+            "share_promise": float(totals[-2] / denominator),
+        }
+
+    point = shares(route_values)
+    rng = np.random.default_rng(seed)
+    samples = {key: np.empty(reps) for key in point}
+    for i in range(reps):
+        indexes = rng.integers(0, len(route_values), size=len(route_values))
+        draw = shares(route_values[indexes])
+        for key in samples:
+            samples[key][i] = draw[key]
+
+    route_cause = grouped[[*ATTRIB.STAGES, "promise"]].div(
+        grouped["late"], axis=0
+    )
+    top_stage = route_cause.idxmax(axis=1)
+    return {
+        "reps": int(reps),
+        "seed": int(seed),
+        "q": 0.5,
+        "routes_resampled": int(len(grouped)),
+        "shares": {
+            key: {
+                "estimate": value,
+                "ci_low": float(np.quantile(samples[key], alpha / 2)),
+                "ci_high": float(np.quantile(samples[key], 1 - alpha / 2)),
+            }
+            for key, value in point.items()
+        },
+        "transit_rank_1_frequency": float((top_stage == "transit").mean()),
+        "transit_rank_1_routes": int((top_stage == "transit").sum()),
+        "routes_with_late_orders": int(len(grouped)),
+    }
+
+
+def _exact_sign_test(values: pd.Series) -> dict:
+    """Exact binomial sign test against 0, excluding tied observations."""
+    non_ties = values.dropna()
+    non_ties = non_ties[non_ties != 0]
+    n = int(len(non_ties))
+    positive = int((non_ties > 0).sum())
+    if n == 0:
+        return {"positive": 0, "negative": 0, "n_non_tie": 0,
+                "p_one_sided": float("nan"), "p_two_sided": float("nan")}
+
+    denominator = 2 ** n
+    probabilities = [
+        math.comb(n, k) / denominator for k in range(n + 1)
+    ]
+    one_sided = sum(probabilities[positive:])
+    observed_probability = probabilities[positive]
+    two_sided = sum(
+        probability
+        for probability in probabilities
+        if probability <= observed_probability + 1e-15
+    )
+    return {
+        "positive": positive,
+        "negative": n - positive,
+        "n_non_tie": n,
+        "p_one_sided": float(min(1.0, one_sided)),
+        "p_two_sided": float(min(1.0, two_sided)),
+    }
+
+
+def backtest_sign_tests(frame: pd.DataFrame) -> dict:
+    """Compare DSS period signs with zero, historical prior, and through."""
+    required = ["diff", "baseline_diff", "baseline_through_diff"]
+    missing = [column for column in required if column not in frame.columns]
+    if missing:
+        raise ValueError(f"Thiếu cột cho sign test: {missing}")
+    return {
+        "vs_zero": _exact_sign_test(frame["diff"]),
+        "vs_prior": _exact_sign_test(frame["diff"] - frame["baseline_diff"]),
+        "vs_through": _exact_sign_test(
+            frame["diff"] - frame["baseline_through_diff"]
+        ),
+    }
+
+
+def sign_test_v4_report(o: pd.DataFrame) -> None:
+    frame, _ = backtest(
+        o, min_orders=30, baseline=True, baseline_through=True
+    )
+    _, summary_100 = backtest(
+        o, min_orders=100, baseline=True, baseline_through=True
+    )
+    print("\n## Sign test (V4)")
+    print(
+        "- Backtest là tương quan hồi cứu; min_orders=30. "
+        f"Ở min_orders=100 có {summary_100['periods_evaluated']} kỳ đủ điều kiện. "
+        "n trong bảng là số đơn-tuyến ở kỳ kế tiếp."
+    )
+    view = frame[
+        [
+            "period",
+            "next_period",
+            "total_orders",
+            "diff",
+            "baseline_diff",
+            "baseline_through_diff",
+        ]
+    ].rename(
+        columns={
+            "total_orders": "n",
+            "baseline_diff": "diff_vs_prior",
+            "baseline_through_diff": "diff_vs_through",
+        }
+    )
+    print(_md_table(view))
+    for name, result in backtest_sign_tests(frame).items():
+        print(
+            f"- DSS {name}: +{result['positive']}/−{result['negative']} "
+            f"(non-tie n={result['n_non_tie']}); "
+            f"p một phía={result['p_one_sided']:.6g}; "
+            f"p hai phía={result['p_two_sided']:.6g}."
+        )
+
+
+def route_level_bootstrap_report(o: pd.DataFrame, reps: int = 500) -> None:
+    result = route_level_bootstrap(o, reps=reps, seed=42)
+    print("\n## Bootstrap route-level (V2)")
+    print(
+        f"- Resample tuyến, q=0.5, {result['reps']} lần, seed={result['seed']}; "
+        "CI percentile 95% cho tỷ trọng trong đơn trễ."
+    )
+    rows = []
+    for cause, values in result["shares"].items():
+        rows.append(
+            {
+                "cause": cause[len("share_"):],
+                "estimate": values["estimate"],
+                "ci_low": values["ci_low"],
+                "ci_high": values["ci_high"],
+                "status": (
+                    "chưa đủ bằng chứng"
+                    if values["ci_low"] <= 0 <= values["ci_high"]
+                    else "CI không chứa 0"
+                ),
+            }
+        )
+    print(_md_table(pd.DataFrame(rows)))
+    print(
+        "- Tần suất transit xếp hạng #1 theo tuyến: "
+        f"{result['transit_rank_1_routes']}/{result['routes_with_late_orders']} "
+        f"({result['transit_rank_1_frequency']:.2%})."
+    )
+
+
 def attribution_report(o: pd.DataFrame) -> None:
     """In attribution theo thiết kế peer group từng giai đoạn, q=0,5 và 0,25."""
     print("\n## Attribution (peer group theo giai đoạn + Shapley)")
@@ -927,7 +1107,8 @@ def attribution_report(o: pd.DataFrame) -> None:
 
     if att_reference is not None:
         print(
-            "- Đánh giá xấu (late vs on-time):",
+            "- Liên hệ trong cùng dữ liệu giữa trễ/đúng hạn và review xấu "
+            "(không hàm ý nhân quả):",
             ATTRIB.bad_review_uplift(att_reference),
         )
 
@@ -1102,11 +1283,13 @@ def feasible_cut_report(o: pd.DataFrame) -> None:
     )
     print(
         "- Đây là MÔ PHỎNG theo luật, không có counterfactual thật: nói "
-        "'NẾU cắt được ... THÌ ƯỚC TÍNH', không nói 'sẽ giảm'."
+        "diễn đạt bằng câu 'NẾU cắt được ... THÌ ƯỚC TÍNH', không trình bày "
+        "mô phỏng như kết quả thực tế."
     )
     print(
         "- Bootstrap 300 lần theo đơn-tuyến trong mỗi tuyến; CI 95% cho mức "
-        "giảm tỷ lệ trễ (điểm phần trăm). CI chứa 0 → 'chưa đủ bằng chứng'."
+        "giảm tỷ lệ trễ (điểm phần trăm). CI phản ánh sampling noise, không "
+        "chứng minh tính khả thi. CI chứa 0 → 'chưa đủ bằng chứng'."
     )
     if len(table) == 0:
         print("- Không có tuyến đủ mẫu.")
@@ -1219,7 +1402,7 @@ def seller_report(o: pd.DataFrame) -> None:
     )
     print(
         "- `bad_review_rate` (review ≤ 2) chỉ là LIÊN HỆ, không phải nhân quả; "
-        "đơn trễ có review xấu nhiều hơn nhưng không chứng minh trễ gây review xấu."
+        "đơn trễ có review xấu nhiều hơn; đây là liên hệ, không xác định chiều tác động."
     )
     print(
         f"- Seller đủ mẫu: {summary['n_sellers_scored']}/{summary['n_sellers']} "
@@ -1350,7 +1533,15 @@ def low_sample_report(o: pd.DataFrame) -> None:
 
 def decision_brief_report(o: pd.DataFrame) -> None:
     """In S6: Decision Brief tách 4 nhóm hành động, không cộng chéo loại."""
-    brief = BRIEF.decision_brief(o, n_boot=300, seed=42)
+    s4_top10 = ATTRIB.feasible_cut_table(o, top=10, n_boot=300, seed=42)
+    calibration = ATTRIB.promise_calibration(o, min_orders=100)
+    brief = BRIEF.decision_brief(
+        o,
+        n_boot=300,
+        seed=42,
+        route_table=s4_top10.head(5),
+        calibration=calibration,
+    )
     print("\n## Decision Brief (S6: hành động theo 4 loại, KHÔNG cộng chéo)")
     print(
         "- Brief là lớp trình bày từ S3/S4/S5/S7. Các nhóm route/payment/"
@@ -1362,8 +1553,23 @@ def decision_brief_report(o: pd.DataFrame) -> None:
     )
     print(
         "- Promise chỉ dùng NET. Mọi con số avoided/NET là mô phỏng theo luật: "
-        "nói 'nếu ... thì ước tính', không nói 'sẽ giảm'; không phải "
-        "counterfactual thật."
+        "dùng câu điều kiện 'nếu ... thì ước tính'; không phải counterfactual thật."
+    )
+    print(
+        "- Các tổng chỉ áp dụng đúng top-N đã chọn: route top 5 theo P25; "
+        "payment top 5 theo payment_type, chỉ approval/tác động thấp; promise "
+        "top 5 ô NET; seller top 5 theo excess. Không so sánh chúng như tổng "
+        "S4 top-10 hay NET S3 toàn bộ ô."
+    )
+    print(
+        f"- Phạm vi đối chiếu: S4 top-10 = "
+        f"{int(s4_top10['avoided_orders'].sum())} đơn; S3 NET = "
+        f"{int(calibration.attrs['net_avoided_orders'])} đơn trên "
+        f"{int(calibration.attrs['n_cells_kept'])} ô đủ mẫu."
+    )
+    print(
+        "- GMV là tổng GMV của đúng nhóm; excess seller là mức vượt tham chiếu "
+        "liên hệ, không phải số đơn tránh được theo tuyến."
     )
 
     route = brief["route_actions"]
@@ -1373,6 +1579,7 @@ def decision_brief_report(o: pd.DataFrame) -> None:
             "route",
             "stage",
             "owner",
+            "gmv",
             "avoided_orders",
             "avoided_ci_low",
             "avoided_ci_high",
@@ -1384,7 +1591,7 @@ def decision_brief_report(o: pd.DataFrame) -> None:
         view["delta_pp"] = view["delta_pp"].round(6)
         print(_md_table(view))
         print(
-            "- Tổng TRONG nhóm route (không cộng với nhóm khác): "
+            "- Tổng top 5 tuyến theo S4 peer P25 (không cộng với nhóm khác): "
             f"{int(route['avoided_orders'].sum())} đơn tránh được."
         )
     else:
@@ -1396,6 +1603,7 @@ def decision_brief_report(o: pd.DataFrame) -> None:
         cols = [
             "payment_type",
             "owner",
+            "gmv",
             "avoided_orders",
             "avoided_ci_low",
             "avoided_ci_high",
@@ -1407,7 +1615,8 @@ def decision_brief_report(o: pd.DataFrame) -> None:
         view["delta_pp"] = view["delta_pp"].round(6)
         print(_md_table(view))
         print(
-            "- Tổng TRONG nhóm payment (không cộng với nhóm khác): "
+            "- Tổng top 5 payment_type, chỉ approval và tác động thấp "
+            "(không cộng với nhóm khác): "
             f"{int(payment['avoided_orders'].sum())} đơn tránh được."
         )
     else:
@@ -1421,7 +1630,8 @@ def decision_brief_report(o: pd.DataFrame) -> None:
         f"({ps['late_rate_after']:.6f})."
     )
     print(
-        f"- NET tránh được: {ps['net_avoided_orders']}; phát sinh mới: "
+        f"- NET theo định nghĩa promise mới: {ps['net_avoided_orders']}; "
+        f"phát sinh mới: "
         f"{ps['new_late_orders']}; ô đủ mẫu: {ps['n_cells_kept']}."
     )
     promise = brief["promise_actions"]
@@ -1430,6 +1640,7 @@ def decision_brief_report(o: pd.DataFrame) -> None:
             "route",
             "weight_band",
             "owner",
+            "gmv",
             "needed_days",
             "net_avoided_orders",
             "new_late_orders",
@@ -1439,8 +1650,9 @@ def decision_brief_report(o: pd.DataFrame) -> None:
         ]
         print(_md_table(promise[cols]))
         print(
-            "- Tổng TRONG nhóm promise (chỉ NET, không cộng với nhóm khác): "
-            f"{int(promise['net_avoided_orders'].sum())} đơn tránh được."
+            "- Tổng top 5 ô route×weight_band theo NET (không cộng với nhóm khác): "
+            f"{int(promise['net_avoided_orders'].sum())} đơn trễ được phân "
+            "loại lại theo định nghĩa promise."
         )
     else:
         print("- Không có hành động promise.")
@@ -1451,6 +1663,7 @@ def decision_brief_report(o: pd.DataFrame) -> None:
         cols = [
             "seller_id",
             "owner",
+            "gmv",
             "orders",
             "late_orders",
             "late_rate",
@@ -1465,7 +1678,7 @@ def decision_brief_report(o: pd.DataFrame) -> None:
             view[col] = view[col].round(6)
         print(_md_table(view))
         print(
-            "- Tổng TRONG nhóm seller (không cộng với nhóm khác): "
+            "- Tổng top 5 seller theo excess (không cộng với nhóm khác): "
             f"{int(seller['estimated_excess_late_orders'].sum())} đơn trễ vượt "
             "mức hệ thống (chỉ là liên hệ, không nhân quả)."
         )
@@ -1477,6 +1690,7 @@ def decision_brief_report(o: pd.DataFrame) -> None:
     if len(low):
         cols = [
             "route",
+            "gmv",
             "orders",
             "late_orders",
             "late_rate",
@@ -1584,8 +1798,21 @@ def main() -> None:
     lo_z, hi_z = ci["pair_ci_vs_zero"]
     lo_t, hi_t = ci["pair_ci_vs_through"]
     print(f"Kết luận pair bootstrap:")
-    print(f"  DSS vs 0:     CI=[{lo_z:+.2f}; {hi_z:+.2f}] → {'CI không chứa 0 → có thể nói vượt 0' if lo_z > 0 else 'CI chứa 0 → không nói vượt'}")
-    print(f"  DSS vs through: CI=[{lo_t:+.2f}; {hi_t:+.2f}] → {'CI không chứa 0 → DSS vượt through' if lo_t > 0 else 'CI chứa 0 → không nói vượt through'}")
+    status_zero = (
+        "chưa đủ bằng chứng (CI chứa 0)"
+        if lo_z <= 0 <= hi_z
+        else "CI không chứa 0"
+    )
+    status_through = (
+        "chưa đủ bằng chứng (CI chứa 0)"
+        if lo_t <= 0 <= hi_t
+        else "CI không chứa 0"
+    )
+    print(f"  DSS vs 0:     CI=[{lo_z:+.2f}; {hi_z:+.2f}] → {status_zero}")
+    print(
+        f"  DSS vs through: CI=[{lo_t:+.2f}; {hi_t:+.2f}] → {status_through}"
+    )
+    print("  CI chứa 0 được diễn giải là chưa đủ bằng chứng.")
 
     threshold_sensitivity_report(o)
 
@@ -1600,6 +1827,8 @@ def main() -> None:
     print(_md_table(negative_time_comparison(raw, n=3)))
 
     attribution_report(o)
+    route_level_bootstrap_report(o, reps=500)
+    sign_test_v4_report(o)
 
     promise_policy_report(o)
 

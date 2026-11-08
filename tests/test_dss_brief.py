@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -89,6 +90,38 @@ def test_brief_low_sample_actions_are_flagged(brief):
     named = {"MA->SP", "PR->BA", "SP->TO"} & set(check.index)
     for route in named:
         assert bool(check.loc[route, "in_flagged"]) is True
+
+
+def test_brief_text_avoids_causal_and_certain_claims(brief):
+    text = "\n".join(brief["notes"])
+    for key in (
+        "route_actions",
+        "payment_actions",
+        "promise_actions",
+        "seller_actions",
+        "low_sample_actions",
+    ):
+        if len(brief[key]):
+            text += "\n" + "\n".join(brief[key]["action"].astype(str))
+    for banned in ("sẽ giảm", "chắc chắn", "gây ra"):
+        assert banned not in text.lower()
+    assert "đổi định nghĩa trễ, không rút ngắn thời gian giao" in text
+    assert "GMV" in text
+
+
+def test_brief_gmv_values_are_integers(brief):
+    for key in (
+        "route_actions",
+        "payment_actions",
+        "promise_actions",
+        "seller_actions",
+        "low_sample_actions",
+    ):
+        frame = brief[key]
+        if len(frame):
+            assert frame["gmv"].map(
+                lambda value: isinstance(value, (int, np.integer))
+            ).all()
 
 
 def test_brief_rejects_bad_input(o):
