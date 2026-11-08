@@ -1,4 +1,4 @@
-# QA BANK — 57 câu thầy có thể hỏi
+# QA BANK — 65 câu thầy có thể hỏi
 
 > Mỗi câu trả lời ≤ 4 câu, kèm locator để mở code/báo cáo ngay.
 > Nguyên tắc: **không bịa**. Nếu là đề xuất chưa làm → nói thẳng "chưa có trong repo".
@@ -6,10 +6,10 @@
 ## A. Thiết kế kho dữ liệu (9 câu)
 
 ### 1. Vì sao grain là 1 order item mà không phải 1 order?
-Vì mỗi item có product, seller, freight riêng; gộp lên order sẽ mất chi tiết và không trả lời được "seller nào chậm". Fact giữ `order_id + order_item_id` làm PK, sau đó DSS mới gộp lại thành 1 dòng/(order, route) khi cần. `sql/create_tables.sql:26-52`; `etl/dss_models.py:27-33`.
+Vì mỗi item có product, seller, freight riêng; gộp lên order sẽ mất chi tiết. Fact giữ `order_id + order_item_id` làm PK, sau đó DSS mới gộp lại thành 1 dòng/(order, route) khi cần. `sql/create_tables.sql`; `etl/dss_models.py`.
 
 ### 2. Vì sao dùng star schema thay vì chuẩn hoá 3NF?
-Truy vấn phân tích chủ yếu lọc theo thời gian/địa điểm/sản phẩm và tính tổng, nên 1 Fact + 3 Dim giảm join và dễ hiểu khi bảo vệ. Đây là lựa chọn thiết kế, không phải kết luận thực nghiệm. `sql/create_tables.sql:1-63`.
+Truy vấn phân tích chủ yếu lọc theo thời gian/địa điểm/sản phẩm và tính tổng, nên 1 Fact + 4 Dim dễ hiểu khi bảo vệ. Đây là lựa chọn thiết kế, không phải kết luận thực nghiệm. `sql/create_tables.sql`.
 
 ### 3. Vì sao Fact gọi là accumulating snapshot?
 Vì một dòng Fact lưu nhiều mốc của **cùng một đơn**: mua, duyệt, giao carrier, giao khách, cam kết. Nhờ vậy tính được 3 chặng và `delay_days` ngay trên Fact. `etl/fact_delivery_sla.py:42-58`.
@@ -24,7 +24,7 @@ Dữ liệu gốc chỉ có zip prefix cho customer/seller; dùng nó làm khoá
 Vì nó vừa là khoá Dim_Time vừa mã hoá ngày mua, giúp sort/lọc theo năm-tháng-ngày dễ và tránh join phức tạp. `etl/fact_delivery_sla.py:61`; `sql/create_tables.sql:1-8`.
 
 ### 7. Một đơn có 2 seller thì Fact/DSS xử lý sao?
-Fact có 2 nhóm item với 2 `seller_location_id`; `load_orders` gộp thành 2 dòng route cho cùng `order_id`. Vì vậy có **519 đơn nhiều tuyến** (tối đa 3), và số dòng order-route (**96.981**) lớn hơn số đơn (**96.455**). `etl/dss_models.py:30-33,34-47`; STATE (chạy thật).
+Fact có thể có nhiều seller theo item; `load_orders` gộp theo route. Raw eval ghi nhận **502** đơn nhiều seller bị loại khỏi seller scorecard; mẫu phân tích có 95.591 đơn-tuyến trên 95.082 đơn duy nhất. `reports/dss_eval_raw.txt`, mục Seller scorecard.
 
 ### 8. Vì sao review và payment phải dedup trước khi merge?
 Vì bảng gốc có nhiều dòng/đơn; merge thẳng sẽ nhân dòng Fact và làm sai mọi tỷ lệ. Review giữ bản mới nhất, payment giữ giá trị lớn nhất. `etl/fact_delivery_sla.py:64,94`.
@@ -44,24 +44,24 @@ Chỉ giữ `order_status == "delivered"` và drop các dòng thiếu 1 trong 5 
 `delay_days` = giao khách − ngày cam kết. Dương = trễ, âm = giao sớm, 0 = đúng hạn; `is_late` chỉ là `delay_days > 0`. `etl/fact_delivery_sla.py:57-58`; `etl/dss_models.py:27-47`.
 
 ### 13. Vì sao có prep/transit âm? Có bỏ không?
-Có **1.542** dòng prep âm và **50** dòng transit âm do dữ liệu mốc thời gian lệch (carrier cập nhật trước/duyệt muộn). Không bỏ, chỉ ghi nhận; báo cáo nói rõ vì bỏ sẽ làm thay đổi độ lớn excess. `reports/dss_results.md:316`.
+Có **1.361** đơn-tuyến prep âm và **29** transit âm; tổng **1.390** đơn-tuyến bị loại khỏi DSS. `reports/dss_eval_raw.txt`, mục Thời gian âm.
 
-### 14. Vì sao Fact có 110.173 dòng nhưng chỉ 96.455 đơn?
-Vì grain là item và join với order_items; một đơn nhiều item sinh nhiều dòng. Đây là lý do phải nói rõ "tỷ lệ trễ theo grain nào" khi trích số. `etl/fact_delivery_sla.py:98`; STATE (chạy thật).
+### 14. Vì sao Fact có 110.173 dòng nhưng chỉ 95.082 đơn duy nhất?
+Vì grain là item; một đơn nhiều item sinh nhiều dòng. Fact có 21 cột theo DDL, còn raw eval ghi nhận 95.591 đơn-tuyến sau lọc. Nêu rõ grain khi trích tỷ lệ. `sql/create_tables.sql`; `reports/dss_eval_raw.txt`.
 
-### 15. Vì sao `load_orders` gộp item lên order-route?
+### 15. Vì sao `load_orders` gộp item lên đơn-tuyến (order-route)?
 Vì DSS ra quyết định theo tuyến, không theo từng item; gộp để mỗi đơn chỉ đóng góp 1 phiếu cho tuyến. `etl/dss_models.py:27-33`.
 
 ### 16. Chạy ETL bằng lệnh nào?
 `python etl\main.py` để chỉ transform ra CSV; thêm `--load` để nạp PostgreSQL. Script chạy lần lượt 3 dim rồi fact. `etl/main.py:19-24,49-54`; `reports/run_guide.md:48-56`.
 
-### 17. Vì sao `migrate` không tạo 4 bảng DW?
-Vì 4 bảng đó khai báo `managed = False` và được tạo bằng `sql/create_tables.sql`; `migrate` chỉ tạo bảng nội bộ Django + `dss_action_log`. `reports/run_guide.md:45-46`.
+### 17. Vì sao `migrate` không tạo 5 bảng DW?
+Vì 5 bảng đó khai báo `managed = False` và được tạo bằng `sql/create_tables.sql`; `migrate` chỉ tạo bảng nội bộ Django + `dss_action_log`. `reports/run_guide.md`.
 
 ## C. Logic DSS (16 câu)
 
 ### 18. Vì sao chọn ngưỡng đỏ 2,0× và vàng 1,5×?
-Đây là **quy ước dễ giải thích** ("gấp đôi / gấp rưỡi mức chung"), không phải kết quả tối ưu. Bảng độ nhạy cho thấy đổi ngưỡng làm số tuyến gắn cờ chạy **11–30**, nên phải nói rõ "14 tuyến" chỉ đúng với 100/2,0/1,5. `reports/dss_formulas.md:58-68`; `reports/dss_results.md:225-232`.
+Đây là **quy ước dễ giải thích** ("gấp đôi / gấp rưỡi mức chung"), không phải kết quả tối ưu. Ở min_orders=100, năm cặp ngưỡng quanh mặc định cho **10–21 tuyến**; 100/2,5/2,0 giữ lõi 6 tuyến. "14 tuyến" chỉ đúng với 100/2,0/1,5. `reports/dss_eval_raw.txt`, mục S8.
 
 ### 19. Vì sao dùng ngưỡng tương đối thay vì tuyệt đối (ví dụ 5%)?
 Vì mức trễ nền thay đổi theo thời gian; ngưỡng tuyệt đối sẽ gắn cờ gần như mọi tuyến ở giai đoạn trễ cao. Ngưỡng tương đối giữ ý nghĩa "cao hơn mặt bằng chung". `etl/dss_models.py:119,130-134`.
@@ -87,14 +87,14 @@ Không sai: 14 là toàn bộ tập gắn cờ, 10 là mặc định hiển th�
 ### 26. Root cause hiện tại tính gì?
 `excess[s] = mean(chặng s của tuyến) − mean(chặng s toàn hệ thống)`, chọn `argmax` làm `stage`; `has_bottleneck = max(excess) > 0`. `etl/dss_models.py:169-190`; `reports/dss_formulas.md:103-123`.
 
-### 27. Vì sao nói root cause là tautology?
-Vì transit trung bình ~9,3 ngày, dài hơn prep ~2,8 và approval ~0,43, nên `argmax` gần như luôn chọn transit. Thực tế **13/14 tuyến** có `stage=transit` — đúng nhưng ít thông tin. `reports/dss_results.md:247`; `reports/dss_formulas.md:109`.
+### 27. Vì sao transit chiếm phần lớn attribution?
+Ở q=0,50 transit là 69,8820% tỷ trọng trong tập đơn trễ; V2 bootstrap route-level cho 69,9162%, CI 95% [56,4003%; 83,5136%]. Đây là phân rã mô tả, không phải tỷ lệ trễ hay quan hệ nhân quả. `reports/dss_eval_raw.txt`.
 
 ### 28. `excess_ratio` có sửa được phê bình đó không?
-Không: nó chỉ chia excess cho `|mean chặng|`, và **0/14 tuyến đổi stage**. Vì vậy không thể nói ratio làm root cause "công bằng" hơn. `reports/dss_results.md:247`; `reports/dss_formulas.md:125-129`.
+Không thể dùng excess_ratio để biến chẩn đoán mô tả thành nguyên nhân nhân quả; đây chỉ là cách chuẩn hoá một đại lượng excess khác.
 
 ### 29. Nếu median được dùng làm benchmark thì sao?
-Repo **không dùng median**; hiện tại là mean. Median/P10 theo decile khoảng cách chỉ là **đề xuất chưa triển khai** — nói "chưa có trong repo", đừng nhận là đã làm. `etl/dss_models.py:176-179`.
+Benchmark dùng approval theo `payment_type`, prep theo `weight_band`, transit theo decile khoảng cách xuyên tuyến; nhóm thiếu mẫu/NA fallback median toàn cục cùng giai đoạn. Không nhầm fallback này với P50 tham chiếu của S4. `reports/dss_eval_raw.txt`.
 
 ### 30. Scenario giả định cốt lõi là gì?
 Cắt `c_s` ngày ở chặng `s` làm giảm `delay_days` đúng `min(c_s, x_s)` ngày, tức giảm thời gian chuyển 1:1 sang ngày giao. Đây là giả định cơ học, bỏ qua buffer và chi phí. `reports/dss_formulas.md:135-151`; `etl/dss_models.py:193-210`.
@@ -126,22 +126,22 @@ Chạy `route_priority` trên riêng dữ liệu kỳ `t`, rồi so tỷ lệ tr
 Vì dữ liệu là chuỗi thời gian; chia random sẽ để thông tin tương lai rò vào quá khứ. Cách làm là train/test theo kỳ liền kề. `etl/dss_eval.py:101-107`.
 
 ### 39. Vì sao backtest dùng `min_orders=30`?
-Vì chia theo tháng thì mỗi tuyến ít đơn; 100 làm 6/19 kỳ không có cờ, 50 làm 2 kỳ. Production vẫn dùng 100 vì chạy full data. `reports/dss_results.md:119`.
+Vì chia theo tháng thì mỗi tuyến ít đơn; min_orders=30 cho 19 kỳ đủ điều kiện, còn 100 chỉ có 13 kỳ đủ điều kiện. Production vẫn dùng 100 vì chạy full data. `reports/dss_eval_raw.txt`, mục backtest.
 
 ### 40. `weighted_diff` khác `mean_diff` thế nào?
-`mean_diff` là trung bình cộng 19 kỳ; `weighted_diff` trọng số theo `total_orders` kỳ `t+1` để kỳ lớn không bị kỳ nhỏ chi phối. Số chính là weighted **+8,14 pp**, mean **+7,13 pp**. `reports/dss_results.md:47-67`.
+`mean_diff` là trung bình cộng 19 kỳ; `weighted_diff` trọng số theo `total_orders` kỳ `t+1`. Hiện tại weighted là **+8,2826 pp**, mean **+7,2403 pp**, flagged-weighted **+10,4624 pp**. Đây là tương quan hồi cứu. `reports/dss_eval_raw.txt`, mục backtest.
 
 ### 41. Vì sao phải báo 3 phản ví dụ?
-Vì "16/19" che mất việc có kỳ tín hiệu đảo chiều; 201701 **−0,98 pp**, 201708 **−1,82 pp**, 201807 **−9,33 pp**. Báo đủ để thấy kết luận không đồng nhất. `reports/dss_results.md:121-124`.
+Vì "16/19" che mất kỳ chênh lệch âm; V4 hiện ghi 201701 **−0,983 pp**, 201708 **−1,802 pp**, 201807 **−9,400 pp**. Báo đủ để thấy kết quả không đồng nhất. `reports/dss_eval_raw.txt`, mục Sign test (V4).
 
 ### 42. CI vs through chứa 0 nghĩa là gì?
-Nghĩa là chưa đủ bằng chứng nói DSS khác through; chỉ được nói "cao hơn ~+0,8 pp theo điểm ước lượng, không có ý nghĩa thống kê". **Không được dùng chữ "vượt"**. `reports/dss_results.md:208-216,218`.
+Nghĩa là **chưa đủ bằng chứng** DSS tốt hơn through; pair CI hiện tại là [−0,50; +2,52] pp. **Không được dùng chữ "vượt"**. `reports/dss_eval_raw.txt`, mục bootstrap.
 
 ### 43. Bootstrap pair và block khác nhau thế nào?
 Pair resample theo từng kỳ; block 3 tháng circular giữ cấu trúc tự tương quan giữa các kỳ gần nhau. Cả hai đều cho vs through chứa 0. `etl/dss_eval.py:616-621,674-684`.
 
 ### 44. Threshold sensitivity chứng minh điều gì?
-Chứng minh kết luận "14 tuyến" không bất biến: 50/1,5/1,25 cho **30** tuyến; 200/2,0/1,5 cho **11**. Vì vậy luôn nói kèm bộ tham số. `reports/dss_results.md:225-232`.
+Chứng minh kết luận "14 tuyến" không bất biến: toàn lưới cho **4–30** tuyến; tại min_orders=100, năm cặp quanh mặc định cho **10–21**. Vì vậy luôn nói kèm bộ tham số. `reports/dss_eval_raw.txt`, mục S8.
 
 ### 45. Chỉ 19 kỳ thì CI có đáng tin?
 Chỉ mang tính tham khảo; báo cáo đã ghi rõ. Circular block còn nối kỳ cuối với kỳ đầu, là xấp xỉ. `reports/dss_results.md:222`.
@@ -161,30 +161,54 @@ Repo **đã từng có prototype ML nhưng đã gỡ hoàn toàn** (`af9249c`); 
 Không. Đây là chênh lệch mô tả + mô phỏng what-if; không có thử nghiệm hay biến công cụ. Chỉ được nói "liên quan", "nếu giả định..., thì...". `reports/dss_formulas.md:151`.
 
 ### 50. Shapley attribution đâu?
-**Chưa có trong repo.** Không có `dss_attrib`, không có benchmark/residual như bản v2 mô tả; nếu bị hỏi phải nói "đề xuất, chưa triển khai". `reports/DSS_V2_PROMPT.md` (yêu cầu) vs grep `shapley|dss_attrib` không kết quả.
+Đã triển khai attribution theo peer benchmark. Approval benchmark theo `payment_type`, prep theo `weight_band`, transit theo decile khoảng cách xuyên tuyến; kết quả `cause_share_*` là tỷ trọng trong tập đơn trễ. `reports/dss_eval_raw.txt`, mục Attribution.
 
-### 51. Residual "promise too tight" là gì, em tính chưa?
-Khái niệm: residual = ngày giao thực tế − ngày cam kết; residual dương hệ thống nghĩa là cam kết quá chặt. Repo **chưa** tính phân rã này; chỉ có `goal_seek_promise` dựa trên phân vị `delay_days`. `etl/dss_models.py:236-240`.
+### 51. Vì sao q=0,75 không được báo cáo?
+Ở q=0,75 benchmark chậm hơn actual, tạo phi âm và phân rã không hợp lệ; độ nhạy chỉ dùng q=0,25 và q=0,50. `reports/dss_eval_raw.txt`, mục Attribution.
 
-### 52. Nếu có thêm dữ liệu seller_id trong Fact thì sao?
-Fact hiện chưa có `seller_id`, nên root cause chỉ xuống được mức **giai đoạn**, không chỉ ra seller cụ thể. Đây là hạn chế đã ghi trong hướng dẫn. `DSS_HUONG_DAN.md:416`.
+### 52. Seller scorecard có chứng minh seller gây trễ không?
+Không. Scorecard chỉ dùng đơn single-seller; khác biệt có thể do route mix và thành phần đơn. Đây là liên hệ, không phải quy kết nguyên nhân. `reports/dss_eval_raw.txt`, mục Seller scorecard.
 
 ## F. Hạn chế & tính trung thực (5 câu)
 
 ### 53. Điểm yếu lớn nhất của đồ án?
-Root cause gần như tautology (13/14 transit) và what-if bỏ qua khả thi/chi phí. Ngoài ra `vs through` không có ý nghĩa thống kê. `reports/dss_results.md:247,208-216`; `reports/dss_formulas.md:151`.
+Ước lượng có thể bị confound bởi route mix, what-if bỏ qua khả thi/chi phí, và CI so với through chứa 0 nên chưa đủ bằng chứng DSS tốt hơn. `reports/dss_eval_raw.txt`, mục V2/V4.
 
 ### 54. Điều gì sẽ bác bỏ kết luận của em?
 Nếu tín hiệu gắn cờ không còn khi đổi `min_orders`/ngưỡng, hoặc các kỳ sau đảo chiều mạnh như 201807, hoặc dữ liệu bị drift theo mùa. Bảng sensitivity và 3 phản ví dụ chính là các kiểm tra đó. `reports/dss_results.md:225-232,121-124`.
 
 ### 55. Số nào hay bị trích sai nhất?
-"14 tuyến" (thực tế API mặc định 10), "8,07%" (đúng cho order-route; fact là 7,91%, order là 8,11%), và "cắt transit giảm 2,09 pp" (đó là mô phỏng, không phải nhân quả). `STATE.md:15`; `reports/dss_results.md:239-241`.
+"14 tuyến" (API `/routes` mặc định trả tối đa 10), tỷ lệ trễ **8,1556% theo đơn-tuyến** so với **8,1950% theo đơn duy nhất**, và GROSS so với NET của promise. Mô phỏng chỉ nói "nếu… thì ước tính". `reports/dss_eval_raw.txt`.
 
 ### 56. Tab nào là thật, tab nào mock?
 Chỉ **DSS Action Center** gọi API Django thật; Dashboard, OLAP, ETL Monitor là mock tĩnh. Nói rõ trước khi thầy bấm. `web/Olist_Logistics_DSS_v3.html:427`; `reports/run_guide.md:93-96`.
 
 ### 57. Nếu thầy yêu cầu chạy lại ngay bây giờ?
-Chạy `python etl\main.py` (nếu cần tái tạo CSV), `pytest -q`, `manage.py test dss`, rồi one-liner trong `CHEAT_SHEET.md`. Kỳ vọng 26/16 test và `overall 8.0727%`. `reports/run_guide.md:104-134`.
+Chạy `.\scripts\check.ps1`; nếu muốn bỏ qua tái tạo raw eval thì thêm `-Quick`. Lần xác nhận hiện hành có 77 pytest, 22 Django tests và regen eval pass. `reports/CHECK_OUTPUT.txt`.
+
+### 58. Shapley attribution dùng benchmark peer nào?
+Approval benchmark theo `payment_type`, prep theo `weight_band`, transit theo decile khoảng cách xuyên tuyến; kết quả Shapley là tỷ trọng trong tập đơn trễ. Fallback dùng median toàn cục của cùng giai đoạn khi peer thiếu mẫu/NA. `reports/dss_eval_raw.txt`, mục Attribution.
+
+### 59. Vì sao q=0,75 không được báo cáo?
+Ở q=0,75 benchmark chậm hơn actual, tạo phi âm và phân rã không hợp lệ; độ nhạy chỉ báo cáo q=0,25 và q=0,50. `reports/dss_eval_raw.txt`, mục Attribution.
+
+### 60. S3 GROSS 3.751 và NET 2.867 khác nhau thế nào?
+GROSS là số đơn-tuyến được phân loại lại là đúng hạn trước khi trừ 884 đơn trễ mới; NET là 2.867. Đây là đổi định nghĩa trễ, không rút ngắn thời gian giao. `reports/dss_eval_raw.txt`, mục Promise calibration.
+
+### 61. CI hẹp của S4 có nghĩa là mức cắt khả thi không?
+Không. CI của S4 phản ánh sampling noise quanh mô phỏng; CI hẹp không chứng minh tính khả thi vận hành hay nguồn lực để cắt thời gian. S4 dùng P25 làm mức cắt; P50 chỉ là tham chiếu. `reports/dss_eval_raw.txt`, mục S4.
+
+### 62. Seller scorecard có chứng minh seller gây trễ không?
+Không. Scorecard chỉ dùng đơn single-seller; khác biệt có thể do route mix và thành phần đơn. Đây là liên hệ, không phải quy kết nguyên nhân. Seller excess cũng khác tập/ý nghĩa với route-avoidable, không cộng hay so sánh. `reports/dss_eval_raw.txt`, mục Seller scorecard.
+
+### 63. Sign test vs through nói gì, và vì sao vẫn “chưa đủ bằng chứng”?
+Sign test có 12 dấu dương, 4 âm, n=16; p một phía 0,03841, hai phía 0,07681. Nó đếm hướng chênh lệch theo kỳ, không đo độ lớn; bootstrap CI vs through chứa 0, nên chưa đủ bằng chứng DSS tốt hơn through. `reports/dss_eval_raw.txt`, mục Sign test (V4).
+
+### 64. Bootstrap V2 lấy mẫu gì?
+Lấy mẫu lại tuyến 500 lần với seed 42 ở q=0,50; CI là bất định của tỷ trọng nguyên nhân trong tổng tập đơn trễ. Transit xếp #1 ở 165/226 tuyến. `reports/dss_eval_raw.txt`, mục Bootstrap route-level (V2).
+
+### 65. Bao nhiêu tuyến được gắn cờ ở cấu hình mặc định?
+14 tuyến tại min_orders=100, red=2,0, amber=1,5; 6 đỏ và 8 vàng. MA→SP, PR→BA, SP→TO vẫn hiện “cần thêm dữ liệu” và không tính trùng vào ưu tiên chính. `reports/dss_eval_raw.txt`, mục S7/S8.
 
 ## G. Đóng góp nhóm — điền trước khi bảo vệ
 

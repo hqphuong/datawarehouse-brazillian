@@ -34,12 +34,13 @@ Start-Process "web\Olist_Logistics_DSS_v3.html"
 ## 1. Timeline 10 phút
 
 ### 0:00–0:50 — Bài toán + 1 con số
-**Nói:** "Olist giao trễ cam kết ở **8,07%** đơn. Trễ không rải đều: 14 tuyến vượt ngưỡng, tuyến xấu nhất **26,6%**. Nhóm em xây một DSS để trả lời 3 câu: tuyến nào cần xử lý, nghẽn ở đâu, và nếu can thiệp thì còn bao nhiêu trễ."
+**Nói:** "Tỷ lệ trễ là **8,1556% theo đơn-tuyến** và **8,1950% theo đơn duy nhất**. Ở bộ ngưỡng mặc định có 14 tuyến được gắn cờ. DSS giúp xem tuyến, giai đoạn liên quan và nếu… thì ước tính theo luật what-if."
 **Không nói:** "em dự báo đơn nào sẽ trễ" (không có ML).
 
 ### 0:50–2:00 — Kiến trúc 1 chiều
-**Vẽ/vẽ tay:** `9 CSV → ETL → Star schema (Fact + 3 Dim) → DSS 4 khối → API Django → UI`.
-**Nói:** "Fact grain 1 order item, 110.173 dòng, 96.455 đơn; DSS gộp lên 1 dòng/(order, route) = 96.981 dòng."
+**Vẽ/vẽ tay:** `9 CSV gốc → ETL (5 CSV) → Star schema (5 bảng; Fact 21 cột) → DSS → API Django → UI`.
+**Nói:** "Fact grain là order item, 110.173 dòng. Raw eval có 96.981 đơn-tuyến trước lọc; sau khi loại thời gian âm còn 95.591 đơn-tuyến trên 95.082 đơn duy nhất."
+**API:** "Backend có 9 endpoint: routes, scenario, promise, actions, brief, attribution, promise-policy, sellers và portfolio. Các tab Dashboard/OLAP/ETL vẫn là mock."
 **Chỉ:** `sql/create_tables.sql:26-52`; `etl/fact_delivery_sla.py:54-58`.
 
 ### 2:00–3:10 — Kho dữ liệu & ETL (nếu thầy muốn)
@@ -51,27 +52,27 @@ f = pd.read_csv("data/processed/cleaned_fact_orders.csv")
 print(len(f), f.order_id.nunique(), round((f.delay_days>0).mean()*100,4))
 '@ | .\backend\env\Scripts\python.exe -
 ```
-**Nói:** "110.173 dòng, 96.455 đơn, tỷ lệ trễ theo item 7,91%. Chỉ giữ đơn `delivered`, bỏ dòng thiếu mốc thời gian; 3 chặng tính từ 4 mốc."
+**Nói:** "Raw eval ghi nhận 110.173 dòng cấp item và 95.591 đơn-tuyến sau lọc; 1.390 đơn-tuyến có stage time âm bị loại."
 **Chỉ:** `etl/fact_delivery_sla.py:41-58`.
 
 ### 3:10–5:00 — Khối 1: Route Priority (tab DSS)
-**Click:** sidebar **DSS Action Center** → cột trái, bấm tuyến đỏ **SP→AL**.
+**Click:** sidebar **DSS Action Center** → chọn một tuyến được gắn cờ.
 **Nói:** "Tuyến đỏ = tỷ lệ trễ ≥ 2× mức chung; vàng ≥ 1,5×. Mặc định API trả 10 dòng nhưng **red-first**: nếu nhiều đỏ thì trả hết đỏ, không che."
 **Chỉ trên màn hình:** `252 late of ... orders`, `[ci_low–ci_high]`, nhãn `ⓘ chưa chắc` / `⚠ mẫu nhỏ` nếu có.
-**Câu chốt:** "Toàn bộ tập gắn cờ là **14 tuyến** (6 đỏ, 8 vàng); đây là 10 dòng hiển thị. `uncertain` 7/14, `low_sample` 3/14."
+**Câu chốt:** "Ở min_orders=100, red=2,0, amber=1,5 có **14 tuyến** (6 đỏ, 8 vàng); API mặc định hiển thị tối đa 10."
 
 ### 5:00–6:10 — Khối 2: Root cause
 **Click:** cùng màn hình, nhìn card **2. Root Cause**.
-**Nói:** "So trung bình từng chặng của tuyến với toàn hệ thống. SP→AL lệch transit **+12,5 ngày**, nên stage = transit."
-**Tự nêu điểm yếu trước khi bị hỏi:** "Cách này gần như luôn chọn transit vì transit dài nhất — 13/14 tuyến. Bọn em biết và ghi rõ đây là chẩn đoán mô tả, không phải nhân quả."
-**Chỉ:** `reports/dss_results.md:247`; `etl/dss_models.py:169-190`.
+**Nói:** "Attribution dùng benchmark peer và Shapley; ở q=0,50, transit chiếm **69,9162% tỷ trọng trong tập đơn trễ**. Bootstrap route-level cho thấy transit xếp #1 ở 165/226 tuyến."
+**Tự nêu điểm yếu trước khi bị hỏi:** "Đây là phân rã mô tả, không phải kết luận nhân quả; tỷ trọng trong tập đơn trễ không phải tỷ lệ trễ."
+**Chỉ:** `reports/dss_eval_raw.txt`, mục Attribution và Bootstrap route-level (V2).
 
 ### 6:10–7:25 — Khối 3 + 4: Scenario & Promise
 **Click:** kéo slider **Cut Transit** từ 0 → 1 → 5 ở card **3. Scenario**.
-**Nói:** "Đây là mô phỏng: cắt 1 ngày transit thì tỷ lệ trễ dự báo giảm; càng về sau lợi ích biên càng nhỏ vì chỉ đơn sát ngưỡng mới lật."
+**Nói:** "Đây là mô phỏng: nếu cắt được thời gian theo giả định thì ước tính lại tỷ lệ đơn bị gắn nhãn trễ; lợi ích biên thay đổi theo mức cắt và tuyến."
 **Click:** card **4. Recommendation & Action**, kéo **Target late rate** về 5%.
-**Nói:** "Goal seek: SP→RJ cần kéo cam kết **15 ngày** để còn 4,66% trễ. Nhưng đây là kéo dài **cam kết**, không phải giao nhanh hơn; và cắt 10 ngày transit của SP→BA vượt excess thực tế nên không khả thi."
-**Chỉ:** `reports/dss_results.md:317-318,239-243`.
+**Nói:** "Promise calibration dùng Q95 để tính needed_days. Nếu đổi promise thì ước tính lại nhãn trễ; đây là đổi định nghĩa trễ, không rút ngắn thời gian giao. Bảng 85/90/95% là mức phục vụ, không phải khuyến nghị đặt promise."
+**Chỉ:** `reports/dss_eval_raw.txt`, mục Promise calibration.
 
 ### 7:25–8:05 — Hành động & log
 **Click:** nút **Apply**.
@@ -80,13 +81,13 @@ print(len(f), f.order_id.nunique(), round((f.delay_days>0).mean()*100,4))
 
 ### 8:05–9:05 — Đánh giá: 1 phút
 **Nói 3 câu, không mở bảng:**
-1. "Backtest một bước: **16/19 kỳ** nhóm gắn cờ trễ hơn, weighted **+8,14 pp**."
-2. "Nhưng so baseline `through` — cùng lượng thông tin — CI **chứa 0**, nên em **không** nói DSS vượt baseline."
-3. "Đổi ngưỡng cho **11–30 tuyến**, nên '14' luôn nói kèm 100/2,0/1,5."
-**Chỉ:** `reports/dss_results.md:47,208-216,225-232`.
+1. "Backtest min_orders=30: **16/19 kỳ** nhóm gắn cờ có tỷ lệ trễ kỳ sau cao hơn; weighted diff **+8,2826 pp**."
+2. "So baseline `through`, CI chứa 0 nên **chưa đủ bằng chứng** DSS tốt hơn."
+3. "Ở min_orders=100, năm cặp ngưỡng quanh mặc định cho **10–21 tuyến**; 14 luôn phải đi cùng cấu hình 100/2,0/1,5."
+**Chỉ:** `reports/dss_eval_raw.txt`, mục Backtest, Bootstrap, S8.
 
 ### 9:05–10:00 — Hạn chế + kết
-**Nói:** "Ba hạn chế: root cause tautology; what-if giả định cắt 1:1, bỏ qua chi phí; backtest 19 kỳ và 3 kỳ đảo chiều. Hướng tiếp theo là benchmark theo khoảng cách/P10 và thêm `seller_id` vào Fact — **hiện chưa làm**."
+**Nói:** "Hạn chế: quan hệ hồi cứu không phải nhân quả; what-if bỏ qua chi phí và tính khả thi; Wilson giả định độc lập; mỗi đơn chỉ có một carrier date; không có ROI."
 **Kết:** "Vì vậy em trình bày đây là **DSS luật, giải thích được, có kiểm chứng bước đầu**, không phải mô hình nhân quả hay dự báo."
 
 ---

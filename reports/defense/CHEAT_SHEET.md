@@ -1,51 +1,54 @@
 # CHEAT SHEET — Olist Logistics DSS
 
-> Dùng khi bảo vệ. Mọi số dưới đây lấy từ lần chạy thật ngày **06/11/2026**.
-> Quy tắc: gặp số lạ → mở `STATE.md` hoặc chạy one-liner ở cuối, **không đoán**.
+> Dùng khi bảo vệ. Các kết quả hiện hành lấy từ `reports/dss_eval_raw.txt` và
+> `reports/CHECK_OUTPUT.txt`; không dùng số ở bản ghi cũ.
 
 ## 1. Câu chuyện 5 câu
 
-1. Olist giao trễ cam kết ở **8,07%** đơn; trễ không đều — một số tuyến `seller.state → customer.state` cao gấp 3 lần mức chung.
+1. Tỷ lệ trễ là **8,1556% theo đơn-tuyến** và **8,1950% theo đơn duy nhất**; hai mẫu số khác nhau.
 2. Nhóm xây kho dữ liệu hình sao từ 9 bảng CSV gốc, grain **1 dòng = 1 item**, Fact là *accumulating snapshot* đo 3 chặng: duyệt, seller chuẩn bị, vận chuyển.
-3. Trên kho đó, DSS luật gồm 4 khối: **(1)** xếp hạng tuyến đỏ/vàng, **(2)** tìm chặng nghẽn, **(3)** mô phỏng what-if cắt ngày, **(4)** goal seek cam kết + ghi log hành động.
-4. Kết quả được kiểm tra bằng **backtest một bước 19 kỳ** (16/19 kỳ tuyến gắn cờ trễ hơn, weighted **+8,14 pp**), bootstrap CI và độ nhạy ngưỡng.
-5. Hệ thống là **mô phỏng theo luật**, không phải nhân quả và không dự báo bằng ML; điểm mạnh là giải thích được, điểm yếu là giả định cắt 1:1 và cỡ mẫu nhỏ ở vài tuyến.
+3. DSS có các khối route priority, attribution/Shapley, promise calibration, feasible cut, seller scorecard/portfolio, low-sample, threshold sensitivity và Decision Brief.
+4. V4: **16/19 kỳ** nhóm gắn cờ cao hơn kỳ sau; weighted diff **+8,2826 pp**. Đây là tương quan hồi cứu.
+5. Hệ thống là **mô phỏng theo luật**, không phải nhân quả và không dự báo bằng ML; simulation không phải counterfactual.
 
 ## 2. Mười con số đầu bảng
 
 | # | Số | Ý nghĩa | Locator |
 |---|---|---|---|
-| 1 | **99.441** đơn / **112.650** item gốc | dữ liệu nguồn | đếm raw; `etl/fact_delivery_sla.py:32-37` |
-| 2 | **110.173** dòng Fact / **96.455** đơn | sau lọc `delivered` + dropna + inner join item | chạy thật; `etl/fact_delivery_sla.py:41,52,98` |
-| 3 | **8,0727%** trễ (order-route) | tỷ lệ trễ chung | `STATE.md:15` |
-| 4 | **16,1454%** đỏ / **12,1091%** vàng | ngưỡng = 2,0× và 1,5× mức chung | `STATE.md:15`; `reports/dss_formulas.md:58-64` |
-| 5 | **14 tuyến** gắn cờ = **6 đỏ + 8 vàng** | toàn bộ tập gắn cờ | `STATE.md:17`; `reports/dss_results.md:253-266` |
-| 6 | **10** | số dòng API `/routes` mặc định (`top=10`) | `backend/dss/views.py:60`; `dss_results.md:284` |
-| 7 | **7/14** `uncertain`, **3/14** `low_sample` | cảnh báo thống kê / mẫu nhỏ | `STATE.md:17`; `dss_formulas.md:99` |
-| 8 | **13/14** tuyến có `stage=transit` | chặng nghẽn theo excess | `reports/dss_results.md:247` |
-| 9 | **16/19** kỳ, weighted **+8,14 pp** | backtest `min_orders=30` | `dss_results.md:47` |
-| 10 | CI vs through **[−0,58; +2,35]** | **chứa 0 → không nói "vượt"** | `STATE.md:21`; `dss_results.md:208-216` |
+| 1 | **110.173** dòng item | input Fact của raw eval | `reports/dss_eval_raw.txt` |
+| 2 | **96.981 → 95.591** đơn-tuyến | trước/sau lọc 1.390 thời gian âm | `reports/dss_eval_raw.txt`, mục Thời gian âm |
+| 3 | **8,1556% / 8,1950%** | tỷ lệ trễ theo đơn-tuyến / đơn duy nhất (95.082 đơn) | `reports/dss_eval_raw.txt` |
+| 4 | **100 / 2,0 / 1,5** | min_orders / red / amber mặc định | `reports/dss_eval_raw.txt`, mục S8 |
+| 5 | **14 tuyến: 6 đỏ + 8 vàng** | cờ mặc định; không phải tổng ổn định qua mọi ngưỡng | `reports/dss_eval_raw.txt` |
+| 6 | **9 endpoint DSS** | 4 endpoint cũ + brief, attribution, promise-policy, sellers, portfolio | `reports/api_dss.md` |
+| 7 | **3.751 GROSS / 2.867 NET** | Promise calibration; có 884 đơn trễ mới | `reports/dss_eval_raw.txt`, mục S3 |
+| 8 | q=0,50: transit **69,9162%** | tỷ trọng trong tập đơn trễ; V2 CI 95% [56,4003%; 83,5136%] | `reports/dss_eval_raw.txt` |
+| 9 | **16/19**, weighted **+8,2826 pp** | backtest `min_orders=30` | `reports/dss_eval_raw.txt` |
+| 10 | CI vs through **[−0,50; +2,52] pp** | chứa 0 → **chưa đủ bằng chứng** | `reports/dss_eval_raw.txt`, mục bootstrap |
 
-**Số phụ đáng nhớ:** 3 chặng trung bình **0,43 / 2,79 / 9,32 ngày** (`dss_formulas.md:109`); tỷ lệ trễ theo grain: fact **7,9085%**, order **8,1126%**, order-route **8,0727%**; **519** đơn nhiều tuyến (tối đa 3), **408** tuyến; prep âm **1.542** dòng, transit âm **50** dòng; **11–30** tuyến khi đổi ngưỡng (`dss_results.md:225-232`).
-**Goal seek:** SP→RJ **15** ngày, SP→BA **10**, SP→ES **9**; cut transit SP→BA **10**, SP→ES **9**, SP→RJ **None** (`STATE.md:21`; `dss_results.md:239-243`).
-**Test:** **26 pytest / 16 Django** (`STATE.md:23`; `reports/dss_results.md:8,15`).
+**Schema:** 5 bảng DW, 5 CSV ETL, Fact `Fact_Delivery_SLA` có 21 cột theo DDL.
+**Số phụ:** S3 có 130/1.157 ô đủ mẫu (83.104/95.591 đơn-tuyến); S4 top-10 là
+2.878, còn S3 NET toàn bộ ô là 2.867 — khác tập nên không đối chiếu như cùng
+một tổng. S8 tại min_orders=100 dao động 10–21 tuyến qua năm cặp ngưỡng; bộ
+100/2,5/2,0 giữ lõi 6.
+**Test:** **77 pytest / 22 Django**, regen eval pass (`reports/CHECK_OUTPUT.txt`).
 
 ## 3. Ba câu bắt buộc phải nói khi bảo vệ
 
-1. **"DSS không vượt baseline through có ý nghĩa thống kê"** — CI chứa 0 (`dss_results.md:208-216`). Chỉ được nói "cao hơn ~+0,8 pp theo điểm ước lượng".
-2. **"What-if là mô phỏng, không phải nhân quả"** — giả định cắt 1 ngày lùi giao đúng 1 ngày, bỏ qua chi phí/năng lực (`dss_formulas.md:135-151`).
+1. **"Chưa đủ bằng chứng DSS tốt hơn through"** — CI chứa 0 (`reports/dss_eval_raw.txt`, mục bootstrap).
+2. **"What-if là mô phỏng, không phải nhân quả"** — nếu giả định cắt thời gian thì ước tính lại nhãn trễ; bỏ qua chi phí/năng lực.
 3. **"Chỉ tab DSS gọi API thật; Dashboard/OLAP/ETL là mock"** (`web/Olist_Logistics_DSS_v3.html:427`; `reports/run_guide.md:93-96`).
 
 ## 4. Những thứ **KHÔNG** được nói là đã có
 
-Shapley / `dss_attrib` · benchmark theo decile khoảng cách / median · residual "promise too tight" · portfolio · seller scorecard · Decision Brief · AUC / time-split replay của ML · "4 tab đều live" · "nguyên nhân gốc là nhân quả" · "cắt transit giảm 2,09 pp trong thực tế".
+Kết quả what-if là tác động thực tế · seller excess là đơn tránh được theo tuyến · "4 tab đều live" · AUC / time-split replay của ML · "nguyên nhân gốc là nhân quả".
 
 ## 5. Glossary (nói bằng lời của mình)
 
 | Thuật ngữ | Nghĩa ngắn |
 |---|---|
 | **Grain** | Đơn vị nhỏ nhất của 1 dòng Fact: ở đây là **1 order item**. |
-| **Star schema** | 1 bảng Fact ở giữa + các bảng Dim xung quanh; Dim_Time, Dim_Location, Dim_Product. |
+| **Star schema** | 1 bảng Fact ở giữa + 4 bảng Dim: Time, Location, Product, Seller. |
 | **Accumulating snapshot** | Fact ghi các mốc thời gian của cùng một đơn (mua → duyệt → giao carrier → giao khách). |
 | **Degenerate dimension** | Chiều không có bảng riêng, nằm ngay trong Fact: `payment_type`. |
 | **Late rate** | Tỷ lệ đơn có `delay_days > 0` (giao sau ngày cam kết). |
@@ -65,7 +68,7 @@ Shapley / `dss_attrib` · benchmark theo decile khoảng cách / median · resid
 @'
 from etl import dss_models as M
 o = M.load_orders()
-print("rows", len(o), "orders", o.order_id.nunique())
+print("order_route_rows", len(o), "unique_orders", o.order_id.nunique())
 print("overall %.4f%%" % (o.is_late.mean()*100))
 rp = M.route_priority(o, top=10)
 print("all", len(M.route_priority(o, top=10**6)), "api", len(rp),
@@ -74,4 +77,4 @@ print(M.goal_seek_promise(o, "SP->BA"), M.goal_seek_cut(o, "SP->BA", "transit"))
 '@ | .\backend\env\Scripts\python.exe -
 ```
 
-Kỳ vọng: `rows 96981 orders 96455` · `overall 8.0727%` · `all 14 api 10 red 6` · `{'extra_days': 10, ...} 10.0`.
+Kết quả lần kiểm tra hiện hành: pytest 77/77, Django 22/22, regen eval pass.
