@@ -39,37 +39,9 @@ def resolve_port_and_host():
         resolved_port = int(port_val)
     except (ValueError, TypeError):
         resolved_port = 5000
-    resolved_host = os.getenv('BACKEND_HOST') or os.getenv('HOST') or os.getenv('FLASK_RUN_HOST') or '0.0.0.0'
+    resolved_host = os.getenv('BACKEND_HOST') or os.getenv('HOST') or os.getenv('FLASK_RUN_HOST') or '127.0.0.1'
     return resolved_host, resolved_port
 
-
-# # --- Hook Flask CLI runner ---
-# # When running via `flask run` or `flask --app ... run`, Click ignores app.run() and does
-# # not read BACKEND_PORT or PORT by default. Intercept run_simple to respect environment configuration
-# # unless explicit CLI flags (-p/--port, -h/--host) were provided.
-# try:
-#     import flask.cli
-#     import werkzeug.serving
-
-#     _orig_run_simple = werkzeug.serving.run_simple
-
-#     def _patched_run_simple(host, port, application, *args, **kwargs):
-#         configured_host, configured_port = resolve_port_and_host()
-#         cli_args = sys.argv[1:] if len(sys.argv) > 1 else []
-#         has_cli_port = any(arg in ('-p', '--port') or arg.startswith(('-p=', '--port=')) for arg in cli_args)
-#         has_cli_host = any(arg in ('-h', '--host') or arg.startswith(('-h=', '--host=')) for arg in cli_args)
-
-#         final_port = port if has_cli_port else configured_port
-#         final_host = host if has_cli_host else configured_host
-#         return _orig_run_simple(final_host, final_port, application, *args, **kwargs)
-
-#     werkzeug.serving.run_simple = _patched_run_simple
-#     flask.cli.run_simple = _patched_run_simple
-# except Exception:
-#     pass
-
-
-# --- Core config ---
 db_url = os.getenv('DATABASE_URL')
 if not db_url:
     pg_user = os.getenv('POSTGRES_USER', 'postgres')
@@ -118,5 +90,7 @@ from routes import blp
 api.register_blueprint(blp)
 
 if __name__ == '__main__':
+    '''When running via `flask run` or `flask --app ... run`, Click ignores app.run() and does
+    not read BACKEND_PORT or PORT by default.'''
     host, port = resolve_port_and_host()
     app.run(host=host, port=port, debug=True)

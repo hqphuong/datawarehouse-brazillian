@@ -201,20 +201,13 @@ Sau đó truy cập `http://127.0.0.1:8000/admin/`.
 
 #### 4.2. Backend Flask (Dashboard, Analytics & Drill-through API)
 
-Khởi động server Flask tại thư mục gốc:
+Để khởi động server (Flask), tại thư mục gốc chạy lệnh sau:
 
 ```powershell
-flask --app backend/app run --debug --port 5000
+.venv\Scripts\python.exe backend\app.py
 ```
 
-hoặc chạy trực tiếp từ thư mục `backend/`:
-
-```powershell
-cd backend
-python app.py
-```
-
-Backend Analytics chạy tại `http://127.0.0.1:5000/`.
+Base URL mặc định của backend là `http://127.0.0.1:5000/`. Có thể điều chỉnh thông qua biến `BACKEND_PORT` và `BACKEND_HOST` trong `.env`.
 - Tài liệu tương tác OpenAPI / Swagger UI: `http://127.0.0.1:5000/swagger-ui`
 - OpenAPI JSON specification: `http://127.0.0.1:5000/openapi.json`
 
