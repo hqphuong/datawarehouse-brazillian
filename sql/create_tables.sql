@@ -1,3 +1,4 @@
+SET client_encoding = 'UTF8';
 CREATE TABLE Dim_Time (
     time_id INT PRIMARY KEY,
     full_date DATE NOT NULL,
