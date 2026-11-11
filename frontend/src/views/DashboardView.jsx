@@ -1,100 +1,136 @@
-import React from 'react';
-import { ResponsiveContainer, BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
-import { Card } from '../components/Card';
-import { MONTHS, BLUE, RED, AMBER, GRID, MUTED } from '../data/mockData';
+// src/views/DashboardView.jsx
+import React, { useState, useEffect } from 'react';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, LineChart, Line, Legend } from 'recharts';
+import { MONTHS, LV_NAME, STATES, RAW, agg, pct, num, int } from '../data/mockData.jsx';
+import { useData } from '../hooks/useData.js';
 
-export default function DashboardView({ f }) {
-  const k = (f.year === 'All' ? 1 : f.year === '2017' ? 0.45 : 0.55) * (f.quarter === 'All' ? 1 : 0.25) * (f.state === 'All' ? 1 : 0.3);
-  const month = f.month === 'All' ? 1 : 0.2;
-  const sc = k * month;
-  const fmt = n => Math.round(n).toLocaleString();
+const DEFAULT_F = { level: 'month', from: MONTHS[0], to: MONTHS[MONTHS.length - 1], states: [], lateOnly: false };
 
-  const cards = [
-    { l: 'Total Orders', v: fmt(99441 * sc), s: 'delivered & shipped' },
-    { l: 'SLA Violation Rate', v: (8.1 + (f.state === 'RJ' ? 3.2 : f.state === 'SP' ? -1.1 : 0.6)).toFixed(1) + '%', s: 'vs 7.5% target', warn: true },
-    { l: 'Avg Freight Cost', v: 'R$ ' + (f.state === 'All' ? 19.9 : 21.4).toFixed(2), s: 'per order' },
-    { l: 'Avg Transit Time', v: (12.1 + (f.state === 'RJ' ? 1.8 : 0)).toFixed(1) + ' days', s: 'purchase → delivery' },
-  ];
+export default function DashboardView({ year, setYear, sim, goDss, f, setF, sel, setSel }) {
+  // Nếu f chưa có từ App chung, ta dùng local hoặc prop từ App. Ở đây nhận f, setF, sel, setSel từ App hoặc dùng mặc định.
+  const currentF = f || DEFAULT_F;
+  
+  const { data, loading, error, retry } = useData(() => {
+    // Lọc theo năm nếu ở component cha có chọn năm hoặc dùng f
+    const rows = RAW.filter(r => (year === 'all' || r.year === year) && r[currentF.level] >= currentF.from && r[currentF.level] <= currentF.to && (!currentF.states.length || currentF.states.includes(r.state)) && (!currentF.lateOnly || r.late) && (!sel || r[currentF.level] === sel));
+    const base = RAW.filter(r => (year === 'all' || r.year === year) && r[currentF.level] >= currentF.from && r[currentF.level] <= currentF.to && (!currentF.states.length || currentF.states.includes(r.state)) && (!currentF.lateOnly || r.late));
+    
+    const periods = {}; base.forEach(r => (periods[r[currentF.level]] ?? []).push(r));
+    const trend = Object.keys(periods).sort().map(k => ({ label: k, ...agg(periods[k]) }));
+    
+    const byState = {}; rows.forEach(r => (byState[r.state] ?? []).push(r));
+    const states = Object.entries(byState).map(([s, a]) => ({ state: s, ...agg(a) })).sort((a, b) => b.rate - a.rate);
+    
+    return { kpi: agg(rows), trend, states, rows };
+  }, [year, currentF, sel], sim);
 
-  const states = [['SP', 3420], ['RJ', 2315], ['MG', 1180], ['RS', 640], ['PR', 520]]
-    .filter(([s]) => f.state === 'All' || s === f.state)
-    .map(([s, v]) => ({ s, v: Math.round(v * (f.year === 'All' ? 1 : 0.5) * (f.quarter === 'All' ? 1 : 0.25)) }));
+  const [page, setPage] = useState(0);
+  const [sort, setSort] = useState({ k: 'delay', d: -1 });
+  useEffect(() => setPage(0), [currentF, sel, year]);
 
-  const trend = MONTHS.map((m, i) => ({ m, v: Math.round((260 + 90 * Math.sin(i / 1.8) + i * 14) * (f.state === 'All' ? 1 : 0.35)) }));
-  const causes = [{ n: 'Carrier', v: 52, c: BLUE }, { n: 'Seller', v: 33, c: AMBER }, { n: 'Weather', v: 15, c: RED }];
-  const tip = { contentStyle: { borderRadius: 10, border: '1px solid #e8edf3', boxShadow: 'none', fontSize: 12 } };
+  if (error) return <div className="panel p-10 text-center"><p className="font-semibold text-red-600">Không tải được dữ liệu: {error}</p><button className="btn btn-main mt-3" onClick={retry}>Tải lại</button></div>;
+  if (loading || !data) return <div className="space-y-4"><div className="panel animate-pulse bg-slate-100 h-32" /><div className="panel animate-pulse bg-slate-100 h-64" /></div>;
+  
+  const { kpi, trend, states, rows } = data;
+  const MIN = 15;
+  const sorted = [...rows].sort((a, b) => (a[sort.k] > b[sort.k] ? 1 : -1) * sort.d), PS = 8, pages = Math.ceil(sorted.length / PS);
+  const th = (k, t, r) => <th key={k} className={'py-2 px-3 font-semibold ' + (r ? 'text-right' : '')}><button onClick={() => setSort({ k, d: sort.k === k ? -sort.d : -1 })}>{t}{sort.k === k ? (sort.d < 0 ? ' ↓' : ' ↑') : ''}</button></th>;
+  const small = [['Số đơn', int(kpi.n)], ['Thời gian vận chuyển TB', num(kpi.transit) + ' ngày'], ['Phí vận chuyển TB', 'R$ ' + num(kpi.freight, 2)], ['Điểm đánh giá TB', num(kpi.review, 2) + ' / 5']];
 
   return (
-    /* Thêm w-full max-w-none để trải dài full màn hình, loại bỏ khoảng trắng hai bên */
-    <div className="space-y-6 w-full max-w-none animate-fadeIn">
+    <div className="space-y-4">
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 w-full">
-        {cards.map(c => (
-          <div key={c.l} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition">
-            <div className="text-xs text-slate-500">{c.l}</div>
-            <div className={`text-2xl font-semibold mt-2 ${c.warn ? 'text-red-400' : 'text-slate-800'}`}>{c.v}</div>
-            <div className="text-xs text-slate-400 mt-1">{c.s}</div>
+      <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr_1fr] gap-4">
+        <div className="panel p-4 flex items-center gap-4 lg:row-span-2">
+          <div>
+            <div className="text-sm text-slate-600">Tỷ lệ giao trễ</div>
+            <div className="text-5xl font-bold text-orange-700 leading-tight">{pct(kpi.rate)}</div>
+            <div className="text-xs text-slate-500">{int(kpi.late)} / {int(kpi.n)} đơn</div>
           </div>
-        ))}
+          <div className="flex-1 h-24" aria-label="Xu hướng tỷ lệ trễ">
+            <ResponsiveContainer><LineChart data={trend}><Line type="monotone" dataKey="rate" stroke="#c2410c" strokeWidth={2} dot={false}/><Tooltip formatter={v => pct(v)} labelFormatter={l => l}/></LineChart></ResponsiveContainer>
+          </div>
+        </div>
+        {small.map(([t, v]) => <div key={t} className="panel p-3"><div className="text-xs text-slate-600">{t}</div><div className="text-xl font-semibold mt-0.5">{v}</div></div>)}
       </div>
 
-      {/* Biểu đồ */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 w-full">
-        <Card title="Top States by Delay Count">
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={states} barSize={28}>
-                <CartesianGrid vertical={false} stroke={GRID} />
-                <XAxis dataKey="s" tick={{ fontSize: 12, fill: MUTED }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 12, fill: MUTED }} axisLine={false} tickLine={false} />
-                <Tooltip {...tip} cursor={{ fill: '#f1f5f9' }} />
-                <Bar dataKey="v" name="Delays" fill={BLUE} radius={[6, 6, 0, 0]} />
+      {/* Charts section */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <section className="panel p-4">
+          <h2 className="font-semibold">Thời gian từng giai đoạn theo {LV_NAME[currentF.level]?.toLowerCase()}</h2>
+          <p className="text-xs text-slate-500 mb-2">Trung bình số ngày mỗi giai đoạn. Nhấp một cột để xem đơn của kỳ đó.</p>
+          <div className="h-64">
+            <ResponsiveContainer>
+              <BarChart data={trend} onClick={s => s && s.activeLabel && setSel && setSel(s.activeLabel)}>
+                <CartesianGrid vertical={false} stroke="#e5e9ec"/><XAxis dataKey="label" tick={{fontSize: 11}}/><YAxis tick={{fontSize: 11}} unit="d"/>
+                <Tooltip formatter={v => num(v) + ' days'}/><Legend wrapperStyle={{fontSize: 12}}/>
+                <Bar name="Duyệt đơn" dataKey="appr" stackId="a" fill="#94a3b8" cursor="pointer"/>
+                <Bar name="Chuẩn bị hàng" dataKey="prep" stackId="a" fill="#0f766e" cursor="pointer"/>
+                <Bar name="Vận chuyển" dataKey="transit" stackId="a" fill="#b45309" cursor="pointer"/>
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </Card>
+        </section>
 
-        {/* Biểu đồ Delay Trend over Time đã được thêm domain cho YAxis để không bị chạm đỉnh */}
-        <Card title="Delay Trend over Time">
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={trend}>
-                <CartesianGrid vertical={false} stroke={GRID} />
-                <XAxis dataKey="m" tick={{ fontSize: 12, fill: MUTED }} axisLine={false} tickLine={false} />
-                <YAxis 
-                  tick={{ fontSize: 12, fill: MUTED }} 
-                  axisLine={false} 
-                  tickLine={false} 
-                  domain={[0, 'dataMax + 100']} 
-                />
-                <Tooltip {...tip} />
-                <Line type="monotone" dataKey="v" name="Delays" stroke={BLUE} strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
-              </LineChart>
-            </ResponsiveContainer>
+        <section className="panel p-4">
+          <div className="flex justify-between items-start">
+            <div>
+              <h2 className="font-semibold">Tỷ lệ trễ theo bang khách hàng</h2>
+              <p className="text-xs text-slate-500 mb-2">Bang có dưới {MIN} đơn được đánh dấu “mẫu nhỏ”.</p>
+            </div>
+            <button className="btn" onClick={() => goDss && goDss()}>Mở trong DSS</button>
           </div>
-        </Card>
-
-        <Card title="Root Causes of Delays">
-          <div className="h-52 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={causes} dataKey="v" nameKey="n" innerRadius={55} outerRadius={80} paddingAngle={3} stroke="none">
-                  {causes.map(c => <Cell key={c.n} fill={c.c} />)}
-                </Pie>
-                <Tooltip {...tip} formatter={v => v + '%'} />
-              </PieChart>
-            </ResponsiveContainer>
+          <div className="max-h-64 overflow-y-auto">
+            <table className="w-full text-xs">
+              <tbody>
+                {states.map(s => (
+                  <tr key={s.state} className="border-t border-slate-100">
+                    <td className="py-1.5 w-10 font-medium">{s.state}</td>
+                    <td className="py-1.5"><div className="h-3 bg-slate-100 rounded-sm"><div className="h-3 rounded-sm" style={{width: Math.min(100, s.rate * 250) + '%', background: s.n < MIN ? '#b8c2cc' : '#c2410c'}}/></div></td>
+                    <td className="py-1.5 px-2 text-right w-14">{pct(s.rate)}</td>
+                    <td className="py-1.5 text-right text-slate-500 w-20">{int(s.n)} đơn{s.n < MIN && <span title="Mẫu nhỏ, tỷ lệ chưa ổn định"> ⚠</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <div className="flex justify-center gap-4 text-xs text-slate-500 mt-2">
-            {causes.map(c => (
-              <span key={c.n} className="flex items-center gap-1.5">
-                <i className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: c.c }} />
-                {c.n} {c.v}%
-              </span>
-            ))}
-          </div>
-        </Card>
+        </section>
       </div>
+
+      {/* Detailed Orders Table */}
+      <section className="panel p-4">
+        <div className="flex justify-between items-center mb-2">
+          <h2 className="font-semibold">Chi tiết đơn hàng{sel ? ` – kỳ ${sel}` : ''}</h2>
+          <span className="text-xs text-slate-500">{int(rows.length)} đơn</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs text-left">
+            <thead className="bg-slate-50">
+              <tr>{th('id', 'Mã đơn')}{th('month', 'Tháng')}{th('state', 'Bang khách')}{th('seller_state', 'Bang bán')}{th('appr', 'Duyệt (ngày)', 1)}{th('prep', 'Chuẩn bị (ngày)', 1)}{th('transit', 'Vận chuyển (ngày)', 1)}{th('review', 'Đánh giá', 1)}{th('delay', 'Trạng thái', 1)}</tr>
+            </thead>
+            <tbody>
+              {sorted.slice(page * PS, page * PS + PS).map(o => (
+                <tr key={o.id} className="border-t border-slate-100">
+                  <td className="py-2 px-3 font-mono">{o.id}</td>
+                  <td className="px-3">{o.month}</td>
+                  <td className="px-3">{o.state}</td>
+                  <td className="px-3">{o.seller_state}</td>
+                  <td className="px-3 text-right">{o.appr}</td>
+                  <td className="px-3 text-right">{o.prep}</td>
+                  <td className="px-3 text-right">{o.transit}</td>
+                  <td className="px-3 text-right">{o.review}/5</td>
+                  <td className="px-3 text-right"><span className={'px-2 py-0.5 rounded ' + (o.late ? 'bg-orange-100 text-orange-900' : 'bg-teal-50 text-teal-900')}>{o.late ? `Trễ ${o.delay} ngày` : 'Đúng hạn'}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex justify-end items-center gap-2 mt-2 text-xs">
+          <button className="btn" disabled={page === 0} onClick={() => setPage(page - 1)}>Trước</button>
+          Trang {page + 1}/{pages || 1}
+          <button className="btn" disabled={page + 1 >= pages} onClick={() => setPage(page + 1)}>Sau</button>
+        </div>
+      </section>
     </div>
   );
 }
