@@ -355,6 +355,112 @@ def attribution_summary(
     return out.sort_values("phi_total", ascending=False).reset_index(drop=True)
 
 
+PEER_SORT_COLS = ("excess_pp", "expected_late_rate", "late_rate", "order_routes")
+
+
+def route_peer_table(
+    o_attr: pd.DataFrame, min_orders: int = 30, sort_by: str = "excess_pp"
+) -> pd.DataFrame:
+    """Bảng xếp hạng tuyến theo **chênh lệch so với peer** (chuẩn hoá gián tiếp).
+
+    Khác với :func:`etl.dss_models.route_priority` (so tỷ lệ trễ tuyến với tỷ lệ
+    trễ **toàn hệ thống**), bảng này so từng tuyến với **nền peer** của chính nó:
+
+    - ``expected_late_rate = mean(late_benchmark)``: tỷ lệ trễ ước tính **nếu cả
+      3 giai đoạn đạt benchmark peer** (approval theo ``payment_type``, prep theo
+      ``weight_band``, transit theo ``distance_band`` xuyên tuyến).
+    - ``excess_pp = mean(phi_total) × 100``: phần vượt nền peer, tính bằng điểm
+      phần trăm. Đây là thước đo công bằng hơn cho tuyến dài: tuyến xa có nền
+      peer cao hơn nên không bị phạt chỉ vì khoảng cách.
+    - ``excess_order_routes = sum(phi_total)``: quy mô tuyệt đối, dùng để xếp
+      hạng tác động theo **số đơn-tuyến** thay vì tỷ lệ.
+
+    Đơn vị dòng là **đơn-tuyến** (một dòng = một cặp ``order_id`` + ``route``),
+    vì ``phi_total`` được tính trên từng đơn-tuyến. Vì vậy:
+
+    - ``order_routes`` = số dòng của tuyến.
+    - ``orders`` = số ``order_id`` duy nhất (có thể nhỏ hơn ``order_routes`` khi
+      một đơn có nhiều seller cùng tuyến). ``min_orders`` lọc theo ``orders`` để
+      đồng bộ với :func:`attribution_summary`.
+
+    Bất biến ở cấp tuyến::
+
+        late_rate = expected_late_rate + phi_total
+
+    nên ``late_rate × 100 = expected_late_rate × 100 + excess_pp``. Đây là mô
+    tả, **không phải** kết luận nhân quả: ``phi_total`` chỉ nói "nếu tuyến đạt
+    benchmark peer thì ước tính tỷ lệ trễ còn bao nhiêu".
+
+    Tham số:
+        o_attr: kết quả :func:`attribute` (đã có ``phi_*``, ``late_benchmark``).
+        min_orders: ngưỡng số đơn duy nhất (``order_id``) tối thiểu; 0 = giữ tất cả.
+        sort_by: cột sắp xếp giảm dần, một trong ``PEER_SORT_COLS``.
+    """
+    need = [
+        "order_id",
+        "route",
+        "late_actual",
+        "late_benchmark",
+        "residual_promise_days",
+        "benchmark_level",
+        *PHI_COLS,
+    ]
+    missing = [c for c in need if c not in o_attr.columns]
+    if missing:
+        raise ValueError(f"Thiếu cột để route_peer_table: {missing}")
+    if len(o_attr) == 0:
+        raise ValueError("Không có dòng nào để route_peer_table")
+    if min_orders < 0:
+        raise ValueError("min_orders phải >= 0")
+    if sort_by not in PEER_SORT_COLS:
+        raise ValueError(f"sort_by không hỗ trợ: {sort_by}")
+
+    def peer_share(series: pd.Series) -> float:
+        return float((series == "peer").mean())
+
+    agg = {
+        "order_routes": ("order_id", "size"),
+        "orders": ("order_id", "nunique"),
+        "late_orders": ("late_actual", "sum"),
+        "late_rate": ("late_actual", "mean"),
+        "expected_late_rate": ("late_benchmark", "mean"),
+        "residual_promise_days": ("residual_promise_days", "mean"),
+        "benchmark_peer_share": ("benchmark_level", peer_share),
+        **{f"phi_{s}": (f"phi_{s}", "mean") for s in STAGES},
+    }
+    out = o_attr.groupby("route", as_index=False).agg(**agg)
+    out["phi_total"] = out[PHI_COLS].sum(axis=1)
+    out["excess_pp"] = out["phi_total"] * 100.0
+    out["excess_order_routes"] = out["phi_total"] * out["order_routes"]
+
+    late_positive = out["late_rate"] > 0
+    out["share_promise"] = np.where(
+        late_positive, out["expected_late_rate"] / out["late_rate"], np.nan
+    )
+    for s in STAGES:
+        out[f"cause_share_{s}"] = np.where(
+            late_positive, out[f"phi_{s}"] / out["late_rate"], np.nan
+        )
+    out["top_stage"] = (
+        out[PHI_COLS].idxmax(axis=1).str.replace("phi_", "", regex=False)
+    )
+    out["low_sample"] = out["orders"] < min_orders
+
+    n_routes_total = int(len(out))
+    if min_orders > 0:
+        out = out[~out["low_sample"]].copy()
+    out = out.sort_values(
+        [sort_by, "order_routes"], ascending=[False, False]
+    ).reset_index(drop=True)
+
+    out.attrs["min_orders"] = int(min_orders)
+    out.attrs["sort_by"] = sort_by
+    out.attrs["n_routes_total"] = n_routes_total
+    out.attrs["n_routes_returned"] = int(len(out))
+    out.attrs["grain"] = "order-route"
+    return out
+
+
 PROMISE_LABELS = ("tight", "ok", "loose")
 
 

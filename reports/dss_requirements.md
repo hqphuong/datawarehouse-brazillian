@@ -22,7 +22,7 @@ Mọi thay đổi trạng thái phải kèm evidence (lệnh chạy/file). Khôn
 | ID | Ưu tiên | Trạng thái | Evidence |
 |---|---|---|---|
 | D1 | P0 | done | `Dim_Seller` 3.095 dòng; FK location 100%; DDL/prisma/Django model/loader. |
-| D2 | P0 | done | Fact 21 cột gồm seller_id, price, shipping_limit_date, promise_days, total_lead_days, handoff_slack_days, distance_km; weight_band qcut4 runtime. DB reload 110.173 dòng, 0 orphan FK. |
+| D2 | P0 | done | Fact 20 cột gồm seller_id, price, shipping_limit_date, promise_days, total_lead_days, distance_km; weight_band qcut4 runtime. DB reload 110.173 dòng, 0 orphan FK. |
 
 ## DSS
 

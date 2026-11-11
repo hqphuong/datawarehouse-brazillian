@@ -64,7 +64,6 @@ model fact_delivery_sla {
   delay_days                                                        Float?
   total_lead_days                                                   Float?
   promise_days                                                      Float?
-  handoff_slack_days                                                Float?
   distance_km                                                       Float?
   review_score                                                      Int?
   has_logistics_complaint                                           Boolean?

@@ -2,6 +2,7 @@
 
 import json
 import math
+from functools import lru_cache
 
 import numpy as np
 from django.http import JsonResponse
@@ -18,16 +19,60 @@ from .models import ActionLog
 O = M.load_orders()
 
 
-def _selected_orders(request):
-    """Lọc theo year (tuỳ chọn). year rỗng hoặc 'all' nghĩa là toàn bộ dữ liệu."""
+def _year_value(request):
+    """Chuẩn hoá tham số year thành ``"all"`` hoặc số nguyên (hashable)."""
     year = request.GET.get("year")
     if not year or year == "all":
-        return O
+        return "all"
     try:
-        year = int(year)
+        return int(year)
     except (TypeError, ValueError):
         raise ValueError("year phải là số nguyên, ví dụ 2017 hoặc 2018")
+
+
+def _orders_for_year(year):
+    """Lọc dữ liệu theo year đã chuẩn hoá; ``"all"`` = toàn bộ."""
+    if year == "all":
+        return O
     return O[O.period // 100 == year]
+
+
+def _selected_orders(request):
+    """Lọc theo year (tuỳ chọn). year rỗng hoặc 'all' nghĩa là toàn bộ dữ liệu."""
+    return _orders_for_year(_year_value(request))
+
+
+@lru_cache(maxsize=24)
+def _attribution_bundle(year, quantile):
+    """Fit benchmark + attribution một lần cho mỗi cặp (year, q).
+
+    Cache theo ``(year, q)`` vì UI gọi cả q=0,5 và q=0,25 mỗi lần đổi năm.
+    Không cache request/DataFrame đầu vào; chỉ cache kết quả đã tổng hợp.
+    """
+    orders = _orders_for_year(year)
+    benchmarks = A.fit_benchmarks(orders, quantile=quantile)
+    attributed = A.attribute(orders, benchmarks)
+    summary = A.attribution_summary(attributed, min_orders=30)
+    peers = A.route_peer_table(attributed, min_orders=30)
+
+    late_rate = float(attributed["late_actual"].mean())
+    systemwide = {
+        "orders": int(len(attributed)),
+        "late_rate": late_rate,
+        "shares_in_late_orders": None,
+        "grain": "order-route",
+    }
+    if late_rate > 0:
+        systemwide["shares_in_late_orders"] = {
+            **{
+                f"share_{stage}": float(attributed[f"phi_{stage}"].mean() / late_rate)
+                for stage in A.STAGES
+            },
+            "share_promise": float(
+                attributed["late_benchmark"].mean() / late_rate
+            ),
+        }
+    return summary, peers, systemwide, A.check_attrib(attributed)
 
 
 def _bad(message, status=400):
@@ -187,36 +232,22 @@ def attribution(request):
         return _bad("q chỉ nhận 0.25 hoặc 0.5; q=0.75 bị loại vì benchmark "
                     "chậm hơn actual, tạo phi âm và phân rã không hợp lệ.")
     try:
-        orders = _selected_orders(request)
-        benchmarks = A.fit_benchmarks(orders, quantile=quantile)
-        attributed = A.attribute(orders, benchmarks)
-        summary = A.attribution_summary(attributed, min_orders=30)
+        year = _year_value(request)
+        summary, peers, systemwide, invariants = _attribution_bundle(year, quantile)
     except ValueError as exc:
         return _bad(str(exc))
-    late_rate = float(attributed["late_actual"].mean())
-    systemwide = {
-        "orders": int(len(attributed)),
-        "late_rate": late_rate,
-        "shares_in_late_orders": None,
-    }
-    if late_rate > 0:
-        systemwide["shares_in_late_orders"] = {
-            **{
-                f"share_{stage}": float(attributed[f"phi_{stage}"].mean() / late_rate)
-                for stage in A.STAGES
-            },
-            "share_promise": float(
-                attributed["late_benchmark"].mean() / late_rate
-            ),
-        }
     return JsonResponse(
         _clean(
             {
                 "q": quantile,
                 "design": "Shapley attribution theo peer group",
+                "grain": "order-route",
                 "rows": _records(summary),
+                # Bảng xếp hạng theo nền peer: expected_late_rate + excess_pp.
+                # Giữ nguyên route_priority (so với tỷ lệ trễ hệ thống) ở /routes.
+                "ranked_routes": _records(peers),
                 "systemwide": systemwide,
-                "invariants": A.check_attrib(attributed),
+                "invariants": invariants,
             }
         )
     )

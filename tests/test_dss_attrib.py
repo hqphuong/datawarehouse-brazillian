@@ -506,6 +506,64 @@ def test_feasible_max_cut_rejects_bad_input():
         A.marginal_cut_table(o, "A->B", stage="unknown")
 
 
+def test_route_peer_table_ranks_excess_over_peer():
+    # Hai tuyến chia sẻ cùng dải khoảng cách nên benchmark transit là median
+    # xuyên tuyến (4 ngày). Tuyến chậm vượt peer, tuyến nhanh không vượt.
+    o = pd.concat(
+        [
+            _orders(100, "F->X", start_km=1.0, step_km=1.0, transit=2.0, promise=7.0),
+            _orders(100, "S->X", start_km=1.0, step_km=1.0, transit=6.0, promise=7.0),
+        ],
+        ignore_index=True,
+    )
+    a = A.attribute(o, A.fit_benchmarks(o, min_orders=10))
+    t = A.route_peer_table(a, min_orders=100)
+
+    assert list(t["route"]) == ["S->X", "F->X"]
+    slow = t.set_index("route").loc["S->X"]
+    fast = t.set_index("route").loc["F->X"]
+    assert slow["late_rate"] == pytest.approx(1.0)
+    assert slow["expected_late_rate"] == pytest.approx(0.0)
+    assert slow["excess_pp"] == pytest.approx(100.0)
+    assert slow["excess_order_routes"] == pytest.approx(100.0)
+    assert fast["excess_pp"] == pytest.approx(0.0)
+    assert np.allclose(t["benchmark_peer_share"], 1.0)
+    assert t.attrs["grain"] == "order-route"
+
+
+def test_route_peer_table_real_identity_and_parity(attributed):
+    t = A.route_peer_table(attributed, min_orders=30)
+    assert len(t) > 0
+    assert t["excess_pp"].is_monotonic_decreasing
+
+    # Bất biến cấp tuyến: late_rate = expected_late_rate + phi_total.
+    assert np.allclose(t["late_rate"], t["expected_late_rate"] + t["phi_total"])
+    assert np.allclose(t["excess_pp"], t["phi_total"] * 100.0)
+    assert np.allclose(
+        t["excess_order_routes"], t["phi_total"] * t["order_routes"]
+    )
+    assert (t["orders"] >= 30).all()
+    assert t["order_routes"].ge(t["orders"]).all()
+
+    # Parity với attribution_summary trên cùng bộ tuyến đủ mẫu.
+    s = A.attribution_summary(attributed, min_orders=30)
+    m = t.merge(
+        s[["route", "orders", "late_rate", "phi_total"]],
+        on="route",
+        suffixes=("", "_summary"),
+    )
+    assert len(m) == len(t) == len(s)
+    assert np.allclose(m["late_rate"], m["late_rate_summary"])
+    assert np.allclose(m["phi_total"], m["phi_total_summary"])
+
+    with pytest.raises(ValueError):
+        A.route_peer_table(attributed, sort_by="unknown")
+    with pytest.raises(ValueError):
+        A.route_peer_table(attributed, min_orders=-1)
+    with pytest.raises(ValueError):
+        A.route_peer_table(pd.DataFrame({"order_id": ["x"]}))
+
+
 def test_attribute_rejects_missing_columns():
     with pytest.raises(ValueError):
         A.attribute(pd.DataFrame({"order_id": ["x"]}))

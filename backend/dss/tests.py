@@ -239,6 +239,33 @@ class DssApiTests(TestCase):
             self.assertIn("rows", res.json())
             self.assertIn("shares_in_late_orders", res.json()["systemwide"])
 
+    def test_attribution_endpoint_ranked_routes_peer_fields(self):
+        res = self.client.get("/api/dss/attribution?q=0.5")
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertEqual(body["grain"], "order-route")
+        self.assertIn("ranked_routes", body)
+        rows = body["ranked_routes"]
+        self.assertTrue(rows)
+        required = {
+            "route", "order_routes", "orders", "late_rate",
+            "expected_late_rate", "excess_pp", "excess_order_routes",
+            "share_promise", "top_stage", "benchmark_peer_share",
+        }
+        self.assertLessEqual(required, set(rows[0]))
+        excess = [row["excess_pp"] for row in rows]
+        self.assertEqual(excess, sorted(excess, reverse=True))
+        for row in rows[:10]:
+            self.assertAlmostEqual(
+                row["late_rate"],
+                row["expected_late_rate"] + row["phi_total"],
+                places=10,
+            )
+            self.assertAlmostEqual(row["excess_pp"], row["phi_total"] * 100, places=8)
+            self.assertGreaterEqual(row["order_routes"], row["orders"])
+            self.assertIn(row["top_stage"], {"approval", "prep", "transit"})
+            self.assertGreaterEqual(row["orders"], 30)
+
     def test_attribution_endpoint_rejects_q75_with_reason(self):
         res = self.client.get("/api/dss/attribution?q=0.75")
         self.assertEqual(res.status_code, 400)

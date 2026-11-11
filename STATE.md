@@ -29,7 +29,7 @@
 - Checkpoint A: H1–H15 trong `reports/dss_defect_ledger.md`; F1–F9, D1–D2 `done` trong `reports/dss_requirements.md`.
 - Checkpoint B: `etl/dss_attrib.py` + `tests/test_dss_attrib.py` (benchmark peer group từng giai đoạn, Shapley, summary, bad review, L1–L3); 12 test attribution.
 - DB reload đủ 5 bảng: Dim_Time 612, Dim_Location 15.078, Dim_Product 32.951, Dim_Seller 3.095, Fact_Delivery_SLA 110.173; 0 orphan FK.
-- Fact 21 cột: thêm seller_id, price, shipping_limit_date, promise_days, total_lead_days, handoff_slack_days, distance_km; weight_band qcut 4 lúc chạy.
+- Fact 20 cột: thêm seller_id, price, shipping_limit_date, promise_days, total_lead_days, distance_km; weight_band qcut 4 lúc chạy.
 - Base DSS hiện có: `route_priority`, `root_cause`, `scenario`, `sensitivity`, `goal_seek_promise`, `goal_seek_cut`, Wilson/red-first/uncertain, bootstrap CI, excess_ratio.
 - Checkpoint C + S6: S3 promise calibration (GROSS/NET, mức phục vụ 85/90/95%), S4 feasible cut (peer P50 tham chiếu), S5 seller scorecard/portfolio + k-cover, S7 low-sample split + `route_flag_check`, S8 threshold grid, S6 Decision Brief; tất cả có test và số trong `reports/dss_eval_raw.txt`.
 - Chỉ tab DSS gọi API thật; Dashboard/OLAP/ETL vẫn mock (`web/Olist_Logistics_DSS_v3.html:427`, `reports/run_guide.md:93-96`).
@@ -67,7 +67,7 @@ NEXT: cleanup, then report/slides.
 
 Schema facts đã xác minh (06/11/2026):
 - `data/processed/`: 5 CSV gồm dim_time, dim_location, dim_product, dim_seller, fact_delivery_sla.
-- `cleaned_fact_orders.csv`: grain item; có seller_id, price, shipping_limit_date, promise_days, total_lead_days, handoff_slack_days, distance_km.
+- `cleaned_fact_orders.csv`: grain item; có seller_id, price, shipping_limit_date, promise_days, total_lead_days, distance_km.
 - `load_orders()` gộp về (order_id, route), route = seller_state->cust_state; loại stage âm/NaN.
 
 ## Phase 1 — snapshot kiểm chứng gần nhất

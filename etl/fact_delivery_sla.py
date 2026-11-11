@@ -176,12 +176,6 @@ dlng = lng2 - lng1
 a = np.sin(dlat / 2.0) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlng / 2.0) ** 2
 fact_df["distance_km"] = 2.0 * 6371.0088 * np.arcsin(np.sqrt(a.clip(0.0, 1.0)))
 
-# handoff_slack_days: carrier nhận hàng muộn hơn shipping_limit bao nhiêu ngày.
-# Đây là giá trị cấp item; cấp đơn lấy max trong load_orders().
-fact_df["handoff_slack_days"] = (
-    fact_df["order_delivered_carrier_date"] - fact_df["shipping_limit_date"]
-).dt.total_seconds() / 86400.0
-
 # Lấp đầy giá trị Boolean khuyết để tránh báo lỗi NULL khi Copy
 # (delay_days đã được đảm bảo đủ dữ liệu bởi dropna ở trên; giữ NULL nếu thiếu
 # thay vì gán 0 để không làm sai lệch thống kê giao hàng)
@@ -206,7 +200,6 @@ fact_cols = [
     "delay_days",
     "total_lead_days",
     "promise_days",
-    "handoff_slack_days",
     "distance_km",
     "review_score",
     "has_logistics_complaint",

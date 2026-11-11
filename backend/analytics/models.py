@@ -189,7 +189,6 @@ class FactDeliverySla(models.Model):
     delay_days = models.FloatField(blank=True, null=True)
     total_lead_days = models.FloatField(blank=True, null=True)
     promise_days = models.FloatField(blank=True, null=True)
-    handoff_slack_days = models.FloatField(blank=True, null=True)
     distance_km = models.FloatField(blank=True, null=True)
     review_score = models.IntegerField(blank=True, null=True)
     has_logistics_complaint = models.BooleanField(blank=True, null=True)

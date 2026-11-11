@@ -58,7 +58,6 @@ CREATE TABLE Fact_Delivery_SLA (
     delay_days DOUBLE PRECISION,
     total_lead_days DOUBLE PRECISION,
     promise_days DOUBLE PRECISION,
-    handoff_slack_days DOUBLE PRECISION,
     distance_km DOUBLE PRECISION,
     review_score INT,
 

@@ -75,7 +75,6 @@ def load_orders(include_invalid: bool = False) -> pd.DataFrame:
         delay_days=("delay_days", "first"),
         promise_days=("promise_days", "first"),
         total_lead_days=("total_lead_days", "first"),
-        handoff_slack_days=("handoff_slack_days", "max"),
         distance_km=("distance_km", "first"),
         complaint=("has_logistics_complaint", "max"),
         approval=("approval_time_days", "first"),

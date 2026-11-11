@@ -30,7 +30,6 @@ def test_fact_has_d2_columns_and_values():
         "shipping_limit_date",
         "promise_days",
         "total_lead_days",
-        "handoff_slack_days",
         "distance_km",
     }
     assert required <= set(fact.columns)
