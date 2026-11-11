@@ -1,7 +1,7 @@
 // src/views/OLAPView.jsx
 import React, { useState, useRef, useEffect } from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
-import { MONTHS, QUARTERS, YEARS, TIME_OPTS, LV_NAME, STATES, CATS, RAW, agg, pct, num, int } from '../data/mockData.jsx';
+import { MONTHS, QUARTERS, YEARS, TIME_OPTS, LV_NAME, STATES, CATS, RAW, agg, pct, num, int } from '../data/mockData-old.jsx';
 import { useData } from '../hooks/useData.js';
 
 const DIMS = { time: 'Thời gian', state: 'Bang khách hàng', category: 'Danh mục sản phẩm', payment: 'Hình thức thanh toán' };

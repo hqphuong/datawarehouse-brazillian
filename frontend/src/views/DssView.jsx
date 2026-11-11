@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceDot } from 'recharts';
 import { Card } from '../components/Card';
 import { Icon } from '../components/Icon';
-import { BLUE, GRID, MUTED } from '../data/mockData';
+import { BLUE, GRID, MUTED } from '../data/mockData-old';
 
 export default function DSSView({ toast }) {
   const [days, setDays] = useState(2);
