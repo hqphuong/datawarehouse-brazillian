@@ -25,6 +25,7 @@ backend/logs/
 # --- Tài liệu học tập / giải thích (không cần để chạy code) ---
 reports/material/
 reports/study/
+docs/
 
 # --- Báo cáo LaTeX (không cần để chạy code) ---
 CO4031_BaoCao/
