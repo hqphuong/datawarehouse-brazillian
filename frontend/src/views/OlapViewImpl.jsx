@@ -10,12 +10,13 @@ import {
 } from "recharts";
 import {
   APP_STATES as STATES,
-  APP_CATS as CATS,
   TIME_OPTS,
   LV_NAME,
   OLAP_DIMS as DIMS,
   NEXT,
   OLAP_MEAS as MEAS,
+  MASS_BANDS,
+  VOLUME_BANDS,
   MEAS_SQL,
   DIM_SQL,
   TL_SQL,
@@ -23,7 +24,9 @@ import {
   DEF_CFG,
   PRESETS,
   dateRange,
+  massBand,
   olapRows,
+  volumeBand,
 } from "../data/mockData.jsx";
 import {
   agg,
@@ -68,7 +71,23 @@ export default function OlapView({ sim }) {
     [drill, setDrill] = useState([]),
     [view, setView] = useState("table"),
     [sqlOpen, setSqlOpen] = useState(false);
-  const key = (r, d) => (d === "time" ? r[cfg.tl] : r[d]);
+  const key = (r, d) =>
+    d === "time"
+      ? r[cfg.tl]
+      : d === "mass"
+        ? massBand(r.massKg)
+        : d === "volume"
+          ? volumeBand(r.volumeL)
+          : r[d];
+  const aggregate = (rows) => ({
+    ...agg(rows),
+    mass: rows.length
+      ? rows.reduce((sum, row) => sum + row.massKg, 0) / rows.length
+      : null,
+    volume: rows.length
+      ? rows.reduce((sum, row) => sum + row.volumeL, 0) / rows.length
+      : null,
+  });
   const { data, loading, error, retry } = useData(
     () => {
       const rows = olapRows(fl, drill),
@@ -94,11 +113,11 @@ export default function OlapView({ sim }) {
         ck,
         body: rk.map((k) => ({
           k,
-          cells: ck.map((c) => agg(g[k + "|" + c] || [])),
-          tot: agg(byRow[k]),
+          cells: ck.map((c) => aggregate(g[k + "|" + c] || [])),
+          tot: aggregate(byRow[k]),
         })),
-        colTot: ck.map((c) => agg(byCol[c])),
-        grand: agg(rows),
+        colTot: ck.map((c) => aggregate(byCol[c])),
+        grand: aggregate(rows),
         cutR: allR.length > 30,
         cutC: allC.length > 12,
       };
@@ -159,8 +178,10 @@ export default function OlapView({ sim }) {
       `sl.state IN (${fl.sstates.map((s) => `'${s}'`).join(", ")})`,
     fl.cstates.length &&
       `c.state IN (${fl.cstates.map((s) => `'${s}'`).join(", ")})`,
-    fl.cats.length &&
-      `p.category_name_english IN (${fl.cats.map((s) => `'${s}'`).join(", ")})`,
+    fl.massBands.length &&
+      `${DIM_SQL.mass} IN (${fl.massBands.map((s) => `'${s}'`).join(", ")})`,
+    fl.volumeBands.length &&
+      `${DIM_SQL.volume} IN (${fl.volumeBands.map((s) => `'${s}'`).join(", ")})`,
     fl.lateOnly && "f.delay_days > 0",
   ].filter(Boolean);
   const sql = `-- Minh hoạ truy vấn tương ứng trên star schema\nSELECT ${gcols}, ${MEAS_SQL[cfg.m]} AS ${cfg.m}\nFROM Fact_Delivery_SLA f\nJOIN Dim_Time t ON f.time_id = t.time_id\nJOIN Dim_Location c ON f.customer_location_id = c.location_id\nJOIN Dim_Location sl ON f.seller_location_id = sl.location_id\nJOIN Dim_Product p ON f.product_id = p.product_id\nWHERE ${where.join("\n  AND ")}\nGROUP BY ${gcols};`;
@@ -250,10 +271,16 @@ export default function OlapView({ sim }) {
             onChange={(v) => setFl({ ...fl, cstates: v })}
           />
           <MultiSelect
-            label="Danh mục"
-            options={CATS}
-            value={fl.cats}
-            onChange={(v) => setFl({ ...fl, cats: v })}
+            label="Khối lượng"
+            options={MASS_BANDS}
+            value={fl.massBands}
+            onChange={(v) => setFl({ ...fl, massBands: v })}
+          />
+          <MultiSelect
+            label="Thể tích"
+            options={VOLUME_BANDS}
+            value={fl.volumeBands}
+            onChange={(v) => setFl({ ...fl, volumeBands: v })}
           />
           <label className="flex items-center gap-1.5 text-xs pb-1.5">
             <input

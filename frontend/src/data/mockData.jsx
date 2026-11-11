@@ -25,11 +25,12 @@ export const RAW=(()=>{const r=rng(7),pick=a=>a[Math.floor(r()*a.length)],out=[]
     const isLate=r()<(0.05+(far?0.12:0)+(['2017-11','2018-03'].includes(month)?0.05:0)+(si<3?0.08:0));
     const appr=+(0.1+r()*0.9).toFixed(1),prep=+(1+r()*3).toFixed(1),transit=+((far?9:4)+r()*7+(isLate?4:0)).toFixed(1);
     const total=+(appr+prep+transit).toFixed(1);
+    const massKg=+(0.5+((i*37)%300)/10).toFixed(1),volumeL=1+((i*53)%127);
     const delay=isLate?+(0.5+r()*Math.max(0,Math.min(6,total-6))).toFixed(1):-+(0.1+r()*8).toFixed(1);
     const ss=SELLER_STATES[si%6];
     out.push({id:'ord_'+(9000+i),month,quarter:month.slice(0,4)+'-Q'+Math.ceil(+month.slice(5)/3),year:month.slice(0,4),
       state,seller_state:ss,route:ss+'→'+state,seller:'seller_'+String(si+1).padStart(2,'0'),category:pick(APP_CATS),payment:pick(PAYS),
-      late:delay>0?1:0,delay,appr,prep,transit,total,promise:+(total-delay).toFixed(1),
+      late:delay>0?1:0,delay,appr,prep,transit,total,promise:+(total-delay).toFixed(1),massKg,volumeL,
       price:+(20+r()*180).toFixed(2),freight:+(8+r()*30).toFixed(1),review:Math.max(1,Math.min(5,Math.round(isLate?2.5+r()*2:4+r()*1.5)))})}
   return out})();
 export const byYear=y=>RAW.filter(r=>y==='all'||r.year===y);
@@ -84,22 +85,30 @@ export function buildBrief(rows){
   const more=list.filter(s=>s.level!=='none'&&s.low).sort((a,b)=>b.p-a.p).slice(0,5);
   return{L,routes,pay,promTop,promCnt,sellers,more}}
 
-export const OLAP_DIMS={time:'Thời gian',route:'Tuyến (bang bán → bang khách)',state:'Bang khách hàng',category:'Danh mục sản phẩm',seller:'Người bán'};
+export const MASS_BANDS=['Nhẹ (< 5 kg)','Trung bình (5–15 kg)','Nặng (> 15 kg)'];
+export const VOLUME_BANDS=['Nhỏ (< 10 L)','Trung bình (10–50 L)','Lớn (> 50 L)'];
+export const massBand=kg=>kg<5?MASS_BANDS[0]:kg<=15?MASS_BANDS[1]:MASS_BANDS[2];
+export const volumeBand=liters=>liters<10?VOLUME_BANDS[0]:liters<=50?VOLUME_BANDS[1]:VOLUME_BANDS[2];
+export const OLAP_DIMS={time:'Thời gian',route:'Tuyến (bang bán → bang khách)',state:'Bang khách hàng',mass:'Khối lượng',volume:'Thể tích',category:'Danh mục sản phẩm',seller:'Người bán'};
 export const NEXT={year:'quarter',quarter:'month'};
 export const OLAP_MEAS={n:['Số đơn',a=>int(a.n)],late:['Số đơn trễ',a=>int(a.late)],rate:['Tỷ lệ trễ',a=>pct(a.rate)],appr:['Duyệt thanh toán TB (ngày)',a=>num(a.appr)],
-  prep:['Người bán chuẩn bị TB (ngày)',a=>num(a.prep)],transit:['Vận chuyển TB (ngày)',a=>num(a.transit)],freight:['Phí vận chuyển TB (R$)',a=>num(a.freight,2)],gmv:['GMV (R$)',a=>int(Math.round(a.gmv))]};
+  prep:['Người bán chuẩn bị TB (ngày)',a=>num(a.prep)],transit:['Vận chuyển TB (ngày)',a=>num(a.transit)],mass:['Khối lượng TB (kg)',a=>num(a.mass,1)],volume:['Thể tích TB (L)',a=>num(a.volume,1)],freight:['Phí vận chuyển TB (R$)',a=>num(a.freight,2)],gmv:['GMV (R$)',a=>int(Math.round(a.gmv))]};
 export const MEAS_SQL={n:'COUNT(DISTINCT f.order_id)',late:'COUNT(DISTINCT CASE WHEN f.delay_days > 0 THEN f.order_id END)',
   rate:'COUNT(DISTINCT CASE WHEN f.delay_days > 0 THEN f.order_id END)::float / COUNT(DISTINCT f.order_id)',appr:'AVG(f.approval_time_days)',
-  prep:'AVG(f.seller_prep_time_days)',transit:'AVG(f.carrier_transit_time_days)',freight:'AVG(f.freight_value)',gmv:'SUM(f.price)'};
-export const DIM_SQL={route:"sl.state || '→' || c.state",state:'c.state',category:'p.category_name_english',seller:'f.seller_id'};
+  prep:'AVG(f.seller_prep_time_days)',transit:'AVG(f.carrier_transit_time_days)',mass:'AVG(f.package_weight_kg)',volume:'AVG(f.package_volume_l)',freight:'AVG(f.freight_value)',gmv:'SUM(f.price)'};
+export const DIM_SQL={route:"sl.state || '→' || c.state",state:'c.state',
+  mass:"CASE WHEN f.package_weight_kg < 5 THEN 'Nhẹ (< 5 kg)' WHEN f.package_weight_kg <= 15 THEN 'Trung bình (5–15 kg)' ELSE 'Nặng (> 15 kg)' END",
+  volume:"CASE WHEN f.package_volume_l < 10 THEN 'Nhỏ (< 10 L)' WHEN f.package_volume_l <= 50 THEN 'Trung bình (10–50 L)' ELSE 'Lớn (> 50 L)' END",
+  category:'p.category_name_english',seller:'f.seller_id'};
 export const TL_SQL={year:'t.year',quarter:'t.year, t.quarter',month:'t.year, t.month'};
 export function dateRange(level,from,to){
   const st=v=>level==='year'?`${v}-01-01`:level==='quarter'?`${v.slice(0,4)}-${String((+v.slice(6)-1)*3+1).padStart(2,'0')}-01`:`${v}-01`;
   const en=v=>{let y=+v.slice(0,4),m=level==='year'?12:level==='quarter'?+v.slice(6)*3:+v.slice(5);return `${y}-${String(m).padStart(2,'0')}-${new Date(y,m,0).getDate()}`};
   return `t.full_date BETWEEN '${st(from)}' AND '${en(to)}'`}
-export const DEF_O={level:'month',from:APP_MONTHS[0],to:APP_MONTHS[APP_MONTHS.length-1],sstates:[],cstates:[],cats:[],lateOnly:false};
+export const DEF_O={level:'month',from:APP_MONTHS[0],to:APP_MONTHS[APP_MONTHS.length-1],sstates:[],cstates:[],massBands:[],volumeBands:[],lateOnly:false};
 export const DEF_CFG={rows:'state',cols:'time',tl:'quarter',m:'rate'};
 export const PRESETS=[{t:'Tỷ lệ trễ theo bang khách × quý',rows:'state',cols:'time',tl:'quarter',m:'rate'},{t:'Tỷ lệ trễ theo tuyến',rows:'route',cols:'none',tl:'year',m:'rate'},
   {t:'Vận chuyển TB theo năm → tháng (drill-down)',rows:'time',cols:'none',tl:'year',m:'transit'},{t:'Số đơn trễ theo người bán',rows:'seller',cols:'none',tl:'year',m:'late'},{t:'GMV theo danh mục',rows:'category',cols:'none',tl:'year',m:'gmv'}];
 export const olapRows=(fl,drill)=>RAW.filter(r=>r[fl.level]>=fl.from&&r[fl.level]<=fl.to&&(!fl.sstates.length||fl.sstates.includes(r.seller_state))&&(!fl.cstates.length||fl.cstates.includes(r.state))
-  &&(!fl.cats.length||fl.cats.includes(r.category))&&(!fl.lateOnly||r.late)&&drill.every(d=>r[d.level]===d.value));
+  &&(!fl.massBands.length||fl.massBands.includes(massBand(r.massKg)))&&(!fl.volumeBands.length||fl.volumeBands.includes(volumeBand(r.volumeL)))
+  &&(!fl.lateOnly||r.late)&&drill.every(d=>r[d.level]===d.value));
