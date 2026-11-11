@@ -1,4 +1,89 @@
+import calendar
+import datetime
+import re
+
 from marshmallow import Schema, fields, validate, validates_schema, ValidationError
+
+
+# ---------------------------------------------------------------------------
+# Period helpers (shared with service.py)
+# ---------------------------------------------------------------------------
+_PERIOD_PATTERN = re.compile(r"^(\d{4})-(\d{2})(?:-(\d{2}))?$")
+
+
+def parse_period_bound(value, end: bool = False):
+    """
+    Parse a `YYYY-MM` or `YYYY-MM-DD` string into an inclusive `datetime.date`.
+
+    - `YYYY-MM` is expanded to the first day of the month when `end=False` and to
+      the last day of the month when `end=True` (inclusive range semantics).
+    - Returns `None` for empty input.
+    - Raises `marshmallow.ValidationError` for malformed or impossible dates.
+    """
+    if value in (None, ""):
+        return None
+
+    match = _PERIOD_PATTERN.match(str(value).strip())
+    if not match:
+        raise ValidationError("Time values must use the format YYYY-MM or YYYY-MM-DD")
+
+    year = int(match.group(1))
+    month = int(match.group(2))
+    if not 1 <= month <= 12:
+        raise ValidationError("Month must be between 01 and 12")
+
+    if match.group(3):
+        day = int(match.group(3))
+    else:
+        day = calendar.monthrange(year, month)[1] if end else 1
+
+    try:
+        return datetime.date(year, month, day)
+    except ValueError:
+        raise ValidationError("Invalid calendar date in time value")
+
+
+def validate_period_format(value):
+    """Marshmallow field validator for `YYYY-MM` / `YYYY-MM-DD` strings."""
+    if value:
+        parse_period_bound(value)
+
+
+def validate_period_range(data):
+    """Schema-level validator ensuring from_time <= to_time."""
+    start_value = data.get("from_time")
+    end_value = data.get("to_time")
+    start = parse_period_bound(start_value, end=False) if start_value else None
+    end = parse_period_bound(end_value, end=True) if end_value else None
+    if start and end and start > end:
+        raise ValidationError(
+            "The lower time bound must be before or equal to the upper time bound",
+            field_name="from_time",
+        )
+
+
+def _allowed_olap_dimensions():
+    # Imported lazily to keep `schema.py` free of `app`/SQLAlchemy imports at
+    # module load time and to avoid an import cycle with `repo.py`.
+    import repo
+    return set(repo.OLAP_DIMENSIONS) | set(repo.OLAP_TIME_DIMENSION_KEYS)
+
+
+def validate_olap_dimension(value):
+    allowed = _allowed_olap_dimensions()
+    if value not in allowed:
+        raise ValidationError(
+            f"Unsupported dimension '{value}'. Allowed values: {', '.join(sorted(allowed))}"
+        )
+
+
+def validate_olap_measure(value):
+    import repo
+    if value not in repo.OLAP_MEASURES:
+        raise ValidationError(
+            f"Unsupported measure '{value}'. Allowed values: "
+            f"{', '.join(sorted(repo.OLAP_MEASURES))}"
+        )
 
 
 class SafeDateField(fields.Date):
@@ -112,6 +197,133 @@ class req_AlertsQuerySchema(req_FilterSchema):
     )
 
 
+# ----------------------------------------------------------------------------
+# OLAP Query Builder
+# ----------------------------------------------------------------------------
+
+class req_OlapFiltersSchema(Schema):
+    """Multi-select filters for the OLAP query engine."""
+    customer_states = fields.List(
+        fields.Str(),
+        load_default=list,
+        metadata={"description": "Customer state codes; empty list means no filter"}
+    )
+    seller_states = fields.List(
+        fields.Str(),
+        load_default=list,
+        metadata={"description": "Seller state codes; empty list means no filter"}
+    )
+    categories = fields.List(
+        fields.Str(),
+        load_default=list,
+        metadata={"description": "Product category names; empty list means no filter"}
+    )
+
+
+class req_OlapQuerySchema(Schema):
+    """Payload for the dynamic OLAP pivot/aggregation engine."""
+    time_mode = fields.Str(
+        load_default="month",
+        validate=validate.OneOf(["month", "quarter", "year"]),
+        metadata={"description": "Granularity of the time axis (month, quarter, year)"}
+    )
+    from_time = fields.Str(
+        required=False,
+        allow_none=True,
+        validate=validate_period_format,
+        metadata={"description": "Inclusive lower bound, YYYY-MM or YYYY-MM-DD"}
+    )
+    to_time = fields.Str(
+        required=False,
+        allow_none=True,
+        validate=validate_period_format,
+        metadata={"description": "Inclusive upper bound, YYYY-MM or YYYY-MM-DD"}
+    )
+    dimensions = fields.List(
+        fields.Str(validate=validate_olap_dimension),
+        required=True,
+        validate=validate.Length(min=1),
+        metadata={"description": "Dimension keys from the whitelist, e.g. Dim_Time.month"}
+    )
+    measures = fields.List(
+        fields.Str(validate=validate_olap_measure),
+        required=True,
+        validate=validate.Length(min=1),
+        metadata={"description": "Measure keys from the whitelist, e.g. total_orders"}
+    )
+    filters = fields.Nested(
+        req_OlapFiltersSchema,
+        required=False,
+        load_default=dict,
+        metadata={"description": "Multi-select filters"}
+    )
+
+    @validates_schema
+    def validate_olap_range(self, data, **kwargs):
+        validate_period_range(data)
+
+
+# ----------------------------------------------------------------------------
+# BI Dashboard overview
+# ----------------------------------------------------------------------------
+
+class req_OverviewSchema(Schema):
+    """Query parameters for the BI dashboard overview."""
+    time_mode = fields.Str(
+        data_key="time_mode",
+        load_default="month",
+        validate=validate.OneOf(["month", "quarter", "year"]),
+        metadata={"description": "Aggregation granularity (month, quarter, year)"}
+    )
+    from_time = fields.Str(
+        data_key="from",
+        required=False,
+        allow_none=True,
+        validate=validate_period_format,
+        metadata={"description": "Inclusive lower bound, YYYY-MM or YYYY-MM-DD"}
+    )
+    to_time = fields.Str(
+        data_key="to",
+        required=False,
+        allow_none=True,
+        validate=validate_period_format,
+        metadata={"description": "Inclusive upper bound, YYYY-MM or YYYY-MM-DD"}
+    )
+    customer_state = fields.Str(
+        required=False,
+        allow_none=True,
+        metadata={"description": "2-letter customer state code, e.g. SP"}
+    )
+    seller_state = fields.Str(
+        required=False,
+        allow_none=True,
+        metadata={"description": "2-letter seller state code, e.g. SP"}
+    )
+
+    @validates_schema
+    def validate_overview_range(self, data, **kwargs):
+        validate_period_range(data)
+
+
+# ----------------------------------------------------------------------------
+# Authentication
+# ----------------------------------------------------------------------------
+
+class req_LoginSchema(Schema):
+    """Login credentials (plain text; this assignment does not require hashing)."""
+    username = fields.Str(
+        required=True,
+        validate=validate.Length(min=1),
+        metadata={"description": "Account username (primary key of accounts table)"}
+    )
+    password = fields.Str(
+        required=True,
+        load_only=True,
+        validate=validate.Length(min=1),
+        metadata={"description": "Plain-text account password"}
+    )
+
+
 # ============================================================================
 # Response Schemas
 # ============================================================================
@@ -137,6 +349,7 @@ class res_StatesSchema(Schema):
 class res_LateTrendSchema(Schema):
     """Data point in the late delivery trend timeline."""
     order_count = fields.Int(required=True, metadata={"description": "Total number of orders in period"})
+    late_count = fields.Int(required=False, metadata={"description": "Number of late orders in period"})
     delay_rate = fields.Float(required=True, metadata={"description": "Ratio of late orders to total orders"})
     avg_delivery_time = fields.Float(required=True, metadata={"description": "Average total delivery time in days"})
     year = fields.Int(required=False, allow_none=True)
@@ -210,6 +423,66 @@ class res_AlertSchema(Schema):
     metric_value = fields.Float(required=False, allow_none=True)
 
 
+# ----------------------------------------------------------------------------
+# OLAP Query Builder
+# ----------------------------------------------------------------------------
+
+class res_TimeRangeSchema(Schema):
+    """Available month range in the warehouse."""
+    min_month = fields.Str(required=False, allow_none=True, metadata={"description": "Earliest YYYY-MM in the fact table"})
+    max_month = fields.Str(required=False, allow_none=True, metadata={"description": "Latest YYYY-MM in the fact table"})
+
+
+class res_OlapMetadataSchema(Schema):
+    """Filter values available to the OLAP query builder."""
+    states = fields.List(fields.Str(), required=True, metadata={"description": "Distinct customer states"})
+    categories = fields.List(fields.Str(), required=True, metadata={"description": "Distinct product categories"})
+    seller_states = fields.List(fields.Str(), required=True, metadata={"description": "Distinct seller states (extension)"})
+    time_range = fields.Nested(res_TimeRangeSchema, required=True)
+
+
+class res_OlapQuerySchema(Schema):
+    """Dynamic OLAP result: ordered column names and grouped rows."""
+    columns = fields.List(fields.Str(), required=True)
+    data = fields.List(fields.Dict(keys=fields.Str(), values=fields.Raw()), required=True)
+
+
+# ----------------------------------------------------------------------------
+# BI Dashboard overview
+# ----------------------------------------------------------------------------
+
+class res_OverviewSchema(Schema):
+    """Six KPI cards plus a late-rate trend for the dashboard."""
+    time_mode = fields.Str(required=True)
+    from_time = fields.Str(required=False, allow_none=True)
+    to_time = fields.Str(required=False, allow_none=True)
+    customer_state = fields.Str(required=False, allow_none=True)
+    seller_state = fields.Str(required=False, allow_none=True)
+    kpis = fields.Nested(res_KpiSchema, required=True)
+    late_trend = fields.List(fields.Nested(res_LateTrendSchema), required=True)
+
+
+# ----------------------------------------------------------------------------
+# Authentication
+# ----------------------------------------------------------------------------
+
+class res_LoginSchema(Schema):
+    """Successful login result."""
+    message = fields.Str(required=True)
+    username = fields.Str(required=True)
+
+
+class res_LogoutSchema(Schema):
+    """Logout acknowledgement."""
+    message = fields.Str(required=True)
+
+
+class res_MeSchema(Schema):
+    """Current session state."""
+    authenticated = fields.Bool(required=True)
+    username = fields.Str(required=False, allow_none=True)
+
+
 # ============================================================================
 # Aliases supporting both prefix and suffix naming conventions
 # ============================================================================
@@ -218,6 +491,10 @@ LateTrend_req_Schema = req_LateTrendSchema
 OrdersQuery_req_Schema = req_OrdersQuerySchema
 SellerQuery_req_Schema = req_SellerQuerySchema
 AlertsQuery_req_Schema = req_AlertsQuerySchema
+OlapQuery_req_Schema = req_OlapQuerySchema
+OlapFilters_req_Schema = req_OlapFiltersSchema
+Overview_req_Schema = req_OverviewSchema
+Login_req_Schema = req_LoginSchema
 
 Health_res_Schema = res_HealthSchema
 Kpi_res_Schema = res_KpiSchema
@@ -229,3 +506,10 @@ OrderItem_res_Schema = res_OrderItemSchema
 Region_res_Schema = res_RegionSchema
 Seller_res_Schema = res_SellerSchema
 Alert_res_Schema = res_AlertSchema
+TimeRange_res_Schema = res_TimeRangeSchema
+OlapMetadata_res_Schema = res_OlapMetadataSchema
+OlapQuery_res_Schema = res_OlapQuerySchema
+Overview_res_Schema = res_OverviewSchema
+Login_res_Schema = res_LoginSchema
+Logout_res_Schema = res_LogoutSchema
+Me_res_Schema = res_MeSchema

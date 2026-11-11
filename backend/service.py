@@ -2,6 +2,7 @@ import datetime
 import math
 import repo
 from app import logger
+from schema import parse_period_bound
 
 
 def generate_month_periods(start_year: int, start_month: int, end_year: int, end_month: int):
@@ -61,7 +62,15 @@ def get_kpi(filters: dict | None = None) -> dict:
     }
 
 
-def get_late_trend(query_args: dict | None = None) -> list:
+def get_late_trend(query_args: dict | None = None, extend_to_data_range: bool = True) -> list:
+    """
+    Build a continuous late-delivery trend.
+
+    When `extend_to_data_range` is True (default, preserves the original
+    behavior of /api/analytics/late-trend) the generated timeline is expanded to
+    cover every period present in the data. The dashboard overview passes False
+    so an explicit `from`/`to` window is respected exactly.
+    """
     args = query_args or {}
     granularity = args.get("granularity", "month")
     rows = repo.get_late_trend(granularity=granularity, filters=args)
@@ -89,6 +98,7 @@ def get_late_trend(query_args: dict | None = None) -> list:
         data_by_period[key] = {
             "avg_delivery_time": avg_delivery_time,
             "delay_rate": round(float(delay_rate), 4),
+            "late_count": late_count,
             "month": month,
             "order_count": order_count,
             "quarter": quarter,
@@ -130,7 +140,7 @@ def get_late_trend(query_args: dict | None = None) -> list:
         else:
             end_year, end_q = max(data_by_period.keys())
 
-        if data_by_period:
+        if extend_to_data_range and data_by_period:
             data_min_y, data_min_q = min(data_by_period.keys())
             if (data_min_y, data_min_q) < (start_year, start_q):
                 start_year, start_q = data_min_y, data_min_q
@@ -145,6 +155,7 @@ def get_late_trend(query_args: dict | None = None) -> list:
                 trend_list.append({
                     "avg_delivery_time": 0.0,
                     "delay_rate": 0.0,
+                    "late_count": 0,
                     "month": None,
                     "order_count": 0,
                     "quarter": q,
@@ -155,7 +166,7 @@ def get_late_trend(query_args: dict | None = None) -> list:
         start_year = start_date.year if start_date else min(data_by_period.keys())[0]
         end_year = end_date.year if end_date else max(data_by_period.keys())[0]
 
-        if data_by_period:
+        if extend_to_data_range and data_by_period:
             data_min_y = min(data_by_period.keys())[0]
             if data_min_y < start_year:
                 start_year = data_min_y
@@ -170,6 +181,7 @@ def get_late_trend(query_args: dict | None = None) -> list:
                 trend_list.append({
                     "avg_delivery_time": 0.0,
                     "delay_rate": 0.0,
+                    "late_count": 0,
                     "month": None,
                     "order_count": 0,
                     "quarter": None,
@@ -187,7 +199,7 @@ def get_late_trend(query_args: dict | None = None) -> list:
         else:
             end_year, end_m = max(data_by_period.keys())
 
-        if data_by_period:
+        if extend_to_data_range and data_by_period:
             data_min_y, data_min_m = min(data_by_period.keys())
             if (data_min_y, data_min_m) < (start_year, start_m):
                 start_year, start_m = data_min_y, data_min_m
@@ -202,6 +214,7 @@ def get_late_trend(query_args: dict | None = None) -> list:
                 trend_list.append({
                     "avg_delivery_time": 0.0,
                     "delay_rate": 0.0,
+                    "late_count": 0,
                     "month": m,
                     "order_count": 0,
                     "quarter": None,
@@ -359,3 +372,164 @@ def get_alerts(query_args: dict | None = None) -> list:
         })
 
     return alerts
+
+
+# ===========================================================================
+# OLAP Query Builder
+# ===========================================================================
+
+def _resolve_olap_dimensions(dimension_keys: list, time_mode: str) -> list:
+    """
+    Translate whitelisted dimension keys into SQL definitions.
+
+    Any of Dim_Time.month / quarter / year marks the presence of the time axis;
+    its granularity is taken from `time_mode`. Duplicate output columns (for
+    example several time keys sent at once) are collapsed.
+    """
+    resolved = []
+    seen_aliases = set()
+    time_added = False
+
+    for key in dimension_keys:
+        if key in repo.OLAP_TIME_DIMENSION_KEYS:
+            if time_added:
+                continue
+            definition = repo.OLAP_TIME_DIMENSIONS.get(time_mode)
+            time_added = True
+        else:
+            definition = repo.OLAP_DIMENSIONS.get(key)
+
+        if not definition:
+            continue
+        if definition["alias"] in seen_aliases:
+            continue
+
+        seen_aliases.add(definition["alias"])
+        resolved.append(definition)
+
+    return resolved
+
+
+def _resolve_olap_measures(measure_keys: list) -> list:
+    """Translate whitelisted measure keys into SQL definitions."""
+    resolved = []
+    seen_aliases = set()
+    for key in measure_keys:
+        definition = repo.OLAP_MEASURES.get(key)
+        if not definition:
+            continue
+        if definition["alias"] in seen_aliases:
+            continue
+        seen_aliases.add(definition["alias"])
+        resolved.append(definition)
+    return resolved
+
+
+def _format_measure_value(value, decimals: int):
+    """Normalize an aggregate value: NULL -> 0, integers stay integers."""
+    if value is None:
+        return 0 if decimals == 0 else 0.0
+    if decimals == 0:
+        return int(value)
+    return round(float(value), decimals)
+
+
+def get_olap_metadata() -> dict:
+    """Return distinct filter values and the available month range."""
+    return {
+        "states": repo.get_customer_states(),
+        "categories": repo.get_olap_categories(),
+        "seller_states": repo.get_seller_states(),
+        "time_range": repo.get_olap_time_range(),
+    }
+
+
+def get_olap_query(payload: dict | None = None) -> dict:
+    """Execute a dynamic OLAP aggregation and return columns + rows."""
+    payload = payload or {}
+    time_mode = payload.get("time_mode") or "month"
+
+    dimensions = _resolve_olap_dimensions(payload.get("dimensions") or [], time_mode)
+    measures = _resolve_olap_measures(payload.get("measures") or [])
+    filters = payload.get("filters") or {}
+
+    date_from = parse_period_bound(payload.get("from_time"), end=False)
+    date_to = parse_period_bound(payload.get("to_time"), end=True)
+
+    rows = repo.run_olap_query(
+        dimensions=dimensions,
+        measures=measures,
+        filters=filters,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+    columns = [dimension["alias"] for dimension in dimensions]
+    columns += [measure["alias"] for measure in measures]
+
+    data = []
+    for row in rows:
+        record = {}
+        for dimension in dimensions:
+            record[dimension["alias"]] = getattr(row, dimension["alias"])
+        for measure in measures:
+            record[measure["alias"]] = _format_measure_value(
+                getattr(row, measure["alias"]),
+                measure.get("decimals", 2),
+            )
+        data.append(record)
+
+    return {"columns": columns, "data": data}
+
+
+# ===========================================================================
+# BI Dashboard overview
+# ===========================================================================
+
+def get_overview(args: dict | None = None) -> dict:
+    """
+    Aggregate the six dashboard KPIs and a late-rate trend for one request.
+
+    `delay_rate` follows the existing convention of /api/dashboard/kpis and
+    /api/analytics/late-trend: it is a ratio in [0, 1], not a percentage.
+    """
+    args = args or {}
+    time_mode = args.get("time_mode") or "month"
+
+    filters = {}
+    if args.get("customer_state"):
+        filters["customer_state"] = args["customer_state"]
+    if args.get("seller_state"):
+        filters["seller_state"] = args["seller_state"]
+
+    date_from = parse_period_bound(args.get("from_time"), end=False)
+    date_to = parse_period_bound(args.get("to_time"), end=True)
+    if date_from is not None:
+        filters["start_date"] = date_from
+    if date_to is not None:
+        filters["end_date"] = date_to
+
+    trend_args = dict(filters)
+    trend_args["granularity"] = time_mode
+
+    return {
+        "time_mode": time_mode,
+        "from_time": args.get("from_time"),
+        "to_time": args.get("to_time"),
+        "customer_state": args.get("customer_state"),
+        "seller_state": args.get("seller_state"),
+        "kpis": get_kpi(filters),
+        "late_trend": get_late_trend(
+            trend_args,
+            extend_to_data_range=False,
+        ),
+    }
+
+
+# ===========================================================================
+# Authentication (plain text, intentionally not secure)
+# ===========================================================================
+
+def login(username: str, password: str):
+    """Return the authenticated username, or None when credentials do not match."""
+    return repo.authenticate(username, password)

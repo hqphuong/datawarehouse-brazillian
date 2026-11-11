@@ -2,7 +2,7 @@ import os
 import sys
 from pathlib import Path
 from logging.config import dictConfig
-from flask import Flask
+from flask import Flask, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_smorest import Api
 from dotenv import load_dotenv
@@ -55,6 +55,12 @@ if not db_url:
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+# --- Session config (minimal login/logout) ---
+# SECRET_KEY comes from the environment; the fallback is only for local demos.
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY') or 'olist-dss-local-dev-secret'
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
 # --- OpenAPI / Swagger config ---
 app.config['API_TITLE'] = 'Olist Logistics DSS API'
 app.config['API_VERSION'] = 'v1'
@@ -84,6 +90,29 @@ dictConfig({
     }
 })
 logger = app.logger
+
+# --- CORS ---
+# The assignment frontend may run from a Live Server port or as a static file,
+# so every response reflects the caller Origin. Credentials are allowed so the
+# session cookie used by /api/auth/* travels with cross-origin requests.
+@app.before_request
+def handle_cors_preflight():
+    if request.method == 'OPTIONS':
+        return '', 204
+
+
+@app.after_request
+def apply_cors_headers(response):
+    origin = request.headers.get('Origin')
+    if origin:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Vary'] = 'Origin'
+    else:
+        response.headers.setdefault('Access-Control-Allow-Origin', '*')
+    response.headers['Access-Control-Allow-Credentials'] = 'true'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+    return response
 
 # --- Register blueprint ---
 from routes import blp
