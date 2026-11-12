@@ -4,8 +4,10 @@ import pandas as pd
 
 try:  # chạy như package:  python -m src.dim_location
     from .config import PROCESSED_DIR, RAW_CUSTOMERS, RAW_GEOLOCATION, RAW_SELLERS, ensure_dirs
+    from .transform_rules import normalize_location_id
 except ImportError:  # chạy trực tiếp: python src/dim_location.py
     from config import PROCESSED_DIR, RAW_CUSTOMERS, RAW_GEOLOCATION, RAW_SELLERS, ensure_dirs
+    from transform_rules import normalize_location_id
 
 ensure_dirs()
 OUTPUT_FILE = PROCESSED_DIR / "cleaned_dim_location.csv"
@@ -28,8 +30,8 @@ geo_grouped = df_geo.groupby("geolocation_zip_code_prefix").agg(
 
 # Đảm bảo mã zip code là chuỗi (String) và bù thêm số 0 ở đầu (pad) cho đủ 5 ký tự
 # (Vì pandas khi đọc file geo đã tự động biến mã 01037 thành số 1037 gây mất dữ liệu)
-geo_grouped["geolocation_zip_code_prefix"] = (
-    geo_grouped["geolocation_zip_code_prefix"].astype(str).str.zfill(5)
+geo_grouped["geolocation_zip_code_prefix"] = normalize_location_id(
+    geo_grouped["geolocation_zip_code_prefix"], "geolocation_zip_code_prefix"
 )
 
 print("Đang xử lý Dim_Location...")
@@ -43,18 +45,13 @@ loc_seller.columns = ["location_id", "city", "state"]
 
 # Gộp danh sách
 dim_location = pd.concat([loc_customer, loc_seller], ignore_index=True)
-dim_location["location_id"] = dim_location["location_id"].astype(str).str.zfill(5)
+# Khóa địa điểm phải luôn đủ 5 ký tự (mã bưu điện Brazil). Hàm chặn NaN trước
+# zfill và dừng pipeline thay vì âm thầm nạp dữ liệu sai.
+dim_location["location_id"] = normalize_location_id(
+    dim_location["location_id"], "location_id"
+)
 dim_location = dim_location.drop_duplicates(subset=["location_id"], keep="first")
 dim_location["zip_code_prefix"] = dim_location["location_id"]
-
-# Khóa địa điểm phải luôn đủ 5 ký tự (mã bưu điện Brazil). Sai độ dài sẽ làm
-# hỏng join FK ở Fact, nên dừng pipeline thay vì âm thầm nạp dữ liệu sai.
-bad_len = dim_location["location_id"].str.len() != 5
-if bad_len.any():
-    raise ValueError(
-        f"location_id không đủ 5 ký tự: {int(bad_len.sum())} dòng "
-        f"{dim_location.loc[bad_len, 'location_id'].head(5).tolist()}"
-    )
 
 # Kết nối (Merge) Bảng địa điểm với Bảng tọa độ
 dim_location = dim_location.merge(

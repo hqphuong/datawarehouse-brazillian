@@ -32,6 +32,31 @@ def select_payment_type(payments: pd.DataFrame) -> pd.DataFrame:
     ].reset_index(drop=True)
 
 
+def normalize_location_id(values: pd.Series, column: str) -> pd.Series:
+    """Chuẩn hoá zip prefix về 5 ký tự, không bao giờ biến NaN thành ``"00nan"``.
+
+    ``Series.astype(str).str.zfill(5)`` biến ``NaN`` thành chuỗi ``"nan"`` rồi
+    thành ``"00nan"`` (đủ 5 ký tự nên lọt qua kiểm tra độ dài). Hàm này chặn
+    trường hợp đó bằng lỗi rõ ràng trước khi zfill.
+    """
+    missing = values.isna()
+    if missing.any():
+        raise ValueError(
+            f"{column} thiếu giá trị ở {int(missing.sum())} dòng; "
+            "không thể zfill vì sẽ tạo '00nan'. "
+            f"Index mẫu: {values.loc[missing].head(5).index.tolist()}"
+        )
+
+    normalized = values.astype(str).str.zfill(5)
+    bad_len = normalized.str.len() != 5
+    if bad_len.any():
+        raise ValueError(
+            f"{column} không đủ 5 ký tự sau khi zfill: {int(bad_len.sum())} dòng "
+            f"{normalized.loc[bad_len].head(5).tolist()}"
+        )
+    return normalized
+
+
 def select_latest_reviews(reviews: pd.DataFrame) -> pd.DataFrame:
     """Chọn 1 review cho mỗi đơn.
 

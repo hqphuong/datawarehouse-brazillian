@@ -1,6 +1,11 @@
 import pandas as pd
+import pytest
 
-from etl.transform_rules import select_latest_reviews, select_payment_type
+from etl.transform_rules import (
+    normalize_location_id,
+    select_latest_reviews,
+    select_payment_type,
+)
 
 
 def _payments(rows):
@@ -42,6 +47,22 @@ def test_payment_type_sums_rows_of_same_type():
         )
     ).set_index("order_id")
     assert out.loc["C", "payment_type"] == "voucher"
+
+
+def test_normalize_location_id_pads_to_five():
+    out = normalize_location_id(pd.Series(["1037", "01037", "95010"]), "zip")
+    assert out.tolist() == ["01037", "01037", "95010"]
+
+
+def test_normalize_location_id_rejects_missing_before_zfill():
+    values = pd.Series(["1037", None, "95010"], name="zip")
+    with pytest.raises(ValueError, match="00nan"):
+        normalize_location_id(values, "zip")
+
+
+def test_normalize_location_id_rejects_wrong_length():
+    with pytest.raises(ValueError, match="không đủ 5 ký tự"):
+        normalize_location_id(pd.Series(["123456"]), "zip")
 
 
 def test_review_latest_creation_date_wins():

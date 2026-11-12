@@ -14,7 +14,11 @@ try:  # chạy như package:  python -m src.fact_delivery_sla
         RAW_SELLERS,
         ensure_dirs,
     )
-    from .transform_rules import select_latest_reviews, select_payment_type
+    from .transform_rules import (
+        normalize_location_id,
+        select_latest_reviews,
+        select_payment_type,
+    )
 except ImportError:  # chạy trực tiếp: python src/fact_delivery_sla.py
     from config import (
         PROCESSED_DIR,
@@ -26,7 +30,11 @@ except ImportError:  # chạy trực tiếp: python src/fact_delivery_sla.py
         RAW_SELLERS,
         ensure_dirs,
     )
-    from transform_rules import select_latest_reviews, select_payment_type
+    from transform_rules import (
+        normalize_location_id,
+        select_latest_reviews,
+        select_payment_type,
+    )
 
 ensure_dirs()
 OUTPUT_FILE = PROCESSED_DIR / "cleaned_fact_orders.csv"
@@ -124,14 +132,9 @@ fact_df = fact_df.merge(df_sellers[["seller_id", "seller_zip_code_prefix"]], on=
 fact_df = fact_df.rename(columns={"seller_zip_code_prefix": "seller_location_id"})
 
 # Chuẩn hóa khóa địa điểm về đúng 5 ký tự, khớp Dim_Location.
+# Hàm chặn NaN trước zfill: astype(str) + zfill(5) sẽ biến NaN thành "00nan".
 for col in ("customer_location_id", "seller_location_id"):
-    fact_df[col] = fact_df[col].astype(str).str.zfill(5)
-    bad = fact_df[col].str.len() != 5
-    if bad.any():
-        raise ValueError(
-            f"{col} không đủ 5 ký tự: {int(bad.sum())} dòng "
-            f"{fact_df.loc[bad, col].head(5).tolist()}"
-        )
+    fact_df[col] = normalize_location_id(fact_df[col], col)
 
 # Nối Đánh giá & Thanh toán
 fact_df = fact_df.merge(df_reviews[["order_id", "review_score", "has_logistics_complaint"]], on="order_id", how="left")
