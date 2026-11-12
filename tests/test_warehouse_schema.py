@@ -1,6 +1,9 @@
 from pathlib import Path
 
 import pandas as pd
+import pytest
+
+from etl.config import WAREHOUSE_TABLES, get_db_config
 
 ROOT = Path(__file__).resolve().parents[1]
 PROC = ROOT / "data" / "processed"
@@ -38,6 +41,27 @@ def test_fact_has_d2_columns_and_values():
     assert (fact["promise_days"] - (fact["total_lead_days"] - fact["delay_days"])).abs().max() < 1e-9
     assert (fact["distance_km"].dropna() >= 0).all()
     assert (fact.loc[fact["distance_km"].notna(), "distance_km"] <= 20000).all()
+
+
+def test_processed_csv_counts_match_loaded_postgresql_tables():
+    """C10: CSV (nguồn backend đọc) và bảng PostgreSQL đã nạp phải cùng số dòng."""
+    psycopg2 = pytest.importorskip("psycopg2")
+    try:
+        conn = psycopg2.connect(**get_db_config(), connect_timeout=5)
+    except Exception as exc:  # DB không chạy / thiếu .env
+        pytest.skip(f"PostgreSQL không sẵn sàng: {exc}")
+
+    try:
+        with conn.cursor() as cur:
+            for table, csv_path in WAREHOUSE_TABLES.items():
+                csv_rows = len(_read(csv_path.name))
+                cur.execute(f'SELECT COUNT(*) FROM "{table.lower()}"')
+                db_rows = int(cur.fetchone()[0])
+                assert db_rows == csv_rows, (
+                    f"{table}: CSV {csv_rows} dòng nhưng PostgreSQL {db_rows} dòng"
+                )
+    finally:
+        conn.close()
 
 
 def test_fact_location_fks_are_zfilled_and_covered():
