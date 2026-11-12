@@ -1,4 +1,4 @@
-# REPORT_FIXES — sửa lời văn trong `main.pdf` (Phase 1)
+# REPORT_FIXES — sửa lời văn trong `main.pdf` (Phase 1–2)
 
 Chỉ sửa **cách diễn đạt/định nghĩa** cho khớp code và dữ liệu thật. **Không đổi
 bất kỳ con số nào** trong báo cáo. Mỗi mục ghi: vị trí, câu hiện tại, câu thay
@@ -93,6 +93,33 @@ bằng:
 Lý do: `_shapley_orders()` dùng `excess = actual − benchmark` có dấu. Không đổi
 số nào (C5).
 
+## 5.6.3 — bảng API của giao diện
+
+Thay bảng 5.4 bằng bảng sau (giữ 7 dòng, chỉ sửa cột API/Chức năng):
+
+| Thành phần | API | Chức năng |
+|---|---|---|
+| Route Priority | `/routes` + `/attribution` (`ranked_routes`) | Xếp hạng tuyến theo tỷ lệ trễ/số đơn trễ; danh sách tuyến đủ `min_orders` lấy từ `ranked_routes`; cờ `low_sample`, `uncertain`, khoảng tin cậy và nguyên nhân gốc lấy từ `/routes`. |
+| Thẻ Nguyên nhân | `/attribution` (`q=0,5` hoặc `0,25`) | Tỷ trọng Shapley **có dấu** của từng giai đoạn trong đơn trễ của tuyến; tỷ trọng có thể âm. |
+| Scenario | `/scenario` | Ba thanh trượt rút ngắn; `avoided`, `projected`, `series` do API tính. |
+| Decision Brief | `/brief` | Năm nhóm hành động; ngưỡng và `base_rate` đọc từ `parameters`/`config` của chính `/brief`. |
+| Seller Scorecard | `/portfolio` + `/sellers` | Nhóm người bán và độ phủ 50% đơn trễ (`/portfolio`); bảng 5 cột từng người bán (`/sellers`). |
+| Promise Policy | `/promise-policy` + `/promise` | Mức phục vụ 85/90/95 và số ngày gia hạn theo mục tiêu tỷ lệ trễ. |
+| Ghi nhận khuyến nghị | `/actions` (POST/GET) | Chỉ ghi log; nhãn “Đã ghi nhận (không thực thi)”. |
+
+Bổ sung ngay dưới bảng:
+
+> Giao diện chỉ hiển thị trường do API trả, không tự tính Wilson/Shapley/bootstrap
+> hay what-if. `min_orders=100`, `low_sample_threshold=200`,
+> `seller_min_orders=30` và `base_rate` toàn kỳ chỉ đọc từ `/brief`; nếu `/brief`
+> lỗi, giao diện hiện trạng thái lỗi, không dùng dữ liệu mẫu hay ngưỡng cứng.
+> Đơn vị phân tích là **đơn-tuyến (order-route)**; tuyến hiển thị dạng `SP→RJ`.
+> Hai khối Promise policy và Seller scorecard nằm trong mục “Phân tích hỗ trợ”
+> đang thu gọn.
+
+Lý do: UI đã nối 9 endpoint thật; `ranked_routes` cung cấp danh sách tuyến đủ
+mẫu (kể cả tuyến 0 đơn trễ) còn `/routes` chỉ trả tuyến đã gắn cờ (C9).
+
 ## 6.3 — CSV, DDL và bảng log
 
 Thay đoạn:
@@ -115,6 +142,26 @@ bằng:
 Lý do: code thật đọc CSV; bảng log vẫn qua `detail` (C4). Ghi chú thêm: bảng
 `fact_delivery_sla` live có cột thừa `handoff_slack_days` không dùng và không có
 trong Phụ lục A — xem mục “Phụ lục A” bên dưới.
+
+## 6.4 — luồng giao diện đã nối API
+
+Thay đoạn mô tả luồng ở §6.4 bằng:
+
+> Tab DSS gọi 9 endpoint thật và có bộ lọc năm (tất cả, 2017, 2018; không mở
+> 2016 — xem mục dưới). Luồng: **Route Priority** (danh sách tuyến đủ mẫu từ
+> `/attribution.ranked_routes`, cờ/khoảng tin cậy/nguyên nhân gốc từ `/routes`)
+> → **Giai đoạn nghẽn** (`/attribution`, tỷ trọng Shapley có dấu) →
+> **Scenario** (`/scenario`, ba thanh trượt rút ngắn) → **Tổng hợp hành động**
+> (`/brief`, năm nhóm, mỗi dòng có nút ghi nhận) → **Phân tích hỗ trợ** đang
+> thu gọn gồm Promise policy (`/promise-policy`, `/promise`) và Seller
+> scorecard (`/portfolio`, `/sellers`). Nút “Ghi nhận khuyến nghị” chỉ POST
+> `/api/dss/actions`, không thực thi hành động nào lên hệ thống vận hành; sau
+> khi ghi, nút đổi thành “Đã ghi nhận (không thực thi)” và danh sách log được
+> tải lại từ GET `/api/dss/actions`.
+
+Lý do: UI thật đã bỏ dữ liệu mẫu 1.400 dòng; ngưỡng 100/200/30 và `base_rate`
+chỉ lấy từ `/brief`; bản demo được tách thành
+`Olist_DSS_Action_Center.sample.html` với nhãn “Sample data” (C9).
 
 ## 6.4 / 7.1 — vì sao bộ lọc năm chỉ có 2017 và 2018
 
