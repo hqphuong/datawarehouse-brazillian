@@ -99,7 +99,7 @@ Thay bảng 5.4 bằng bảng sau (giữ 7 dòng, chỉ sửa cột API/Chức n
 
 | Thành phần | API | Chức năng |
 |---|---|---|
-| Route Priority | `/routes` + `/attribution` (`ranked_routes`) | Xếp hạng tuyến theo tỷ lệ trễ/số đơn trễ; danh sách tuyến đủ `min_orders` lấy từ `ranked_routes`; cờ `low_sample`, `uncertain`, khoảng tin cậy và nguyên nhân gốc lấy từ `/routes`. |
+| Route Priority | `/routes` + `/attribution` (`ranked_routes`) | Xếp hạng tuyến theo tỷ lệ trễ/số đơn trễ; danh sách tuyến đủ `min_orders` lấy từ `ranked_routes`; cờ `uncertain`, khoảng tin cậy và nguyên nhân gốc lấy từ `/routes`; nhãn “mẫu nhỏ” suy ra từ `order_routes < parameters.low_sample_threshold` (không dùng `ranked_routes.low_sample`). |
 | Thẻ Nguyên nhân | `/attribution` (`q=0,5` hoặc `0,25`) | Tỷ trọng Shapley **có dấu** của từng giai đoạn trong đơn trễ của tuyến; tỷ trọng có thể âm. |
 | Scenario | `/scenario` | Ba thanh trượt rút ngắn; `avoided`, `projected`, `series` do API tính. |
 | Decision Brief | `/brief` | Năm nhóm hành động; ngưỡng và `base_rate` đọc từ `parameters`/`config` của chính `/brief`. |
@@ -110,9 +110,10 @@ Thay bảng 5.4 bằng bảng sau (giữ 7 dòng, chỉ sửa cột API/Chức n
 Bổ sung ngay dưới bảng:
 
 > Giao diện chỉ hiển thị trường do API trả, không tự tính Wilson/Shapley/bootstrap
-> hay what-if. `min_orders=100`, `low_sample_threshold=200`,
-> `seller_min_orders=30` và `base_rate` toàn kỳ chỉ đọc từ `/brief`; nếu `/brief`
-> lỗi, giao diện hiện trạng thái lỗi, không dùng dữ liệu mẫu hay ngưỡng cứng.
+> hay what-if. Ngưỡng `min_orders=100`, `low_sample_threshold=200`,
+> `seller_min_orders=30` chỉ đọc từ `/brief.parameters`; `base_rate` toàn kỳ chỉ
+> đọc từ `/brief.config`. Nếu `/brief` lỗi, giao diện hiện trạng thái lỗi, không
+> dùng dữ liệu mẫu hay ngưỡng cứng.
 > Đơn vị phân tích là **đơn-tuyến (order-route)**; tuyến hiển thị dạng `SP→RJ`.
 > Hai khối Promise policy và Seller scorecard nằm trong mục “Phân tích hỗ trợ”
 > đang thu gọn.
@@ -175,6 +176,22 @@ Thêm một câu ngay sau “bộ lọc năm (tất cả, 2017, 2018)” ở §6
 Lý do: `etl/dss_eval.py:155,166,197` đã loại 2016 khỏi backtest với ghi chú
 “quá ít đơn”; §7.2 của báo cáo cũng đã nêu “Q1 chỉ trả lời được theo bộ lọc năm
 2017/2018”. Không đổi số nào.
+
+## 6.1 / 7.2 — giao diện cần Internet cho CDN
+
+Thêm vào cuối §6.1 (sau đoạn mô tả bốn lớp) một câu:
+
+> Giao diện một tệp tải React, Babel và Tailwind từ CDN (unpkg/Tailwind) và
+> phông chữ từ Google Fonts, nên cần Internet khi mở; nếu CDN bị chặn hoặc
+> offline, giao diện có thể không hiển thị. Các tài nguyên này không được đóng
+> gói cục bộ (C9-d).
+
+Thêm vào §7.2 một gạch đầu dòng:
+
+> Giao diện cần Internet để tải React/Babel/Tailwind và phông chữ từ CDN; không
+> có bản chạy offline.
+
+Lý do: giữ CDN theo quyết định C9-d (B); không thêm bước build hay vendoring.
 
 ## Phụ lục A — DDL
 

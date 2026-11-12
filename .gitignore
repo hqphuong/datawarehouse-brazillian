@@ -33,3 +33,6 @@ CO4031_BaoCao/
 # --- Hệ điều hành / IDE ---
 .DS_Store
 Thumbs.db
+
+.zip
+.pdf

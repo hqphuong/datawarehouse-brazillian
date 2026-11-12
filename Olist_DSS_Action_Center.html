@@ -30,7 +30,7 @@ const {useState,useEffect,useRef}=React;
    Đổi cổng backend bằng window.DSS_API_BASE trước khi nạp script nếu cần. */
 const API_BASE=(window.DSS_API_BASE||'http://127.0.0.1:8000/api/dss/').replace(/\/?$/,'/');
 const YEAR_OPTIONS=[['all','Tất cả (2017–2018)'],['2017','2017'],['2018','2018']];
-const YEAR_TIP='2016 chỉ có 263 đơn (265 đơn-tuyến) và 0 tuyến đạt min_orders=100, nên không thể xếp hạng/gắn cờ. Bộ lọc chỉ mở 2017–2018.';
+const YEAR_TIP='2016 có quá ít dữ liệu: chỉ 263 đơn (265 đơn-tuyến) và 0 tuyến đạt min_orders=100, nên không thể xếp hạng/gắn cờ. Bộ lọc chỉ mở 2017–2018.';
 const STAGE_NAMES={approval:'Duyệt thanh toán',prep:'Người bán chuẩn bị',transit:'Vận chuyển'};
 const LV={red:['Đỏ','bg-red-100 text-red-900'],amber:['Vàng','bg-amber-100 text-amber-900'],ok:['—','text-slate-400'],none:['—','text-slate-400']};
 
@@ -218,7 +218,7 @@ function Dss({year,setYear}){
     sorted=[...pool].sort((a,b)=>sort==='rate'?b.late_rate-a.late_rate:b.late_orders-a.late_orders),
     shownRows=(showAll||filtered)?sorted:sorted.slice(0,10);
   const nRed=flagged.filter(s=>s.level==='red').length,nYel=flagged.filter(s=>s.level==='amber').length;
-  const lowSample=s=>!!s.low_sample||(!params?false:s.order_routes<params.low_sample_threshold);
+  const lowSample=s=>!!params&&s.order_routes<params.low_sample_threshold;
   const lowTip=params?`Dưới ngưỡng low_sample_threshold = ${int(params.low_sample_threshold)} đơn-tuyến`:'Dưới ngưỡng mẫu nhỏ';
 
   const shares=attrRow&&attrRow.late_rate>0?[
