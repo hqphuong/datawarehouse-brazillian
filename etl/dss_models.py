@@ -488,12 +488,20 @@ def seller_portfolio(
 
 
 def route_priority(
-    o, red=2.0, amber=1.5, min_orders=100, top=10, ensure_red=True
+    o,
+    red=2.0,
+    amber=1.5,
+    min_orders=100,
+    top=10,
+    ensure_red=True,
+    overall=None,
 ):
     """Khối 1: xếp hạng tuyến theo mức vượt tỷ lệ trễ toàn hệ thống.
 
     ``red``/``amber`` là bội số so với tỷ lệ trễ chung; chỉ giữ tuyến có tối
-    thiểu ``min_orders`` đơn để tránh kết luận từ mẫu quá nhỏ.
+    thiểu ``min_orders`` đơn để tránh kết luận từ mẫu quá nhỏ. ``overall`` cho
+    phép truyền tỷ lệ trễ của **toàn bộ giai đoạn** (ví dụ 0,081556) để ngưỡng
+    đỏ/vàng không đổi khi lọc theo năm; bỏ trống thì tính trên chính ``o``.
 
     Mặc định ``ensure_red=True``: trả **tất cả** tuyến đỏ trước (sắp theo
     ``late_orders`` giảm dần), rồi mới đến tuyến vàng cho đủ ``top``. Nếu số
@@ -513,7 +521,9 @@ def route_priority(
       2. level=amber AND ci_low < overall × θ_amber
     (điều kiện 3–6 trong spec là các ví dụ cụ thể của hai điều kiện trên.)
     """
-    overall = o.is_late.mean()
+    overall = float(o.is_late.mean()) if overall is None else float(overall)
+    if not 0 <= overall <= 1:
+        raise ValueError("overall phải nằm trong khoảng 0..1")
     g = (
         o.groupby("route")
         .agg(
@@ -564,7 +574,13 @@ def route_priority(
 
 
 def low_sample_targets(
-    o, min_orders=200, red=2.0, amber=1.5, top=10, include_unflagged=False
+    o,
+    min_orders=200,
+    red=2.0,
+    amber=1.5,
+    top=10,
+    include_unflagged=False,
+    overall=None,
 ):
     """S7: tách riêng nhóm tuyến **chưa đủ mẫu** ("cần thêm dữ liệu").
 
@@ -589,7 +605,9 @@ def low_sample_targets(
     if top < 0:
         raise ValueError("top phải >= 0")
 
-    overall = float(o.is_late.mean())
+    overall = float(o.is_late.mean()) if overall is None else float(overall)
+    if not 0 <= overall <= 1:
+        raise ValueError("overall phải nằm trong khoảng 0..1")
     g = (
         o.groupby("route")
         .agg(
@@ -650,6 +668,7 @@ def route_flag_check(
     red=2.0,
     amber=1.5,
     low_sample_threshold=200,
+    overall=None,
 ):
     """Kiểm tra tuyến cụ thể có nằm trong tập gắn cờ mặc định không (bổ sung S7).
 
@@ -687,7 +706,12 @@ def route_flag_check(
         .reset_index()
     )
     flagged = route_priority(
-        o, red=red, amber=amber, min_orders=min_orders, top=len(o)
+        o,
+        red=red,
+        amber=amber,
+        min_orders=min_orders,
+        top=len(o),
+        overall=overall,
     ).reset_index(drop=True)
     flagged["flagged_rank"] = np.arange(1, len(flagged) + 1)
     flagged_cols = [

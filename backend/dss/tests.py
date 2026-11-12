@@ -5,6 +5,7 @@ from django.test import TestCase
 
 from etl import dss_models as M
 
+from . import views
 from .models import ActionLog
 
 
@@ -127,6 +128,26 @@ class DssApiTests(TestCase):
         self.assertEqual(res.status_code, 200)
         rows = res.json()
         self.assertTrue(all(r["orders"] > 0 for r in rows))
+
+    def test_routes_year_uses_full_period_base_rate(self):
+        """?year= chỉ lọc tuyến; ngưỡng đỏ/vàng vẫn theo L toàn giai đoạn."""
+        rows = self.client.get("/api/dss/routes?year=2018&top=100").json()
+        self.assertTrue(rows)
+        for row in rows:
+            if row["late_rate"] >= views.BASE_RATE * 2.0:
+                self.assertEqual(row["level"], "red")
+            elif row["late_rate"] >= views.BASE_RATE * 1.5:
+                self.assertEqual(row["level"], "amber")
+            else:
+                self.fail(f"tuyến {row['route']} bị gắn cờ dưới ngưỡng toàn kỳ")
+
+    def test_brief_config_exposes_full_period_base_rate(self):
+        body = self.client.get("/api/dss/brief").json()
+        self.assertAlmostEqual(body["config"]["base_rate"], views.BASE_RATE, places=12)
+        self.assertEqual(
+            body["config"]["base_rate_label"],
+            "overall rate of the full period",
+        )
 
     def test_routes_bad_year(self):
         res = self.client.get("/api/dss/routes?year=abc")

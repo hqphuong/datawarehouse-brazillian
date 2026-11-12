@@ -320,12 +320,14 @@ def _low_sample_actions(
     min_orders: int,
     low_sample_threshold: int,
     route_gmv: dict | None = None,
+    overall: float | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     check = M.route_flag_check(
         o,
         low_sample_table["route"].tolist() if len(low_sample_table) else [],
         min_orders=min_orders,
         low_sample_threshold=low_sample_threshold,
+        overall=overall,
     )
     if len(low_sample_table) == 0:
         return _empty(LOW_SAMPLE_COLUMNS), check
@@ -387,6 +389,7 @@ def decision_brief(
     seller_card: pd.DataFrame | None = None,
     seller_port: dict | None = None,
     low_sample_table: pd.DataFrame | None = None,
+    overall: float | None = None,
 ) -> dict:
     """Tạo Decision Brief (S6) từ các mô hình S3/S4/S5/S7.
 
@@ -435,7 +438,10 @@ def decision_brief(
     route_gmv = _gmv_map(o, "route")
     if low_sample_table is None:
         low_sample_table = M.low_sample_targets(
-            o, min_orders=low_sample_threshold, top=top_low_sample
+            o,
+            min_orders=low_sample_threshold,
+            top=top_low_sample,
+            overall=overall,
         )
 
     payment_gmv = (
@@ -465,6 +471,7 @@ def decision_brief(
         min_orders=min_orders,
         low_sample_threshold=low_sample_threshold,
         route_gmv=route_gmv,
+        overall=overall,
     )
 
     notes = [

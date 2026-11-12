@@ -18,6 +18,19 @@ from .models import ActionLog
 # Dữ liệu kho chỉ nạp một lần khi module được import.
 O = M.load_orders()
 
+# Tỷ lệ trễ của TOÀN BỘ giai đoạn (không phụ thuộc ?year=). Dùng làm mốc cố
+# định cho ngưỡng đỏ/vàng (2,0×L và 1,5×L) để nhãn tuyến không đổi khi lọc năm.
+BASE_RATE = float(O["is_late"].mean())
+BASE_RATE_LABEL = "overall rate of the full period"
+
+
+def _config():
+    return {
+        "base_rate": BASE_RATE,
+        "base_rate_label": BASE_RATE_LABEL,
+        "grain": "order-route",
+    }
+
 
 def _year_value(request):
     """Chuẩn hoá tham số year thành ``"all"`` hoặc số nguyên (hashable)."""
@@ -113,7 +126,7 @@ def routes(request):
     if top < 1:
         return _bad("top phải là số nguyên dương")
 
-    rows = _records(M.route_priority(d, top=top))
+    rows = _records(M.route_priority(d, top=top, overall=BASE_RATE))
     for row in rows:
         row["root_cause"] = M.root_cause(d, row["route"])
     return JsonResponse(_clean(rows), safe=False)
@@ -145,6 +158,7 @@ def scenario(request):
         "bottleneck": bottleneck,
         "has_bottleneck": cause["has_bottleneck"],
         "series": M.sensitivity(d, route, bottleneck, base_cut=base_cut),
+        "config": _config(),
     }
     return JsonResponse(_clean(result))
 
@@ -205,7 +219,9 @@ def brief(request):
     except ValueError as exc:
         return _bad(str(exc))
     try:
-        result = B.decision_brief(orders, n_boot=300, seed=42)
+        result = B.decision_brief(
+            orders, n_boot=300, seed=42, overall=BASE_RATE
+        )
     except ValueError as exc:
         return _bad(str(exc))
     return JsonResponse(
@@ -216,6 +232,7 @@ def brief(request):
                 else value
                 for key, value in result.items()
             }
+            | {"config": _config()}
         )
     )
 
@@ -248,6 +265,7 @@ def attribution(request):
                 "ranked_routes": _records(peers),
                 "systemwide": systemwide,
                 "invariants": invariants,
+                "config": _config(),
             }
         )
     )
@@ -270,6 +288,7 @@ def promise_policy(request):
                 "label": "mức phục vụ, không phải khuyến nghị đặt promise",
                 "note": "Đổi định nghĩa trễ, không rút ngắn thời gian giao.",
                 "rows": _records(table),
+                "config": _config(),
             }
         )
     )
@@ -291,6 +310,7 @@ def sellers(request):
                 "summary": scorecard.attrs,
                 "rows": _records(scorecard),
                 "note": "Liên hệ mô tả, không phải kết luận nhân quả.",
+                "config": _config(),
             }
         )
     )
@@ -318,6 +338,7 @@ def portfolio(request):
                 "top_sellers": _records(result["top_sellers"]),
                 "coverage_50_percent": coverage,
                 "note": "Liên hệ mô tả, không phải kết luận nhân quả.",
+                "config": _config(),
             }
         )
     )

@@ -52,6 +52,47 @@ def _orders_from_counts(specs, stages=None):
     return frame
 
 
+def test_route_priority_overall_override_uses_full_period_rate():
+    """``overall`` cố định ngưỡng đỏ/vàng, không phụ thuộc tỷ lệ của tập con."""
+    frame = _orders_from_counts(
+        [
+            ("A->B", 1000, 200),  # 20% trễ
+            ("C->D", 1000, 100),  # 10% trễ
+        ]
+    )
+    # Tỷ lệ của chính frame = 15% → ngưỡng đỏ 30%, vàng 22,5%: không gắn cờ.
+    assert len(M.route_priority(frame)) == 0
+
+    # Mốc toàn giai đoạn 6% → ngưỡng đỏ 12%, vàng 9%: A->B đỏ, C->D vàng.
+    out = M.route_priority(frame, overall=0.06).set_index("route")
+    assert out.loc["A->B", "level"] == "red"
+    assert out.loc["C->D", "level"] == "amber"
+
+
+def test_low_sample_targets_overall_override():
+    frame = _orders_from_counts([("A->B", 10, 1)])  # 10% trễ
+    overridden = M.low_sample_targets(frame, min_orders=200, overall=0.04)
+    assert overridden.loc[0, "level"] == "red"
+    default = M.low_sample_targets(
+        frame, min_orders=200, include_unflagged=True
+    )
+    assert default.loc[0, "level"] == "ok"
+
+
+def test_route_flag_check_passes_overall_override():
+    frame = _orders_from_counts(
+        [
+            ("A->B", 1000, 200),  # 20% trễ
+            ("C->D", 1000, 100),  # 10% trễ
+        ]
+    )
+    check = M.route_flag_check(
+        frame, ["A->B", "C->D"], overall=0.06
+    ).set_index("route")
+    assert check.loc["A->B", "level"] == "red"
+    assert check.loc["C->D", "level"] == "amber"
+
+
 def test_uncertain_threshold_and_independence_from_low_sample():
     """uncertain = ci_low dưới ngưỡng của chính level; không đi theo low_sample.
 
