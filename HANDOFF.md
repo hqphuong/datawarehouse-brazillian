@@ -10,7 +10,7 @@ Repo: `D:\Downloads\HK261\Data\Assignment\Brazillian` · Date: 2026-11-12 · Bra
 - **C5** kept signed Shapley excess; formula/residual wording fix in `REPORT_FIXES.md` §5.3; no numbers changed.
 - **C6** code `OWNER` canonical; backend `/brief` returns `owner`; wording fix in `REPORT_FIXES.md` §2.2/§5.1.
 - **C7** kept `root_cause()`/`RULES`; exact `/routes` + `/scenario` fields documented (§5); confirmed UI cause card uses Shapley only.
-- **C8** added `overall=None` to `route_priority`, `low_sample_targets`, `route_flag_check`, `decision_brief`/`_low_sample_actions`; `BASE_RATE`/`_config()` in `backend/dss/views.py`; `config` exposed on 6 object endpoints (not `/routes`, see §7).
+- **C8** added `overall=None` to `route_priority`, `low_sample_targets`, `route_flag_check`, `decision_brief`/`_low_sample_actions`; `BASE_RATE`/`_config()` in `backend/dss/views.py`; `config` exposed on 6 object endpoints. **`/routes` stays array-only** (C8b = B); the UI will read `config` from **`/brief` only** (single source, see §5).
 - **C10** kept CSV backend; row-count test CSV↔PostgreSQL added in `tests/test_warehouse_schema.py`; deviation wording in `REPORT_FIXES.md` §5.1/§6.3.
 - **C9** *not started* — UI still synthetic 1,400 rows, thresholds 10/30/30, no `fetch`.
 - Created `verify_report_numbers.py` (recomputes all headline numbers; exits 1 on mismatch) and `REPORT_FIXES.md` (exact Vietnamese wording per section).
@@ -27,6 +27,7 @@ Repo: `D:\Downloads\HK261\Data\Assignment\Brazillian` · Date: 2026-11-12 · Bra
 C8 year behaviour (fixed `BASE_RATE` vs year-local L):
 | Year | rows | L(year) | fixed-L flags | year-L flags |
 |---|---|---|---|---|
+| 2016 | 265 | 1.5094% | 0 | 0 (62 routes, 0 ≥ 100 orders) |
 | 2017 | 43,498 | 6.6026% | 6 (2 red/4 amber) | 10 (5/5) |
 | 2018 | 51,828 | 9.4929% | 14 (12/2) | 12 (7/5) |
 
@@ -74,6 +75,8 @@ Divergences are **wording only** (C1/C2/C5/C6/C10) → `REPORT_FIXES.md`; no num
 
 Errors: `400 {"error":"..."}` via `_bad()`. C7 detail: `/scenario` uses only `root_cause["stage"]`→`bottleneck` and `root_cause["has_bottleneck"]`, discards `recommendation`. UI cause card (`Olist_DSS_Action_Center.html:317-324`) uses Shapley `att/topSt/shares` only.
 
+**C8b decision:** `/routes` stays a bare array; `config` is a single source read from **`/brief`** (`config.base_rate`, `config.base_rate_label`, `config.grain`). UI will not read `config` from any other endpoint. **C9 UI rule:** once wired, the cause card must use **signed** Shapley excess (`phi_*` may be negative) and must not clip at 0; remove the current `Math.max(0, v)` behaviour.
+
 ## 6. Threshold locations
 | Setting | Where |
 |---|---|
@@ -98,11 +101,12 @@ Errors: `400 {"error":"..."}` via `_bad()`. C7 detail: `/scenario` uses only `ro
 | C8 | L on year-filtered frame | Full-period `BASE_RATE` ✓ | Per-year | B changes labels under `?year=` (2017: 10 vs 6; 2018: 12 vs 14) |
 | C9 | UI synthetic 1,400 rows, no `fetch`, clips Shapley ≥0 (`:74`) | Wire to 9 endpoints | Keep demo | A changes every displayed number; needs signed-Shapley alignment |
 | C10 | Backend reads CSV not PostgreSQL | Read DB | Keep CSV ✓ | DB path risks `handoff_slack_days` drift |
-| **C8b** | **`/routes` returns bare array → cannot add top-level `config` without breaking contract/tests** | **Add `config` (wrap in object)** | **Leave `/routes` array-only** | A breaks UI + `test_routes_*`; B leaves 1 endpoint without `config` |
+| **C8b** | `/routes` bare array → no top-level `config` | Wrap `{rows, config}` | **Array-only ✓ (chosen)** | UI reads `config` from `/brief` only; no test/contract change |
 
-## 8. Questions — recommended default in **bold**
-1. **C8b:** add `config` to `/routes` by wrapping `{rows, config}` (A) or leave it array-only (B)? → **B** now; UI can hardcode/`/brief` for label, or do A as a versioned change in C9.
-2. **C4:** add optional `dss_action_log.status` (default `'recorded'`) (A) or keep 6 columns (B)? → **B**; add later as new nullable column if needed.
-3. **C10:** drop stale live `fact_delivery_sla.handoff_slack_days` (A) or leave it (B)? → **B** now (no code reads it); separate migration later.
-4. **C9:** approve API→UI field mapping before I edit the UI — `/routes` row → route card (route, orders, late_orders, late_rate, level, ci_low/high, uncertain, low_sample, root_cause.stage/owner), `/attribution` → cause card (`top_stage`, `phi_*` shares, signed), `/scenario` → what-if, `/promise` → goal-seek, `/brief` → actions, `/sellers`+`/portfolio` → seller panel, `/actions` → log. **Approve or amend?** → **approve as listed**.
-5. Re-run full `pytest` + `manage.py test`, then make small commits (ETL/C3; C8; C4/C10; docs) — **confirm commit grouping?** → **yes**.
+## 8. Questions — resolved / remaining
+1. **C8b — resolved:** `/routes` stays array-only (B). `config` single source = **`/brief`**; UI reads `config.base_rate`, `config.base_rate_label`, `config.grain` only there.
+2. **C4 — resolved:** keep the 6 live columns of `dss_action_log`; no `status`/`note`. UI label “Recorded (not executed)” is front-end text only.
+3. **C10 — resolved:** leave the stale `fact_delivery_sla.handoff_slack_days`; `REPORT_FIXES.md` now carries an explicit note that the live DB has this extra unused column and Appendix A does not.
+4. **C9 mapping — approved** with one binding rule: the wired UI shows **signed** Shapley excess; `phi` may be negative, so **no clipping at 0** (remove `Math.max(0, v)` at `Olist_DSS_Action_Center.html:321`; current clip logic at `:74`).
+5. **2016 — answered:** valid data has 265 order-routes / 263 orders (201609: 1, 201610: 263, 201612: 1); 0 of 62 routes reach `min_orders=100` (max SP→SP = 59). Code drops 2016 in `etl/dss_eval.py:166` (“quá ít đơn”); report §7.2 line 970 already says Q1 is 2017/2018 only. Added a §6.4 sentence in `REPORT_FIXES.md` and a tooltip in the UI year selector.
+6. **Next:** start C9 wiring (last step), keeping the demo as a separate “sample data” file and thresholds 100/200/30. **Confirm to start?**

@@ -112,13 +112,31 @@ bằng:
 > CSV, 5–10 giây), **không truy vấn PostgreSQL**; đây là sai lệch có chủ đích
 > (C10).
 
-Lý do: code thật đọc CSV; bảng log vẫn qua ORM. Không đổi tên cột `detail`,
-không thêm `status`/`note` (C4).
+Lý do: code thật đọc CSV; bảng log vẫn qua `detail` (C4). Ghi chú thêm: bảng
+`fact_delivery_sla` live có cột thừa `handoff_slack_days` không dùng và không có
+trong Phụ lục A — xem mục “Phụ lục A” bên dưới.
+
+## 6.4 / 7.1 — vì sao bộ lọc năm chỉ có 2017 và 2018
+
+Thêm một câu ngay sau “bộ lọc năm (tất cả, 2017, 2018)” ở §6.4:
+
+> Bộ lọc không mở 2016 vì cả năm 2016 chỉ có **263 đơn (265 đơn-tuyến)** tập
+> trung ở tháng 10/2016, và **0 tuyến đạt `min_orders=100`** (cao nhất là
+> SP→SP với 59 đơn), nên `route_priority` không thể xếp hạng hay gắn cờ năm
+> 2016.
+
+Lý do: `etl/dss_eval.py:155,166,197` đã loại 2016 khỏi backtest với ghi chú
+“quá ít đơn”; §7.2 của báo cáo cũng đã nêu “Q1 chỉ trả lời được theo bộ lọc năm
+2017/2018”. Không đổi số nào.
 
 ## Phụ lục A — DDL
 
 1. **Không thêm** `handoff_slack_days` (xem mục C10 bên dưới).
-2. Nếu muốn Phụ lục A khớp `sql/create_tables.sql`, thêm sau
+2. Ghi chú schema thực tế: bảng `fact_delivery_sla` trong PostgreSQL live **có thêm
+   một cột thừa không dùng** `handoff_slack_days double precision`, cột này
+   **không có trong Phụ lục A** và không có trong ETL/CSV/model. Đây là cột tồn
+   dư từ phiên bản trước, không hàm nào đọc; giữ nguyên, không thêm vào Phụ lục A.
+3. Nếu muốn Phụ lục A khớp `sql/create_tables.sql`, thêm sau
    `Fact_Delivery_SLA`:
 
 ```sql
