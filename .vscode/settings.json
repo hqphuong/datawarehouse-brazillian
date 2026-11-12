@@ -18,6 +18,5 @@
         "**/env": true,
         "**/data/processed": true
     },
-    "files.encoding": "utf8",
-    "python.terminal.useEnvFile": true
+    "files.encoding": "utf8"
 }

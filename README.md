@@ -173,11 +173,7 @@ POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
 ```
 
-### 4. Backend
-
-Hệ thống hỗ trợ khởi chạy backend theo 2 luồng:
-
-#### 4.1. Backend Django (Hệ hỗ trợ quyết định DSS)
+### 4. Backend Django
 
 ```powershell
 cd backend
@@ -185,10 +181,10 @@ cd backend
 pip install django psycopg2-binary python-dotenv
 
 python manage.py check
-python manage.py runserver 8000
+python manage.py runserver
 ```
 
-Backend DSS chạy tại `http://127.0.0.1:8000/`. Các model DW dùng
+Backend chạy tại `http://127.0.0.1:8000/`. Các model DW dùng
 `managed = False` nên **không cần migrate cho 5 bảng DW**. Nếu muốn dùng
 Django Admin:
 
@@ -198,19 +194,6 @@ python manage.py createsuperuser
 ```
 
 Sau đó truy cập `http://127.0.0.1:8000/admin/`.
-
-#### 4.2. Backend Flask (Dashboard, Analytics & Drill-through API)
-
-Để khởi động server (Flask), tại thư mục gốc chạy lệnh sau:
-
-```powershell
-.venv\Scripts\python.exe backend\app.py
-```
-
-Base URL mặc định của backend là `http://127.0.0.1:5000/`. Có thể điều chỉnh thông qua biến `BACKEND_PORT` và `BACKEND_HOST` trong `.env`.
-- Tài liệu tương tác OpenAPI / Swagger UI: `http://127.0.0.1:5000/swagger-ui`
-- OpenAPI JSON specification: `http://127.0.0.1:5000/openapi.json`
-
 
 ### 5. Frontend
 
