@@ -1,122 +1,143 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useState } from "react";
+import "./App.css";
+import DashboardView from "./views/DashboardView.js";
+import OlapView from "./views/OlapView.js";
+import DssView from "./views/DssView.js";
+import { DEV } from "./utils/utils.js";
 
-function App() {
-  const [count, setCount] = useState(0)
-
+const TITLES = {
+  dashboard: [
+    "Tổng quan giao hàng và SLA",
+    "Giám sát nhanh: vấn đề lớn đến đâu, đang tăng hay giảm, tập trung ở tuyến nào",
+  ],
+  olap: [
+    "Truy vấn đa chiều (OLAP)",
+    "Tự khám phá: trễ ở đâu, khi nào, với nhóm nào",
+  ],
+  dss: ["DSS Action Center", "Nên xem xét làm gì và kết quả ước tính ra sao"],
+};
+export default function App() {
+  const [page, setPage] = useState("dashboard"),
+    [open, setOpen] = useState(true),
+    [year, setYear] = useState("all"),
+    [sim, setSim] = useState({ error: false }),
+    [dssRoute, setDssRoute] = useState(null);
+  const nav = [
+    ["dashboard", "▦", "BI Dashboard"],
+    ["olap", "▤", "OLAP"],
+    ["dss", "◆", "DSS"],
+  ];
+  const goDss = (r) => {
+    setDssRoute(r || null);
+    setPage("dss");
+  };
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    <div className="min-h-screen flex">
+      <aside
+        className={
+          (open ? "w-52" : "w-14") +
+          " hidden md:flex shrink-0 flex-col bg-[#14232e] text-slate-100 sticky top-0 h-screen transition-all"
+        }
+      >
+        <div className="px-3 py-4 flex items-center justify-between border-b border-white/10">
+          {open ? (
+            <div>
+              <div className="font-semibold">Olist DSS</div>
+              <div className="text-[11px] text-slate-400">Giao hàng trễ</div>
+            </div>
+          ) : (
+            <span className="mx-auto font-semibold">DSS</span>
+          )}
+          <button
+            aria-label="Thu gọn menu"
+            className="px-1.5 rounded hover:bg-white/10"
+            onClick={() => setOpen(!open)}
+          >
+            {open ? "‹" : "›"}
+          </button>
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
+        <nav className="p-2 space-y-1">
+          {nav.map(([k, i, t]) => (
+            <button
+              key={k}
+              aria-current={page === k}
+              onClick={() => {
+                setDssRoute(null);
+                setPage(k);
+              }}
+              className={
+                "w-full flex items-center gap-3 px-3 py-2 rounded text-sm text-left " +
+                (page === k
+                  ? "bg-teal-700 text-white"
+                  : "text-slate-300 hover:bg-white/10")
+              }
+            >
+              <span aria-hidden>{i}</span>
+              {open && t}
+            </button>
+          ))}
+        </nav>
+        {open && (
+          <div className="mt-auto p-3 text-[11px] text-slate-400 border-t border-white/10">
+            Star schema: Fact_Delivery_SLA
+          </div>
+        )}
+      </aside>
+      <main className="flex-1 min-w-0">
+        <header className="sticky top-0 z-30 bg-white border-b border-slate-300 px-5 py-2.5 flex items-center justify-between gap-3">
+          <div>
+            <h1 className="font-semibold leading-tight">{TITLES[page][0]}</h1>
+            <p className="text-xs text-slate-500">
+              {TITLES[page][1]} · Dữ liệu mẫu sinh ngẫu nhiên, sẽ thay bằng API
+              từ kho dữ liệu
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="md:hidden flex gap-1">
+              {nav.map(([k, , t]) => (
+                <button
+                  key={k}
+                  className={"btn " + (page === k ? "btn-main" : "")}
+                  onClick={() => {
+                    setDssRoute(null);
+                    setPage(k);
+                  }}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+            {DEV && (
+              <button
+                className="btn"
+                onClick={() => setSim({ error: !sim.error })}
+              >
+                {sim.error ? "Tắt lỗi giả lập" : "Giả lập lỗi"}
+              </button>
+            )}
+          </div>
+        </header>
+        <div className="px-5 py-4 pb-8 max-w-[1400px] mx-auto">
+          {page === "dashboard" && (
+            <DashboardView
+              year={year}
+              setYear={setYear}
+              sim={sim}
+              goDss={goDss}
+            />
+          )}
+          {page === "olap" && <OlapView sim={sim} />}
+          {page === "dss" && (
+            <DssView
+              key={dssRoute || "-"}
+              year={year}
+              setYear={setYear}
+              sim={sim}
+              initRoute={dssRoute}
+            />
+          )}
         </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+      </main>
+    </div>
+  );
 }
-
-export default App
