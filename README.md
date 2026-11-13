@@ -9,8 +9,8 @@ Hệ thống gồm 4 phần:
 |---|---|---|
 | Data Warehouse | PostgreSQL (Star Schema) | Lưu dữ liệu phân tích |
 | ETL | Python + pandas + psycopg2 | Làm sạch, tính toán, nạp DW |
-| Backend | Django 6 | Ánh xạ DW, Admin, nền tảng cho API |
-| Frontend | React 19 + Vite | Giao diện DSS |
+| Backend | Flask 3 (app factory + Blueprint) | API DSS `/api/dss/*`, psycopg2 |
+| Frontend | HTML + JavaScript (single file) | Giao diện DSS gọi API trực tiếp |
 
 ---
 
@@ -20,16 +20,16 @@ Hệ thống gồm 4 phần:
   PostgreSQL.
 - **DW**: 5 bảng `Dim_Time`, `Dim_Location`, `Dim_Product`, `Dim_Seller`,
   `Fact_Delivery_SLA` đã được tạo và nạp dữ liệu.
-- **Backend**: Django + app `analytics` (model ánh xạ DW, `managed = False`) và
-  app `dss`. API DSS tại `/api/dss/` gồm `routes`, `scenario`, `promise`,
-  `actions`, `brief`, `attribution`, `promise-policy`, `sellers`, `portfolio`;
-  tài liệu: `reports/api_dss.md`.
-- **Frontend**: `web/Olist_Logistics_DSS_v3.html` — tab **DSS** gọi API Django
-  thật; 3 tab còn lại vẫn là mock (xem cảnh báo bên dưới).
-- **Mockup UI**: `web/Olist_Logistics_DSS_v3.html` — mở trực tiếp bằng trình duyệt.
+- **Backend**: Flask 3, app factory `create_app()`, Blueprint `/api/dss`. API DSS
+  gồm `routes`, `scenario`, `promise`, `actions`, `brief`, `attribution`,
+  `promise-policy`, `sellers`, `portfolio`; tài liệu: `reports/api_dss.md`.
+  Dữ liệu phân tích đọc từ CSV (`data/processed/`); bảng log hành động dùng
+  `psycopg2` trực tiếp.
+- **Frontend**: file HTML đơn lẻ gọi API trực tiếp (không cần build); đặt
+  `window.DSS_API_BASE` nếu backend không chạy ở `http://127.0.0.1:8000/api/dss/`.
 - **Prisma**: schema mô tả DW và Prisma Client (dùng cho tooling/Node).
-- **Kiểm thử gần nhất**: pytest 78/78, Django 22/22; lần chạy `-Quick` đã bỏ qua
-  `regen_eval`, nên không xác nhận raw eval được tái tạo; xem `reports/CHECK_OUTPUT.txt`.
+- **Kiểm thử gần nhất**: pytest 113/113; golden parity Django → Flask PASS cho
+  cả 9 endpoint; `verify_report_numbers.py` khớp toàn bộ số liệu báo cáo.
 
 ### Các khối DSS và API
 
@@ -59,7 +59,7 @@ lấn và không phải tổng đơn tránh được. Nội dung what-if là “
 
 > **⚠️ Nhãn cảnh báo giao diện:**
 > - Tab **Dashboard**, **OLAP**, **ETL Monitor** hiển thị **dữ liệu mẫu** (mock
->   data, do thành viên khác phát triển bằng Flask, chưa nối Django thật). Số
+>   data, do thành viên khác phát triển, chưa nối API thật). Số
 >   liệu trên các tab này **không phản ánh dữ liệu Olist thực tế**.
 
 ---
@@ -96,13 +96,17 @@ Brazillian/
 ├── prisma/
 │   └── schema.prisma           # Mô hình DW cho Prisma Client
 │
-├── backend/                    # Django 6
-│   ├── manage.py
-│   ├── .env                    # Cấu hình Django + PostgreSQL (không commit)
+├── backend/                    # Flask 3
+│   ├── wsgi.py                 # Entry point (flask run / gunicorn / waitress)
+│   ├── .env                    # Cấu hình Flask + PostgreSQL (không commit)
 │   ├── .env.new                # File mẫu cấu hình
-│   ├── core/                   # settings, urls, wsgi, asgi
-│   ├── config/                 # EnvConfig, LoggingConfig, utils
-│   ├── analytics/              # App ánh xạ DW (models, admin, views)
+│   ├── dss/                    # app factory, Blueprint, service, psycopg2
+│   │   ├── app.py              # create_app(), CORS, error handlers
+│   │   ├── api.py              # 9 route /api/dss/*
+│   │   ├── service.py          # glue framework-free gọi etl/
+│   │   ├── db.py               # psycopg2 cho dss_action_log
+│   │   ├── config.py           # đọc biến môi trường
+│   │   └── json_provider.py    # JSON tương thích JsonResponse
 │   ├── logs/                   # Log theo ngày
 │   └── env/                    # Virtualenv Python của backend (không commit)
 │
@@ -159,11 +163,12 @@ pip install -r requirements.txt
 DATABASE_URL="postgresql://brazillian_admin:123456789@localhost:5432/Brazillian?schema=public"
 ```
 
-**Django** đọc file `backend/.env` (xem mẫu `backend/.env.new`):
+**Flask** đọc file `backend/.env` (xem mẫu `backend/.env.new`):
 
 ```env
 SECRET_KEY=...
-DJANGO_DEBUG=true
+FLASK_DEBUG=true
+# DJANGO_ALLOWED_HOSTS vẫn được đọc nếu muốn giới hạn Host
 DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
 
 POSTGRES_DB=Brazillian
@@ -171,31 +176,33 @@ POSTGRES_USER=brazillian_admin
 POSTGRES_PASSWORD=123456789
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
+
+CORS_ALLOW_ALL_ORIGINS=true
 ```
 
-### 4. Backend Django
+### 4. Backend Flask
 
 ```powershell
 cd backend
 .\env\Scripts\Activate.ps1
-pip install django psycopg2-binary python-dotenv
+pip install -r ..\requirements.txt
 
-python manage.py check
-python manage.py runserver
+$env:FLASK_APP = "wsgi"
+flask run --host 127.0.0.1 --port 8000
 ```
 
-Backend chạy tại `http://127.0.0.1:8000/`. Các model DW dùng
-`managed = False` nên **không cần migrate cho 5 bảng DW**. Nếu muốn dùng
-Django Admin:
-
-```powershell
-python manage.py migrate          # chỉ tạo các bảng hệ thống của Django
-python manage.py createsuperuser
-```
-
-Sau đó truy cập `http://127.0.0.1:8000/admin/`.
+Backend chạy tại `http://127.0.0.1:8000/`; API ở `/api/dss/*` (không có dấu
+`/` cuối, giống URLConf cũ). Không cần migration: bảng `dss_action_log` đã nằm
+trong `sql/create_tables.sql`. Bảng phải rỗng sau khi chạy test.
 
 ### 5. Frontend
+
+Giao diện DSS chính là một file HTML đơn lẻ, mở trực tiếp bằng trình duyệt
+(`file://`) hoặc phục vụ tĩnh. Mặc định gọi
+`http://127.0.0.1:8000/api/dss/`; đổi bằng `window.DSS_API_BASE` trước khi nạp
+script nếu backend ở địa chỉ khác.
+
+Project Vite trong `frontend/` chỉ còn là khung tham khảo:
 
 ```powershell
 cd frontend
@@ -203,9 +210,36 @@ npm install
 npm run dev
 ```
 
-Frontend chạy tại `http://localhost:5173/` (Vite).
+### 6. Kiểm thử
 
-### 6. Prisma (tuỳ chọn)
+```powershell
+cd Brazillian
+.\backend\env\Scripts\Activate.ps1
+
+pytest -q                                      # 113 test
+python tests\golden_capture.py flask           # ghi tests/golden/flask.json
+python tests\golden_compare.py                 # so với tests/golden/django.json
+python verify_report_numbers.py                # số liệu phải khớp báo cáo
+```
+
+`tests/golden/django.json` là snapshot bất biến của backend cũ; không sửa file
+này khi Flask lệch. Fixture test tự xoá `dss_action_log` trước và sau mỗi test.
+
+### 7. Chạy production
+
+```powershell
+cd backend
+$env:FLASK_DEBUG = "false"
+pip install -r ..\requirements.txt
+
+# Windows
+waitress-serve --listen=0.0.0.0:8000 wsgi:application
+
+# Linux/macOS
+gunicorn wsgi:application --bind 0.0.0.0:8000 --workers 2
+```
+
+### 8. Prisma (tuỳ chọn)
 
 ```powershell
 cd Brazillian
@@ -342,11 +376,15 @@ phân, dùng điều kiện `delay_days > 0`.
 
 ## Ghi chú phát triển
 
-- Model Django (`backend/analytics/models.py`) và Prisma
-  (`prisma/schema.prisma`) phải được cập nhật đồng bộ khi thay đổi DDL.
-- Bảng DW do `sql/create_tables.sql` quản lý, không dùng migration của Django.
+- Prisma (`prisma/schema.prisma`) phải được cập nhật đồng bộ khi thay đổi DDL.
+- Bảng DW do `sql/create_tables.sql` quản lý; backend Flask không dùng ORM hay
+  migration. `dss_action_log` cũng nằm trong file DDL này.
+- Công thức DSS nằm trong `etl/`; `backend/dss/service.py` chỉ là lớp glue
+  framework-free. Không hardcode ngưỡng trong route: đọc từ hợp đồng
+  `/brief.parameters` (`min_orders`, `seller_min_orders`, `low_sample_threshold`)
+  và `base_rate` từ `/brief.config`.
 - Khi thay đổi cấu trúc bảng, quy trình đúng là:
   1. Cập nhật `sql/create_tables.sql`
   2. Drop & tạo lại bảng (hoặc `ALTER TABLE`)
   3. Chạy lại ETL: `python etl\main.py --load`
-  4. Cập nhật model Django / Prisma nếu có cột thay đổi
+  4. Cập nhật Prisma nếu có cột thay đổi
