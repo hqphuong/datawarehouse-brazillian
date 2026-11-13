@@ -88,8 +88,8 @@ export default function App() {
           <div>
             <h1 className="font-semibold leading-tight">{TITLES[page][0]}</h1>
             <p className="text-xs text-slate-500">
-              {TITLES[page][1]} · Dữ liệu mẫu sinh ngẫu nhiên, sẽ thay bằng API
-              từ kho dữ liệu
+              {TITLES[page][1]} · Dashboard và OLAP dùng dữ liệu backend; DSS
+              hiện vẫn dùng dữ liệu mẫu
             </p>
           </div>
           <div className="flex items-center gap-2">

@@ -8,36 +8,135 @@ import {
   BarChart,
   Bar,
 } from "recharts";
+import { getOlapMetadata, postOlapQuery } from "../data/api.js";
 import {
-  APP_STATES as STATES,
-  TIME_OPTS,
-  LV_NAME,
-  OLAP_DIMS as DIMS,
-  NEXT,
-  OLAP_MEAS as MEAS,
-  MASS_BANDS,
-  VOLUME_BANDS,
-  MEAS_SQL,
-  DIM_SQL,
-  TL_SQL,
-  DEF_O,
-  DEF_CFG,
-  PRESETS,
-  dateRange,
-  massBand,
-  olapRows,
-  volumeBand,
-} from "../data/mockData.jsx";
-import {
-  agg,
   pct,
   num,
+  int,
   useData,
   MultiSelect,
   Errored,
   Skeleton,
   Empty,
 } from "../utils/utils.js";
+
+const LV_NAME = { year: "Năm", quarter: "Quý", month: "Tháng" };
+const NEXT = { year: "quarter", quarter: "month" };
+const DIMS = {
+  time: "Thời gian",
+  customer_state: "Bang khách hàng",
+  seller_state: "Bang người bán",
+  category: "Danh mục sản phẩm",
+  payment_type: "Phương thức thanh toán",
+  seller: "Người bán",
+  day_of_week: "Ngày trong tuần",
+};
+const DIMENSION_KEYS = {
+  time: "Dim_Time.month",
+  customer_state: "Dim_Location.state",
+  seller_state: "Dim_Seller.state",
+  category: "Dim_Product.category_name_english",
+  payment_type: "Fact_Delivery_SLA.payment_type",
+  seller: "Dim_Seller.seller_id",
+  day_of_week: "Dim_Time.day_of_week",
+};
+const MEAS = {
+  total_orders: ["Số đơn", (value) => int(value)],
+  total_items: ["Số dòng dữ liệu", (value) => int(value)],
+  late_count: ["Số đơn trễ", (value) => int(value)],
+  late_rate: ["Tỷ lệ trễ", (value) => pct(value / 100)],
+  avg_approval_days: ["Duyệt thanh toán TB (ngày)", (value) => num(value, 2)],
+  avg_prep_days: ["Người bán chuẩn bị TB (ngày)", (value) => num(value, 2)],
+  avg_transit_days: ["Vận chuyển TB (ngày)", (value) => num(value, 2)],
+  avg_delivery_days: ["Thời gian giao TB (ngày)", (value) => num(value, 2)],
+  avg_freight_value: ["Phí vận chuyển TB (R$)", (value) => num(value, 2)],
+  total_freight: ["Tổng phí vận chuyển (R$)", (value) => num(value, 2)],
+  avg_review_score: ["Điểm đánh giá TB", (value) => num(value, 2)],
+};
+const PRESETS = [
+  { t: "Tỷ lệ trễ theo bang khách × quý", rows: "customer_state", cols: "time", tl: "quarter", m: "late_rate" },
+  { t: "Tỷ lệ trễ theo bang người bán × bang khách", rows: "seller_state", cols: "customer_state", tl: "year", m: "late_rate" },
+  { t: "Vận chuyển TB theo năm → tháng (drill-down)", rows: "time", cols: "none", tl: "year", m: "avg_transit_days" },
+  { t: "Số đơn trễ theo người bán", rows: "seller", cols: "none", tl: "year", m: "late_count" },
+  { t: "Số đơn theo danh mục", rows: "category", cols: "none", tl: "year", m: "total_orders" },
+];
+
+function makeTimeOptions(timeRange) {
+  const [startYear, startMonth] = (timeRange?.min_month || "").split("-").map(Number);
+  const [endYear, endMonth] = (timeRange?.max_month || "").split("-").map(Number);
+  if (!startYear || !endYear || startYear > endYear || (startYear === endYear && startMonth > endMonth)) {
+    return { month: [], quarter: [], year: [] };
+  }
+  const month = [];
+  for (let year = startYear, currentMonth = startMonth; year < endYear || (year === endYear && currentMonth <= endMonth);) {
+    month.push(`${year}-${String(currentMonth).padStart(2, "0")}`);
+    currentMonth += 1;
+    if (currentMonth > 12) {
+      currentMonth = 1;
+      year += 1;
+    }
+  }
+  return {
+    month,
+    quarter: [...new Set(month.map((value) => `${value.slice(0, 4)}-Q${Math.ceil(Number(value.slice(5)) / 3)}`))],
+    year: [...new Set(month.map((value) => value.slice(0, 4)))],
+  };
+}
+
+function periodMonths(level, value) {
+  if (level === "year") return { from: `${value}-01`, to: `${value}-12` };
+  if (level === "quarter") {
+    const [, year, quarter] = value.match(/^(\d{4})-Q([1-4])$/) || [];
+    if (!year) return { from: value, to: value };
+    const firstMonth = (Number(quarter) - 1) * 3 + 1;
+    return {
+      from: `${year}-${String(firstMonth).padStart(2, "0")}`,
+      to: `${year}-${String(firstMonth + 2).padStart(2, "0")}`,
+    };
+  }
+  return { from: value, to: value };
+}
+
+function queryBounds(filters, drill) {
+  const start = periodMonths(filters.level, filters.from);
+  const end = periodMonths(filters.level, filters.to);
+  let from = start.from;
+  let to = end.to;
+  drill.forEach((period) => {
+    const bounds = periodMonths(period.level, period.value);
+    if (bounds.from > from) from = bounds.from;
+    if (bounds.to < to) to = bounds.to;
+  });
+  return { from_time: from, to_time: to };
+}
+
+function dimensionValue(row, dimension, timeLevel) {
+  const aliases = {
+    time: timeLevel,
+    customer_state: "customer_state",
+    seller_state: "seller_state",
+    category: "category_name_english",
+    payment_type: "payment_type",
+    seller: "seller_id",
+    day_of_week: "day_of_week",
+  };
+  return String(row[aliases[dimension]] ?? "");
+}
+
+function toCell(row, measure) {
+  return { n: Number(row.total_orders) || 0, [measure]: row[measure] };
+}
+
+function sumCells(cells, measure) {
+  const n = cells.reduce((sum, cell) => sum + cell.n, 0);
+  const additive = ["total_orders", "total_items", "late_count", "total_freight"];
+  const value = additive.includes(measure)
+    ? cells.reduce((sum, cell) => sum + (Number(cell[measure]) || 0), 0)
+    : n
+      ? cells.reduce((sum, cell) => sum + (Number(cell[measure]) || 0) * cell.n, 0) / n
+      : 0;
+  return { n, [measure]: value };
+}
 
 function DimensionPick({ label, field, none, config, onChange }) {
   return (
@@ -66,63 +165,94 @@ function DimensionPick({ label, field, none, config, onChange }) {
 }
 
 export default function OlapView({ sim }) {
-  const [fl, setFl] = useState(DEF_O),
-    [cfg, setCfg] = useState(DEF_CFG),
+  const [fl, setFl] = useState({
+      level: "month", from: "", to: "", sstates: [], cstates: [], categories: [],
+    }),
+    [cfg, setCfg] = useState({ rows: "customer_state", cols: "time", tl: "quarter", m: "late_rate" }),
     [drill, setDrill] = useState([]),
     [view, setView] = useState("table"),
     [sqlOpen, setSqlOpen] = useState(false);
-  const key = (r, d) =>
-    d === "time"
-      ? r[cfg.tl]
-      : d === "mass"
-        ? massBand(r.massKg)
-        : d === "volume"
-          ? volumeBand(r.volumeL)
-          : r[d];
-  const aggregate = (rows) => ({
-    ...agg(rows),
-    mass: rows.length
-      ? rows.reduce((sum, row) => sum + row.massKg, 0) / rows.length
-      : null,
-    volume: rows.length
-      ? rows.reduce((sum, row) => sum + row.volumeL, 0) / rows.length
-      : null,
-  });
+  const metadataState = useData((signal) => getOlapMetadata(signal), [], sim);
+  const metadata = metadataState.data;
+  const timeOptions = makeTimeOptions(metadata?.time_range);
+  const filters = {
+    ...fl,
+    from: fl.from || timeOptions.month[0] || "",
+    to: fl.to || timeOptions.month[timeOptions.month.length - 1] || "",
+  };
   const { data, loading, error, retry } = useData(
-    () => {
-      const rows = olapRows(fl, drill),
-        byRow = {},
-        byCol = {},
-        g = {};
-      rows.forEach((r) => {
-        const rk = key(r, cfg.rows),
-          ck = cfg.cols === "none" ? "Tất cả" : key(r, cfg.cols);
-        (byRow[rk] ??= []).push(r);
-        (byCol[ck] ??= []).push(r);
-        (g[rk + "|" + ck] ??= []).push(r);
+    async (signal) => {
+      if (!metadata || !filters.from || !filters.to) return null;
+      if (filters.from > filters.to) {
+        return { ck: [], body: [], colTot: [], grand: { n: 0, [cfg.m]: 0 }, cutR: false, cutC: false, payload: null };
+      }
+      const bounds = queryBounds(filters, drill);
+      const payloadFilters = {
+        customer_states: filters.cstates,
+        seller_states: filters.sstates,
+        categories: filters.categories,
+      };
+      const measures = [...new Set([cfg.m, "total_orders"])];
+      const query = (dimensions) => ({
+        time_mode: cfg.tl,
+        ...bounds,
+        dimensions: [...new Set(dimensions.map((dimension) => DIMENSION_KEYS[dimension]))],
+        measures,
+        filters: payloadFilters,
       });
-      const order = (o, dim) =>
-        dim === "time"
-          ? Object.keys(o).sort()
-          : Object.keys(o).sort((a, b) => o[b].length - o[a].length);
-      const allR = order(byRow, cfg.rows),
-        allC = order(byCol, cfg.cols),
-        rk = allR.slice(0, 30),
+      const cellPayload = query([cfg.rows, ...(cfg.cols === "none" ? [] : [cfg.cols])]);
+      const [cellResult, rowResult, colResult] = await Promise.all([
+        postOlapQuery(cellPayload, signal),
+        postOlapQuery(query([cfg.rows]), signal),
+        cfg.cols === "none" ? Promise.resolve(null) : postOlapQuery(query([cfg.cols]), signal),
+      ]);
+      const rows = cellResult.data;
+      const rowTotals = new Map(rowResult.data.map((row) => [
+        dimensionValue(row, cfg.rows, cfg.tl), toCell(row, cfg.m),
+      ]));
+      const colTotals = cfg.cols === "none"
+        ? null
+        : new Map(colResult.data.map((row) => [
+            dimensionValue(row, cfg.cols, cfg.tl), toCell(row, cfg.m),
+          ]));
+      const groupCounts = (dimension) => {
+        const counts = new Map();
+        rows.forEach((row) => {
+          const value = dimensionValue(row, dimension, cfg.tl);
+          counts.set(value, (counts.get(value) || 0) + (Number(row.total_orders) || 0));
+        });
+        return counts;
+      };
+      const order = (counts, dimension) => [...counts.keys()].sort((a, b) =>
+        dimension === "time" ? a.localeCompare(b) : counts.get(b) - counts.get(a) || a.localeCompare(b),
+      );
+      const allR = order(groupCounts(cfg.rows), cfg.rows);
+      const allC = cfg.cols === "none" ? ["Tất cả"] : order(groupCounts(cfg.cols), cfg.cols);
+      const grouped = new Map();
+      rows.forEach((row) => {
+        const rowKey = dimensionValue(row, cfg.rows, cfg.tl);
+        const colKey = cfg.cols === "none" ? "Tất cả" : dimensionValue(row, cfg.cols, cfg.tl);
+        grouped.set(`${rowKey}|${colKey}`, toCell(row, cfg.m));
+      });
+      const rk = allR.slice(0, 30),
         ck = allC.slice(0, 12);
       return {
         ck,
         body: rk.map((k) => ({
           k,
-          cells: ck.map((c) => aggregate(g[k + "|" + c] || [])),
-          tot: aggregate(byRow[k]),
+          cells: ck.map((c) => grouped.get(`${k}|${c}`) || { n: 0, [cfg.m]: 0 }),
+          tot: rowTotals.get(k) || { n: 0, [cfg.m]: 0 },
         })),
-        colTot: ck.map((c) => aggregate(byCol[c])),
-        grand: aggregate(rows),
+        colTot: cfg.cols === "none"
+          ? [sumCells([...rowTotals.values()], cfg.m)]
+          : ck.map((c) => colTotals.get(c) || { n: 0, [cfg.m]: 0 }),
+        grand: sumCells([...rowTotals.values()], cfg.m),
         cutR: allR.length > 30,
         cutC: allC.length > 12,
+        payload: cellPayload,
       };
     },
-    [fl, cfg, drill],
+    [metadata?.time_range?.min_month, metadata?.time_range?.max_month, filters, cfg, drill],
     sim,
   );
   const set = (p) => {
@@ -130,25 +260,31 @@ export default function OlapView({ sim }) {
     setDrill([]);
   };
   const setLevel = (l) => {
-    const o = TIME_OPTS[l];
+    const o = timeOptions[l];
+    if (!o.length) return;
     setFl({ ...fl, level: l, from: o[0], to: o[o.length - 1] });
     setDrill([]);
   };
   const resetAll = () => {
-    setFl(DEF_O);
-    setCfg(DEF_CFG);
+    setFl({
+      level: "month",
+      from: timeOptions.month[0] || "",
+      to: timeOptions.month[timeOptions.month.length - 1] || "",
+      sstates: [], cstates: [], categories: [],
+    });
+    setCfg({ rows: "customer_state", cols: "time", tl: "quarter", m: "late_rate" });
     setDrill([]);
   };
-  const [mName, mFmt] = MEAS[cfg.m],
-    val = (a) => (a.n ? mFmt(a) : "—");
+  const [mName, mFmt] = MEAS[cfg.m];
+  const val = (cell) => cell?.n ? mFmt(cell[cfg.m]) : "—";
   const nums = data
       ? data.body.flatMap((b) =>
-          b.cells.filter((c) => c.n).map((c) => c[cfg.m]),
+          b.cells.filter((c) => c.n).map((c) => Number(c[cfg.m]) || 0),
         )
       : [],
     mx = Math.max(...nums, 1e-9),
     mn = Math.min(...nums, 0);
-  const rel = (c) => (c[cfg.m] - mn) / (mx - mn || 1);
+  const rel = (c) => ((Number(c[cfg.m]) || 0) - mn) / (mx - mn || 1);
   const heat = (c) => ({
     background:
       view === "heat" && c.n ? `rgba(15,118,110,${0.08 + 0.7 * rel(c)})` : "",
@@ -165,26 +301,9 @@ export default function OlapView({ sim }) {
     setDrill(drill.slice(0, i));
     setCfg({ ...cfg, tl: lv });
   };
-  const bad = fl.from > fl.to,
-    opts = TIME_OPTS[fl.level];
-  const gcols = [cfg.rows, cfg.cols !== "none" ? cfg.cols : null]
-    .filter(Boolean)
-    .map((d) => (d === "time" ? TL_SQL[cfg.tl] : DIM_SQL[d]))
-    .join(", ");
-  const where = [
-    dateRange(fl.level, fl.from, fl.to),
-    ...drill.map((d) => dateRange(d.level, d.value, d.value)),
-    fl.sstates.length &&
-      `sl.state IN (${fl.sstates.map((s) => `'${s}'`).join(", ")})`,
-    fl.cstates.length &&
-      `c.state IN (${fl.cstates.map((s) => `'${s}'`).join(", ")})`,
-    fl.massBands.length &&
-      `${DIM_SQL.mass} IN (${fl.massBands.map((s) => `'${s}'`).join(", ")})`,
-    fl.volumeBands.length &&
-      `${DIM_SQL.volume} IN (${fl.volumeBands.map((s) => `'${s}'`).join(", ")})`,
-    fl.lateOnly && "f.delay_days > 0",
-  ].filter(Boolean);
-  const sql = `-- Minh hoạ truy vấn tương ứng trên star schema\nSELECT ${gcols}, ${MEAS_SQL[cfg.m]} AS ${cfg.m}\nFROM Fact_Delivery_SLA f\nJOIN Dim_Time t ON f.time_id = t.time_id\nJOIN Dim_Location c ON f.customer_location_id = c.location_id\nJOIN Dim_Location sl ON f.seller_location_id = sl.location_id\nJOIN Dim_Product p ON f.product_id = p.product_id\nWHERE ${where.join("\n  AND ")}\nGROUP BY ${gcols};`;
+  const bad = filters.from > filters.to,
+    opts = timeOptions[filters.level];
+  const isRate = cfg.m === "late_rate";
   const csv = () => {
     const l = [
       [DIMS[cfg.rows], ...data.ck, "Tổng"],
@@ -202,6 +321,9 @@ export default function OlapView({ sim }) {
     a.click();
     URL.revokeObjectURL(u);
   };
+  if (metadataState.error) return <Errored msg={metadataState.error} retry={metadataState.retry} />;
+  if (metadataState.loading || !metadata) return <Skeleton h={300} />;
+  if (!timeOptions.month.length) return <Empty msg="Không có dữ liệu thời gian từ backend" />;
   return (
     <div className="space-y-3">
       <section className="panel p-3 space-y-3" aria-label="Bộ lọc và cấu hình">
@@ -214,7 +336,7 @@ export default function OlapView({ sim }) {
             <br />
             <select
               className="sel"
-              value={fl.level}
+              value={filters.level}
               onChange={(e) => setLevel(e.target.value)}
             >
               {Object.entries(LV_NAME)
@@ -231,7 +353,7 @@ export default function OlapView({ sim }) {
             <br />
             <select
               className="sel"
-              value={fl.from}
+              value={filters.from}
               onChange={(e) => {
                 setFl({ ...fl, from: e.target.value });
                 setDrill([]);
@@ -247,7 +369,7 @@ export default function OlapView({ sim }) {
             <br />
             <select
               className="sel"
-              value={fl.to}
+              value={filters.to}
               onChange={(e) => {
                 setFl({ ...fl, to: e.target.value });
                 setDrill([]);
@@ -260,36 +382,22 @@ export default function OlapView({ sim }) {
           </label>
           <MultiSelect
             label="Bang người bán"
-            options={STATES}
+            options={metadata.seller_states}
             value={fl.sstates}
             onChange={(v) => setFl({ ...fl, sstates: v })}
           />
           <MultiSelect
             label="Bang khách hàng"
-            options={STATES}
+            options={metadata.states}
             value={fl.cstates}
             onChange={(v) => setFl({ ...fl, cstates: v })}
           />
           <MultiSelect
-            label="Khối lượng"
-            options={MASS_BANDS}
-            value={fl.massBands}
-            onChange={(v) => setFl({ ...fl, massBands: v })}
+            label="Danh mục"
+            options={metadata.categories}
+            value={fl.categories}
+            onChange={(v) => setFl({ ...fl, categories: v })}
           />
-          <MultiSelect
-            label="Thể tích"
-            options={VOLUME_BANDS}
-            value={fl.volumeBands}
-            onChange={(v) => setFl({ ...fl, volumeBands: v })}
-          />
-          <label className="flex items-center gap-1.5 text-xs pb-1.5">
-            <input
-              type="checkbox"
-              checked={fl.lateOnly}
-              onChange={(e) => setFl({ ...fl, lateOnly: e.target.checked })}
-            />
-            Chỉ đơn trễ
-          </label>
           {bad && (
             <span className="text-xs text-red-700 font-medium" role="alert">
               “Từ” đang sau “Đến” – hãy chọn lại.
@@ -432,16 +540,19 @@ export default function OlapView({ sim }) {
           <div className="panel p-4 h-80">
             <ResponsiveContainer>
               <BarChart
-                data={data.body.map((b) => ({ k: b.k, v: b.tot[cfg.m] }))}
+                data={data.body.map((b) => ({
+                  k: b.k,
+                  v: isRate ? b.tot[cfg.m] / 100 : b.tot[cfg.m],
+                }))}
               >
                 <CartesianGrid vertical={false} stroke="#e5e9ec" />
                 <XAxis dataKey="k" tick={{ fontSize: 11 }} />
                 <YAxis
                   tick={{ fontSize: 11 }}
-                  tickFormatter={(v) => (cfg.m === "rate" ? pct(v) : v)}
+                  tickFormatter={(v) => (isRate ? pct(v) : v)}
                 />
                 <Tooltip
-                  formatter={(v) => (cfg.m === "rate" ? pct(v) : num(v, 2))}
+                  formatter={(v) => (isRate ? pct(v) : num(v, 2))}
                 />
                 <Bar dataKey="v" name={mName} fill="#0f766e" />
               </BarChart>
@@ -528,11 +639,11 @@ export default function OlapView({ sim }) {
             aria-expanded={sqlOpen}
             onClick={() => setSqlOpen(!sqlOpen)}
           >
-            SQL tương ứng<span>{sqlOpen ? "▴" : "▾"}</span>
+            Payload API<span>{sqlOpen ? "▴" : "▾"}</span>
           </button>
           {sqlOpen && (
             <pre className="px-3 pb-3 text-xs overflow-x-auto text-slate-700">
-              {sql}
+              {JSON.stringify(data?.payload, null, 2)}
             </pre>
           )}
         </div>

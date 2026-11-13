@@ -15,8 +15,8 @@ export function MultiSelect({label,options,value,onChange}){
         <input type="checkbox" checked={value.includes(o)} onChange={()=>toggle(o)}/>{o}</label>)}{!list.length&&<div className="text-xs text-slate-500 p-2">Không có kết quả</div>}</div>
       <button className="text-xs text-teal-700 mt-1 underline" onClick={()=>onChange([])}>Bỏ chọn tất cả</button></div>}
   </div>}
-export const YearSel=({year,setYear})=><label className="text-xs text-slate-600 flex items-center gap-2">Năm
-  <select className="sel" value={year} onChange={e=>setYear(e.target.value)}><option value="all">Tất cả (2017–2018)</option><option>2017</option><option>2018</option></select></label>;
+export const YearSel=({year,setYear,years=['2017','2018']})=><label className="text-xs text-slate-600 flex items-center gap-2">Năm
+  <select className="sel" value={year} onChange={e=>setYear(e.target.value)}><option value="all">{years.length?`Tất cả (${years[0]}–${years[years.length-1]})`:'Tất cả'}</option>{years.map(value=><option key={value}>{value}</option>)}</select></label>;
 export const Skeleton=({h=160})=><div className="panel animate-pulse bg-slate-100" style={{height:h}} aria-busy="true"/>;
 export const Errored=({msg,retry})=><div className="panel p-10 text-center" role="alert"><p className="font-semibold">Không tải được dữ liệu</p><p className="text-sm text-slate-600 mt-1">{msg} Kiểm tra backend đang chạy rồi thử lại.</p><button className="btn btn-main mt-3" onClick={retry}>Tải lại</button></div>;
 export const Empty=({reset,msg='Không có đơn hàng khớp bộ lọc'})=><div className="panel p-10 text-center"><p className="font-semibold">{msg}</p><p className="text-sm text-slate-600 mt-1">Mở rộng khoảng thời gian hoặc bỏ bớt điều kiện lọc.</p>{reset&&<button className="btn mt-3" onClick={reset}>Đặt lại bộ lọc</button>}</div>;

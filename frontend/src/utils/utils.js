@@ -12,11 +12,15 @@ export function useData(compute,deps,sim){
   const [st,setSt]=useState({key:null,loading:true,error:null,data:null});
   const [tick,setTick]=useState(0);
   useEffect(()=>{computeRef.current=compute},[compute]);
-  useEffect(()=>{let ok=true;
+  useEffect(()=>{let ok=true;const controller=new AbortController();
     const t=setTimeout(()=>{if(!ok)return;
       if(sim.error)return setSt({key:depsKey,loading:false,error:'Không kết nối được máy chủ dữ liệu.',data:null});
-      try{setSt({key:depsKey,loading:false,error:null,data:computeRef.current()})}catch(e){setSt({key:depsKey,loading:false,error:e.message,data:null})}},250);
-    return()=>{ok=false;clearTimeout(t)}},[depsKey,tick,sim.error]);
+      Promise.resolve().then(()=>computeRef.current(controller.signal)).then(data=>{
+        if(ok)setSt({key:depsKey,loading:false,error:null,data})
+      }).catch(e=>{
+        if(ok&&!controller.signal.aborted)setSt({key:depsKey,loading:false,error:e?.message||'Không tải được dữ liệu.',data:null})
+      })},250);
+    return()=>{ok=false;controller.abort();clearTimeout(t)}},[depsKey,tick,sim.error]);
   return{
     loading:st.key!==depsKey||st.loading,
     error:st.key===depsKey?st.error:null,

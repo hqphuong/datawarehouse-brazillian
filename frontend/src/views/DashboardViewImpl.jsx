@@ -8,13 +8,12 @@ import {
   Line,
 } from "recharts";
 import {
-  byYear,
-  routeStats,
-  MIN_ORDERS,
-  LOW_SAMPLE,
-} from "../data/mockData.jsx";
+  getDashboardOverview,
+  getOlapMetadata,
+  getRegions,
+  getSlaBreakdown,
+} from "../data/api.js";
 import {
-  agg,
   pct,
   num,
   int,
@@ -25,21 +24,68 @@ import {
   Pill,
 } from "../utils/utils.js";
 
+const MIN_ORDERS = 100;
+const LOW_SAMPLE = 200;
+
+function makeYearOptions(timeRange) {
+  const first = Number(timeRange?.min_month?.slice(0, 4));
+  const last = Number(timeRange?.max_month?.slice(0, 4));
+  if (!Number.isInteger(first) || !Number.isInteger(last) || first > last) return [];
+  return Array.from({ length: last - first + 1 }, (_, index) => String(first + index));
+}
+
 export default function DashboardView({ year, setYear, sim, goDss }) {
   const { data, loading, error, retry } = useData(
-    () => {
-      const rows = byYear(year),
-        g = {};
-      rows.forEach((r) => (g[r.month] ??= []).push(r));
-      const trend = Object.keys(g)
-        .sort()
-        .map((k) => ({ label: k, ...agg(g[k]) }));
-      const { L, list } = routeStats(rows);
+    async (signal) => {
+      const bounds = year === "all"
+        ? {}
+        : { from: `${year}-01-01`, to: `${year}-12-31` };
+      const dateFilters = year === "all"
+        ? {}
+        : { start_date: `${year}-01-01`, end_date: `${year}-12-31` };
+      const [overview, sla, regions, metadata] = await Promise.all([
+        getDashboardOverview({ time_mode: "month", ...bounds }, signal),
+        getSlaBreakdown(dateFilters, signal),
+        getRegions(dateFilters, signal),
+        getOlapMetadata(signal),
+      ]);
+      const kpis = overview.kpis;
+      const trend = overview.late_trend.map((period) => ({
+        label: period.month != null
+          ? `${period.year}-${String(period.month).padStart(2, "0")}`
+          : period.quarter != null
+            ? `${period.year}-Q${period.quarter}`
+            : String(period.year),
+        n: period.order_count,
+        late: period.late_count ?? Math.round(period.delay_rate * period.order_count),
+        rate: period.delay_rate,
+      }));
+      const list = regions
+        .map((region) => {
+          const n = region.order_count;
+          const k = region.late_count;
+          return {
+            route: `${region.seller_state}→${region.customer_state}`,
+            n,
+            k,
+            p: region.late_rate,
+            low: n < LOW_SAMPLE,
+          };
+        })
+        .filter((region) => region.n >= MIN_ORDERS);
       return {
-        kpi: agg(rows),
+        kpi: {
+          n: kpis.order_count,
+          late: regions.reduce((total, region) => total + region.late_count, 0),
+          rate: kpis.delay_rate,
+          total: kpis.avg_delivery_time,
+          appr: sla.avg_approval_time,
+          prep: sla.avg_prep_time,
+          transit: sla.avg_transit_time,
+        },
         trend,
-        L,
         top: [...list].sort((a, b) => b.p - a.p).slice(0, 5),
+        years: makeYearOptions(metadata.time_range),
       };
     },
     [year],
@@ -55,11 +101,11 @@ export default function DashboardView({ year, setYear, sim, goDss }) {
     );
   const { kpi, trend, top } = data;
   const cards = [
-    ["Tổng đơn-tuyến đã giao", int(kpi.n), ""],
+    ["Tổng đơn đã giao", int(kpi.n), ""],
     [
       "Tỷ lệ giao trễ",
       pct(kpi.rate),
-      `${int(kpi.late)} / ${int(kpi.n)} đơn-tuyến`,
+      `${int(kpi.late)} / ${int(kpi.n)} đơn`,
       1,
     ],
     [
@@ -74,12 +120,10 @@ export default function DashboardView({ year, setYear, sim, goDss }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <YearSel year={year} setYear={setYear} />
+        <YearSel year={year} setYear={setYear} years={data.years} />
         <p className="text-xs text-slate-500 max-w-3xl">
-          Tỷ lệ trễ = đơn-tuyến giao sau ngày dự kiến ({"delay_days > 0"}) ÷
-          đơn-tuyến đã giao; tuyến = bang người bán → bang khách hàng. Theo báo
-          cáo (dữ liệu thật): 8,1556% theo đơn-tuyến, 8,1950% nếu tính theo đơn
-          duy nhất. Dữ liệu mẫu: 1 đơn = 1 tuyến.
+          Tỷ lệ trễ = đơn giao sau ngày dự kiến ÷ tổng đơn; tuyến = bang người
+          bán → bang khách hàng.
         </p>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
@@ -107,8 +151,8 @@ export default function DashboardView({ year, setYear, sim, goDss }) {
         <section className="panel p-4">
           <h2 className="font-semibold">Xu hướng tỷ lệ trễ theo tháng</h2>
           <p className="text-xs text-slate-500 mb-2">
-            Cho biết vấn đề đang tăng hay giảm; rê chuột để xem số đơn của
-            tháng.
+            Cho biết vấn đề đang tăng hay giảm; rê chuột để xem số đơn trễ và
+            tổng số đơn.
           </p>
           <div className="h-64">
             <ResponsiveContainer>
@@ -139,8 +183,8 @@ export default function DashboardView({ year, setYear, sim, goDss }) {
         <section className="panel p-4">
           <h2 className="font-semibold">5 tuyến có tỷ lệ trễ cao nhất</h2>
           <p className="text-xs text-slate-500 mb-2">
-            Chỉ xét tuyến từ {MIN_ORDERS} đơn-tuyến trở lên (báo cáo: 100).
-            Tuyến dưới {LOW_SAMPLE} đơn gắn “Mẫu nhỏ”.
+            Chỉ xét tuyến từ {MIN_ORDERS} đơn trở lên. Tuyến dưới {LOW_SAMPLE}
+            đơn gắn “Mẫu nhỏ”.
           </p>
           <table className="w-full text-xs">
             <thead className="text-left text-slate-500">
