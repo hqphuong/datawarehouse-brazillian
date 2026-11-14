@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Olist Logistics DSS – BI Dashboard, OLAP & DSS (thiết kế lại)</title>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/react-is@18.3.1/umd/react-is.production.min.js"></script>
+<script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+<script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.23.9/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:#edf0f2;color:#18232d;font-family:'IBM Plex Sans',system-ui,sans-serif;font-variant-numeric:tabular-nums}
+  :focus-visible{outline:2px solid #0f766e;outline-offset:2px}
+  .panel{background:#fff;border:1px solid #d5dbe0;border-radius:6px}
+  .btn{border:1px solid #c3cbd2;background:#fff;border-radius:5px;padding:4px 10px;font-size:12px;font-weight:500}
+  .btn:hover{background:#f1f4f6}.btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn-main{background:#0f766e;border-color:#0f766e;color:#fff}.btn-main:hover{background:#0b5f58}
+  .sel{border:1px solid #c3cbd2;border-radius:5px;padding:4px 6px;font-size:12px;background:#fff}
+  tr.pick{background:#e6f4f1}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useMemo,useEffect,useRef}=React;
+const {ResponsiveContainer,BarChart,Bar,XAxis,YAxis,Tooltip,CartesianGrid,LineChart,Line,Legend}=Recharts;
+
+/*LOGIC-START*/
+/* ============ DỮ LIỆU MẪU (sinh ngẫu nhiên, KHÔNG phải số liệu Olist thật – thay bằng API) ============
+   Mỗi dòng = một đơn-tuyến đã giao (route = bang người bán → bang khách hàng), cùng mẫu số với DSS trong báo cáo.
+   delay > 0 là trễ; promise = total − delay (ngày cam kết = tổng thời gian hoàn tất − số ngày trễ). */
+const MONTHS=[];for(let y=2017;y<=2018;y++)for(let m=1;m<=12;m++){if(y===2018&&m>8)break;MONTHS.push(`${y}-${String(m).padStart(2,'0')}`)}
+const QUARTERS=[...new Set(MONTHS.map(m=>m.slice(0,4)+'-Q'+Math.ceil(+m.slice(5)/3)))];
+const YEARS=['2017','2018'];
+const TIME_OPTS={month:MONTHS,quarter:QUARTERS,year:YEARS};
+const LV_NAME={year:'Năm',quarter:'Quý',month:'Tháng'};
+const STATES=['AL','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RS','SC','SE','SP','TO'];
+const CATS=['bed_bath_table','health_beauty','sports_leisure','computers_accessories','furniture_decor','toys'];
+const PAYS=['credit_card','boleto','voucher','debit_card'];
+const SELLER_STATES=['SP','SP','SP','MG','PR','RJ'];
+function rng(s){return()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const RAW=(()=>{const r=rng(7),pick=a=>a[Math.floor(r()*a.length)],out=[];
+  const heavy=['SP','SP','SP','SP','RJ','RJ','MG','MG','RS','PR','SC','BA','PE','CE',...STATES];
+  for(let i=0;i<1400;i++){const month=pick(MONTHS),state=pick(heavy),si=Math.floor(r()*30);
+    const far=['MA','AL','PI','SE','BA','PA','TO'].includes(state);
+    const isLate=r()<(0.05+(far?0.12:0)+(['2017-11','2018-03'].includes(month)?0.05:0)+(si<3?0.08:0));
+    const appr=+(0.1+r()*0.9).toFixed(1),prep=+(1+r()*3).toFixed(1),transit=+((far?9:4)+r()*7+(isLate?4:0)).toFixed(1);
+    const total=+(appr+prep+transit).toFixed(1);
+    const delay=isLate?+(0.5+r()*Math.max(0,Math.min(6,total-6))).toFixed(1):-+(0.1+r()*8).toFixed(1);
+    const ss=SELLER_STATES[si%6];
+    out.push({id:'ord_'+(9000+i),month,quarter:month.slice(0,4)+'-Q'+Math.ceil(+month.slice(5)/3),year:month.slice(0,4),
+      state,seller_state:ss,route:ss+'→'+state,seller:'seller_'+String(si+1).padStart(2,'0'),category:pick(CATS),payment:pick(PAYS),
+      late:delay>0?1:0,delay,appr,prep,transit,total,promise:+(total-delay).toFixed(1),
+      price:+(20+r()*180).toFixed(2),freight:+(8+r()*30).toFixed(1),review:Math.max(1,Math.min(5,Math.round(isLate?2.5+r()*2:4+r()*1.5)))})}
+  return out})();
+function agg(a){const n=a.length,s=k=>a.reduce((x,y)=>x+y[k],0),m=k=>n?s(k)/n:null;
+  return{n,late:s('late'),rate:m('late'),appr:m('appr'),prep:m('prep'),transit:m('transit'),total:m('total'),freight:m('freight'),review:m('review'),gmv:s('price')}}
+const vn=(x,d)=>x.toFixed(d).replace('.',',');
+const pct=v=>v==null?'—':vn(v*100,1)+'%',num=(v,d=1)=>v==null?'—':vn(v,d),int=v=>v==null?'—':v.toLocaleString('vi-VN');
+const byYear=y=>RAW.filter(r=>y==='all'||r.year===y);
+
+/* ============ LOGIC DSS (thuần hàm; thay bằng API /routes, /attribution, /scenario, /brief, /promise-policy, /sellers) ============
+   Ngưỡng trong báo cáo (dữ liệu thật): min_orders=100, low_sample<200. Dữ liệu mẫu chỉ 1 400 dòng nên thu nhỏ lại. */
+const MIN_ORDERS=10,LOW_SAMPLE=30,MIN_SELLER=30,Z=1.96;
+const STAGES=[['appr','Duyệt thanh toán'],['prep','Người bán chuẩn bị'],['transit','Vận chuyển']];
+function wilson(k,n){if(!n)return[0,0];const p=k/n,z2=Z*Z,den=1+z2/n,c=p+z2/(2*n),m=Z*Math.sqrt(p*(1-p)/n+z2/(4*n*n));return[(c-m)/den,(c+m)/den]}
+function quant(v,q){if(!v.length)return 0;const s=[...v].sort((a,b)=>a-b),i=(s.length-1)*q,lo=Math.floor(i),hi=Math.ceil(i);return s[lo]+(s[hi]-s[lo])*(i-lo)}
+const mean=(a,k)=>a.length?a.reduce((s,r)=>s+r[k],0)/a.length:0;
+const bench=(rows,q)=>Object.fromEntries(STAGES.map(([k])=>[k,quant(rows.map(r=>r[k]),q)]));
+function routeStats(rows){
+  const g={};rows.forEach(r=>(g[r.route]??=[]).push(r));
+  const L=rows.length?rows.reduce((s,r)=>s+r.late,0)/rows.length:0;
+  const list=Object.entries(g).filter(([,a])=>a.length>=MIN_ORDERS).map(([route,a])=>{
+    const n=a.length,k=a.reduce((s,r)=>s+r.late,0),p=k/n,[lo,hi]=wilson(k,n);
+    const level=L>0&&p>=2*L?'red':L>0&&p>=1.5*L?'yellow':'none',thr=(level==='red'?2:1.5)*L;
+    return{route,n,k,p,lo,hi,level,low:n<LOW_SAMPLE,uncertain:level!=='none'&&lo<thr,rows:a}});
+  return{L,list}}
+/* Shapley 3 giai đoạn cho một đơn trễ: v(S)=1 nếu đơn vẫn trễ khi các giai đoạn ngoài S về mức benchmark. */
+function shapley(o,b){
+  const e=STAGES.map(([k])=>Math.max(0,o[k]-b[k])),W=[2/6,1/6,2/6];
+  const v=m=>{let d=o.delay;for(let i=0;i<3;i++)if(!((m>>i)&1))d-=e[i];return d>0?1:0};
+  const phi=[0,1,2].map(i=>{let s=0;for(let m=0;m<8;m++){if((m>>i)&1)continue;const c=((m&1)+((m>>1)&1)+((m>>2)&1));s+=W[c]*(v(m|(1<<i))-v(m))}return s});
+  return{phi,resid:v(0)}}
+function attribution(rows,b){const late=rows.filter(r=>r.late);if(!late.length)return null;
+  const s=[0,0,0];let res=0;late.forEach(o=>{const x=shapley(o,b);x.phi.forEach((p,i)=>s[i]+=p);res+=x.resid});
+  const n=late.length;return{n,appr:s[0]/n,prep:s[1]/n,transit:s[2]/n,resid:res/n}}
+const reduced=(r,cut)=>STAGES.reduce((x,[k])=>x+Math.min(cut[k]||0,r[k]),0);
+const simulate=(rows,cut)=>rows.reduce((s,r)=>s+((r.delay-reduced(r,cut))>0?1:0),0);
+function bootCI(rows,cut,B=300,seed=42){const rnd=rng(seed),n=rows.length,av=[],pp=[];
+  for(let b=0;b<B;b++){let bf=0,af=0;for(let i=0;i<n;i++){const r=rows[Math.floor(rnd()*n)];bf+=r.late;af+=(r.delay-reduced(r,cut))>0?1:0}av.push(bf-af);pp.push((bf-af)/n*100)}
+  return{avLo:quant(av,.025),avHi:quant(av,.975),ppLo:quant(pp,.025),ppHi:quant(pp,.975)}}
+const p25cut=(rows,b25)=>Object.fromEntries(STAGES.map(([k])=>[k,Math.max(0,+(mean(rows,k)-b25[k]).toFixed(1))]));
+function evid(ci,low){return low?['Cần thêm dữ liệu','more']:ci.avLo<=0?['Chưa đủ bằng chứng','warn']:['Ước lượng ổn định','ok']}
+function buildBrief(rows){
+  const {L,list}=routeStats(rows),b25=bench(rows,.25);
+  const routes=list.filter(s=>!s.low).map(s=>{const cut=p25cut(s.rows,b25),avoided=s.k-simulate(s.rows,cut);return{...s,cut,avoided,ci:bootCI(s.rows,cut)}})
+    .filter(x=>x.avoided>0).sort((a,b)=>b.avoided-a.avoided).slice(0,5);
+  const gp={};rows.forEach(r=>(gp[r.payment]??=[]).push(r));
+  const pay=Object.entries(gp).map(([p,a])=>{const cut={appr:Math.max(0,+(mean(a,'appr')-b25.appr).toFixed(1))},late=a.filter(r=>r.late).length;
+    return{pay:p,n:a.length,cut:cut.appr,avoided:late-simulate(a,cut),ci:bootCI(a,cut),low:a.length<LOW_SAMPLE}}).sort((a,b)=>b.avoided-a.avoided);
+  const prom=list.map(s=>{const need=Math.ceil(quant(s.rows.map(r=>r.total),.95)),med=quant(s.rows.map(r=>r.promise),.5);
+    const st=med<need-1?'tight':med>need+1?'loose':'ok',newLate=s.rows.filter(r=>r.total>need).length;
+    return{route:s.route,n:s.n,need,med,st,net:st==='ok'?0:s.k-newLate}});
+  const promTop=prom.filter(x=>x.st==='tight'&&x.net>0).sort((a,b)=>b.net-a.net).slice(0,5);
+  const promCnt={tight:prom.filter(x=>x.st==='tight').length,ok:prom.filter(x=>x.st==='ok').length,loose:prom.filter(x=>x.st==='loose').length};
+  const gs={};rows.forEach(r=>(gs[r.seller]??=[]).push(r));
+  const sellers=Object.entries(gs).filter(([,a])=>a.length>=MIN_SELLER).map(([id,a])=>{const n=a.length,k=a.reduce((s,r)=>s+r.late,0),[lo]=wilson(k,n);
+    return{id,n,k,p:k/n,excess:k-n*L,prio:lo>L}}).filter(x=>x.excess>0).sort((a,b)=>b.excess-a.excess).slice(0,5);
+  const more=list.filter(s=>s.level!=='none'&&s.low).sort((a,b)=>b.p-a.p).slice(0,5);
+  return{L,routes,pay,promTop,promCnt,sellers,more}}
+/*LOGIC-END*/
+
+/* Hook dữ liệu: thay body bằng fetch('/api/...') khi gắn API. Thêm ?dev=1 để thấy nút giả lập lỗi. */
+const DEV=new URLSearchParams(location.search).has('dev');
+function useData(compute,deps,sim){
+  const [st,setSt]=useState({loading:true,error:null,data:null});
+  const [tick,setTick]=useState(0);
+  useEffect(()=>{let ok=true;setSt(s=>({...s,loading:true,error:null}));
+    const t=setTimeout(()=>{if(!ok)return;
+      if(sim.error)return setSt({loading:false,error:'Không kết nối được máy chủ dữ liệu.',data:null});
+      try{setSt({loading:false,error:null,data:compute()})}catch(e){setSt({loading:false,error:e.message,data:null})}},250);
+    return()=>{ok=false;clearTimeout(t)}},[...deps,tick,sim.error]);
+  return{...st,retry:()=>setTick(t=>t+1)};
+}
+
+/* ============ THÀNH PHẦN CHUNG ============ */
+function MultiSelect({label,options,value,onChange}){
+  const [open,setOpen]=useState(false),[q,setQ]=useState(''),ref=useRef(null);
+  useEffect(()=>{const h=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false)};document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h)},[]);
+  const list=options.filter(o=>o.toLowerCase().includes(q.toLowerCase()));
+  const toggle=o=>onChange(value.includes(o)?value.filter(x=>x!==o):[...value,o]);
+  return <div className="relative" ref={ref}>
+    <button className="sel flex items-center gap-2 min-w-[130px] justify-between" aria-haspopup="listbox" aria-expanded={open} onClick={()=>setOpen(!open)}>
+      <span>{label}: <b>{value.length?`${value.length} đã chọn`:'Tất cả'}</b></span><span aria-hidden>▾</span></button>
+    {open&&<div className="absolute z-40 mt-1 w-56 panel shadow-lg p-2">
+      <input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Tìm…" aria-label={'Tìm '+label} className="sel w-full mb-2"/>
+      <div className="max-h-48 overflow-y-auto">{list.map(o=><label key={o} className="flex items-center gap-2 px-1 py-1 text-xs hover:bg-slate-50 cursor-pointer">
+        <input type="checkbox" checked={value.includes(o)} onChange={()=>toggle(o)}/>{o}</label>)}{!list.length&&<div className="text-xs text-slate-500 p-2">Không có kết quả</div>}</div>
+      <button className="text-xs text-teal-700 mt-1 underline" onClick={()=>onChange([])}>Bỏ chọn tất cả</button></div>}
+  </div>}
+const YearSel=({year,setYear})=><label className="text-xs text-slate-600 flex items-center gap-2">Năm
+  <select className="sel" value={year} onChange={e=>setYear(e.target.value)}><option value="all">Tất cả (2017–2018)</option><option>2017</option><option>2018</option></select></label>;
+const Skeleton=({h=160})=><div className="panel animate-pulse bg-slate-100" style={{height:h}} aria-busy="true"/>;
+const Errored=({msg,retry})=><div className="panel p-10 text-center" role="alert"><p className="font-semibold">Không tải được dữ liệu</p><p className="text-sm text-slate-600 mt-1">{msg} Kiểm tra backend đang chạy rồi thử lại.</p><button className="btn btn-main mt-3" onClick={retry}>Tải lại</button></div>;
+const Empty=({reset,msg='Không có đơn hàng khớp bộ lọc'})=><div className="panel p-10 text-center"><p className="font-semibold">{msg}</p><p className="text-sm text-slate-600 mt-1">Mở rộng khoảng thời gian hoặc bỏ bớt điều kiện lọc.</p>{reset&&<button className="btn mt-3" onClick={reset}>Đặt lại bộ lọc</button>}</div>;
+const Pill=({t,c,wrap,title})=><span title={title} className={'px-2 py-0.5 rounded text-[11px] font-medium '+(wrap?'':'whitespace-nowrap ')+c}>{t}</span>;
+const ST={ok:'bg-teal-50 text-teal-900',warn:'bg-amber-50 text-amber-900',more:'bg-slate-100 text-slate-700'};
+const LV={red:['Đỏ','bg-red-100 text-red-900'],yellow:['Vàng','bg-amber-100 text-amber-900'],amber:['Vàng','bg-amber-100 text-amber-900'],ok:['—','text-slate-400'],none:['—','text-slate-400']};
+const flagsOf=s=><>{s.low&&<Pill t="Mẫu nhỏ" c="bg-slate-100 text-slate-700"/>} {s.uncertain&&<Pill t="Chưa chắc chắn" c="bg-amber-50 text-amber-900"/>}</>;
+
+/* ============ 1. BI DASHBOARD: giám sát nhanh ============ */
+function Dashboard({year,setYear,sim,goDss}){
+  const {data,loading,error,retry}=useData(()=>{
+    const rows=byYear(year),g={};rows.forEach(r=>(g[r.month]??=[]).push(r));
+    const trend=Object.keys(g).sort().map(k=>({label:k,...agg(g[k])}));
+    const {L,list}=routeStats(rows);
+    return{kpi:agg(rows),trend,L,top:[...list].sort((a,b)=>b.p-a.p).slice(0,5)}},[year],sim);
+  if(error)return <Errored msg={error} retry={retry}/>;
+  if(loading||!data)return <div className="space-y-4"><Skeleton h={90}/><Skeleton h={300}/></div>;
+  const {kpi,trend,top}=data;
+  const cards=[['Tổng đơn-tuyến đã giao',int(kpi.n),''],['Tỷ lệ giao trễ',pct(kpi.rate),`${int(kpi.late)} / ${int(kpi.n)} đơn-tuyến`,1],
+    ['Thời gian giao TB',num(kpi.total)+' ngày','Từ đặt hàng đến khi khách nhận'],['Duyệt thanh toán TB',num(kpi.appr)+' ngày','Hệ thống / sàn'],
+    ['Người bán chuẩn bị TB',num(kpi.prep)+' ngày','Người bán'],['Vận chuyển TB',num(kpi.transit)+' ngày','Đơn vị vận chuyển']];
+  return <div className="space-y-4">
+    <div className="flex flex-wrap items-center justify-between gap-2"><YearSel year={year} setYear={setYear}/>
+      <p className="text-xs text-slate-500 max-w-3xl">Tỷ lệ trễ = đơn-tuyến giao sau ngày dự kiến ({'delay_days > 0'}) ÷ đơn-tuyến đã giao; tuyến = bang người bán → bang khách hàng. Theo báo cáo (dữ liệu thật): 8,1556% theo đơn-tuyến, 8,1950% nếu tính theo đơn duy nhất. Dữ liệu mẫu: 1 đơn = 1 tuyến.</p></div>
+    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+      {cards.map(([t,v,s,hot])=><div key={t} className={'panel p-3 '+(hot?'border-orange-300 bg-orange-50':'')}>
+        <div className="text-xs text-slate-600">{t}</div><div className={'text-2xl font-semibold mt-0.5 '+(hot?'text-orange-800':'')}>{v}</div><div className="text-[11px] text-slate-500 mt-0.5">{s}</div></div>)}
+    </div>
+    <div className="grid grid-cols-1 xl:grid-cols-[1.3fr_1fr] gap-4">
+      <section className="panel p-4"><h2 className="font-semibold">Xu hướng tỷ lệ trễ theo tháng</h2>
+        <p className="text-xs text-slate-500 mb-2">Cho biết vấn đề đang tăng hay giảm; rê chuột để xem số đơn của tháng.</p>
+        <div className="h-64"><ResponsiveContainer><LineChart data={trend}><CartesianGrid vertical={false} stroke="#e5e9ec"/><XAxis dataKey="label" tick={{fontSize:11}}/>
+          <YAxis tick={{fontSize:11}} tickFormatter={v=>Math.round(v*100)+'%'}/><Tooltip formatter={(v,n,p)=>[pct(v)+` (${p.payload.late}/${p.payload.n} đơn)`,'Tỷ lệ trễ']}/>
+          <Line type="monotone" dataKey="rate" stroke="#c2410c" strokeWidth={2} dot={{r:2}}/></LineChart></ResponsiveContainer></div></section>
+      <section className="panel p-4"><h2 className="font-semibold">5 tuyến có tỷ lệ trễ cao nhất</h2>
+        <p className="text-xs text-slate-500 mb-2">Chỉ xét tuyến từ {MIN_ORDERS} đơn-tuyến trở lên (báo cáo: 100). Tuyến dưới {LOW_SAMPLE} đơn gắn “Mẫu nhỏ”.</p>
+        <table className="w-full text-xs"><thead className="text-left text-slate-500"><tr><th className="py-1">Tuyến</th><th className="text-right">Đơn</th><th className="text-right">Trễ</th><th className="text-right">Tỷ lệ</th><th/></tr></thead>
+          <tbody>{top.map(s=><tr key={s.route} className="border-t border-slate-100"><td className="py-2 font-medium">{s.route} {s.low&&<Pill t="Mẫu nhỏ" c="bg-slate-100 text-slate-700"/>}</td>
+            <td className="text-right">{int(s.n)}</td><td className="text-right">{int(s.k)}</td><td className="text-right font-semibold">{pct(s.p)}</td>
+            <td className="text-right"><button className="btn" onClick={()=>goDss(s.route)}>Mở trong DSS</button></td></tr>)}
+            {!top.length&&<tr><td colSpan="5" className="py-4 text-center text-slate-500">Chưa có tuyến đủ mẫu.</td></tr>}</tbody></table></section>
+    </div></div>}
+
+/* ============ 2. OLAP: tự khám phá (slice/dice, drill-down/roll-up) ============ */
+const DIMS={time:'Thời gian',route:'Tuyến (bang bán → bang khách)',state:'Bang khách hàng',category:'Danh mục sản phẩm',seller:'Người bán'};
+const NEXT={year:'quarter',quarter:'month'};
+const MEAS={n:['Số đơn',a=>int(a.n)],late:['Số đơn trễ',a=>int(a.late)],rate:['Tỷ lệ trễ',a=>pct(a.rate)],appr:['Duyệt thanh toán TB (ngày)',a=>num(a.appr)],
+  prep:['Người bán chuẩn bị TB (ngày)',a=>num(a.prep)],transit:['Vận chuyển TB (ngày)',a=>num(a.transit)],freight:['Phí vận chuyển TB (R$)',a=>num(a.freight,2)],gmv:['GMV (R$)',a=>int(Math.round(a.gmv))]};
+const MEAS_SQL={n:'COUNT(DISTINCT f.order_id)',late:'COUNT(DISTINCT CASE WHEN f.delay_days > 0 THEN f.order_id END)',
+  rate:'COUNT(DISTINCT CASE WHEN f.delay_days > 0 THEN f.order_id END)::float / COUNT(DISTINCT f.order_id)',appr:'AVG(f.approval_time_days)',
+  prep:'AVG(f.seller_prep_time_days)',transit:'AVG(f.carrier_transit_time_days)',freight:'AVG(f.freight_value)',gmv:'SUM(f.price)'};
+const DIM_SQL={route:"sl.state || '→' || c.state",state:'c.state',category:'p.category_name_english',seller:'f.seller_id'};
+const TL_SQL={year:'t.year',quarter:'t.year, t.quarter',month:'t.year, t.month'};
+function dateRange(level,from,to){
+  const st=v=>level==='year'?`${v}-01-01`:level==='quarter'?`${v.slice(0,4)}-${String((+v.slice(6)-1)*3+1).padStart(2,'0')}-01`:`${v}-01`;
+  const en=v=>{let y=+v.slice(0,4),m=level==='year'?12:level==='quarter'?+v.slice(6)*3:+v.slice(5);return `${y}-${String(m).padStart(2,'0')}-${new Date(y,m,0).getDate()}`};
+  return `t.full_date BETWEEN '${st(from)}' AND '${en(to)}'`}
+const DEF_O={level:'month',from:MONTHS[0],to:MONTHS[MONTHS.length-1],sstates:[],cstates:[],cats:[],lateOnly:false};
+const DEF_CFG={rows:'state',cols:'time',tl:'quarter',m:'rate'};
+const PRESETS=[{t:'Tỷ lệ trễ theo bang khách × quý',rows:'state',cols:'time',tl:'quarter',m:'rate'},{t:'Tỷ lệ trễ theo tuyến',rows:'route',cols:'none',tl:'year',m:'rate'},
+  {t:'Vận chuyển TB theo năm → tháng (drill-down)',rows:'time',cols:'none',tl:'year',m:'transit'},{t:'Số đơn trễ theo người bán',rows:'seller',cols:'none',tl:'year',m:'late'},{t:'GMV theo danh mục',rows:'category',cols:'none',tl:'year',m:'gmv'}];
+const olapRows=(fl,drill)=>RAW.filter(r=>r[fl.level]>=fl.from&&r[fl.level]<=fl.to&&(!fl.sstates.length||fl.sstates.includes(r.seller_state))&&(!fl.cstates.length||fl.cstates.includes(r.state))
+  &&(!fl.cats.length||fl.cats.includes(r.category))&&(!fl.lateOnly||r.late)&&drill.every(d=>r[d.level]===d.value));
+function Olap({sim}){
+  const [fl,setFl]=useState(DEF_O),[cfg,setCfg]=useState(DEF_CFG),[drill,setDrill]=useState([]),[view,setView]=useState('table'),[sqlOpen,setSqlOpen]=useState(false);
+  const key=(r,d)=>d==='time'?r[cfg.tl]:r[d];
+  const {data,loading,error,retry}=useData(()=>{
+    const rows=olapRows(fl,drill),byRow={},byCol={},g={};
+    rows.forEach(r=>{const rk=key(r,cfg.rows),ck=cfg.cols==='none'?'Tất cả':key(r,cfg.cols);(byRow[rk]??=[]).push(r);(byCol[ck]??=[]).push(r);(g[rk+'|'+ck]??=[]).push(r)});
+    const order=(o,dim)=>dim==='time'?Object.keys(o).sort():Object.keys(o).sort((a,b)=>o[b].length-o[a].length);
+    const allR=order(byRow,cfg.rows),allC=order(byCol,cfg.cols),rk=allR.slice(0,30),ck=allC.slice(0,12);
+    return{ck,body:rk.map(k=>({k,cells:ck.map(c=>agg(g[k+'|'+c]||[])),tot:agg(byRow[k])})),colTot:ck.map(c=>agg(byCol[c])),grand:agg(rows),cutR:allR.length>30,cutC:allC.length>12}},[fl,cfg,drill],sim);
+  const set=p=>{setCfg({...cfg,...p});setDrill([])};
+  const setLevel=l=>{const o=TIME_OPTS[l];setFl({...fl,level:l,from:o[0],to:o[o.length-1]});setDrill([])};
+  const resetAll=()=>{setFl(DEF_O);setCfg(DEF_CFG);setDrill([])};
+  const [mName,mFmt]=MEAS[cfg.m],val=a=>a.n?mFmt(a):'—';
+  const nums=data?data.body.flatMap(b=>b.cells.filter(c=>c.n).map(c=>c[cfg.m])):[],mx=Math.max(...nums,1e-9),mn=Math.min(...nums,0);
+  const rel=c=>(c[cfg.m]-mn)/((mx-mn)||1);
+  const heat=c=>({background:view==='heat'&&c.n?`rgba(15,118,110,${0.08+0.7*rel(c)})`:'',color:view==='heat'&&c.n&&rel(c)>.6?'#fff':''});
+  const drillInto=v=>{if(cfg.rows==='time'&&NEXT[cfg.tl]){setDrill([...drill,{level:cfg.tl,value:v}]);setCfg({...cfg,tl:NEXT[cfg.tl]})}};
+  const rollUp=i=>{const lv=drill[i]?.level||cfg.tl;setDrill(drill.slice(0,i));setCfg({...cfg,tl:lv})};
+  const bad=fl.from>fl.to,opts=TIME_OPTS[fl.level];
+  const gcols=[cfg.rows,cfg.cols!=='none'?cfg.cols:null].filter(Boolean).map(d=>d==='time'?TL_SQL[cfg.tl]:DIM_SQL[d]).join(', ');
+  const where=[dateRange(fl.level,fl.from,fl.to),...drill.map(d=>dateRange(d.level,d.value,d.value)),fl.sstates.length&&`sl.state IN (${fl.sstates.map(s=>`'${s}'`).join(', ')})`,
+    fl.cstates.length&&`c.state IN (${fl.cstates.map(s=>`'${s}'`).join(', ')})`,fl.cats.length&&`p.category_name_english IN (${fl.cats.map(s=>`'${s}'`).join(', ')})`,fl.lateOnly&&'f.delay_days > 0'].filter(Boolean);
+  const sql=`-- Minh hoạ truy vấn tương ứng trên star schema\nSELECT ${gcols}, ${MEAS_SQL[cfg.m]} AS ${cfg.m}\nFROM Fact_Delivery_SLA f\nJOIN Dim_Time t ON f.time_id = t.time_id\nJOIN Dim_Location c ON f.customer_location_id = c.location_id\nJOIN Dim_Location sl ON f.seller_location_id = sl.location_id\nJOIN Dim_Product p ON f.product_id = p.product_id\nWHERE ${where.join('\n  AND ')}\nGROUP BY ${gcols};`;
+  const csv=()=>{const l=[[DIMS[cfg.rows],...data.ck,'Tổng'],...data.body.map(b=>[b.k,...b.cells.map(val),val(b.tot)])];
+    const u=URL.createObjectURL(new Blob(['\ufeff'+l.map(r=>r.map(x=>`"${x}"`).join(',')).join('\n')],{type:'text/csv'}));const a=document.createElement('a');a.href=u;a.download='olap.csv';a.click();URL.revokeObjectURL(u)};
+  const Pick=({label,k,none})=><label className="text-xs text-slate-600">{label}<br/><select className="sel mt-0.5 min-w-[150px]" value={cfg[k]} onChange={e=>set({[k]:e.target.value})}>{none&&<option value="none">(Không dùng)</option>}
+    {Object.entries(DIMS).filter(([d])=>d!==(k==='rows'?cfg.cols:cfg.rows)).map(([d,v])=><option key={d} value={d}>{v}</option>)}</select></label>;
+  return <div className="space-y-3">
+    <section className="panel p-3 space-y-3" aria-label="Bộ lọc và cấu hình">
+      <div className="flex flex-wrap items-end gap-x-5 gap-y-2"><span className="text-sm font-semibold self-center">Bộ lọc (slice / dice)</span>
+        <label className="text-xs text-slate-600">Mức thời gian<br/><select className="sel" value={fl.level} onChange={e=>setLevel(e.target.value)}>{Object.entries(LV_NAME).reverse().map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>
+        <label className="text-xs text-slate-600">Từ<br/><select className="sel" value={fl.from} onChange={e=>{setFl({...fl,from:e.target.value});setDrill([])}}>{opts.map(o=><option key={o}>{o}</option>)}</select></label>
+        <label className="text-xs text-slate-600">Đến<br/><select className="sel" value={fl.to} onChange={e=>{setFl({...fl,to:e.target.value});setDrill([])}}>{opts.map(o=><option key={o}>{o}</option>)}</select></label>
+        <MultiSelect label="Bang người bán" options={STATES} value={fl.sstates} onChange={v=>setFl({...fl,sstates:v})}/>
+        <MultiSelect label="Bang khách hàng" options={STATES} value={fl.cstates} onChange={v=>setFl({...fl,cstates:v})}/>
+        <MultiSelect label="Danh mục" options={CATS} value={fl.cats} onChange={v=>setFl({...fl,cats:v})}/>
+        <label className="flex items-center gap-1.5 text-xs pb-1.5"><input type="checkbox" checked={fl.lateOnly} onChange={e=>setFl({...fl,lateOnly:e.target.checked})}/>Chỉ đơn trễ</label>
+        {bad&&<span className="text-xs text-red-700 font-medium" role="alert">“Từ” đang sau “Đến” – hãy chọn lại.</span>}</div>
+      <div className="flex flex-wrap items-end gap-x-5 gap-y-2 border-t border-slate-100 pt-3"><span className="text-sm font-semibold self-center">Bảng</span>
+        <Pick label="Hàng" k="rows"/><Pick label="Cột" k="cols" none/>
+        {(cfg.rows==='time'||cfg.cols==='time')&&<div className="text-xs text-slate-600">Mức thời gian trong bảng<div className="flex gap-1 mt-0.5">{Object.keys(LV_NAME).reverse().map(l=><button key={l} className={'btn '+(cfg.tl===l?'btn-main':'')} onClick={()=>{setDrill([]);setCfg({...cfg,tl:l})}}>{LV_NAME[l]}</button>)}</div></div>}
+        <label className="text-xs text-slate-600">Chỉ số<br/><select className="sel mt-0.5" value={cfg.m} onChange={e=>set({m:e.target.value})}>{Object.entries(MEAS).map(([k,[n]])=><option key={k} value={k}>{n}</option>)}</select></label>
+        <button className="btn" onClick={resetAll}>Đặt lại</button></div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs"><span className="text-slate-500">Truy vấn mẫu:</span>{PRESETS.map(p=><button key={p.t} className="underline text-teal-800 hover:text-teal-950" onClick={()=>{setDrill([]);setCfg({rows:p.rows,cols:p.cols,tl:p.tl,m:p.m})}}>{p.t}</button>)}</div>
+    </section>
+    <section className="min-w-0 space-y-3">
+      <div className="panel p-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="text-sm">{mName} theo <b>{DIMS[cfg.rows]}</b>{cfg.cols!=='none'&&<> × <b>{DIMS[cfg.cols]}</b></>}
+          {drill.length>0&&<nav className="text-xs mt-1 text-slate-600" aria-label="Phân cấp thời gian">
+            <button className="underline" onClick={()=>rollUp(0)}>Tất cả</button>{drill.map((d,i)=><span key={i}> › <button className="underline" onClick={()=>rollUp(i+1)}>{d.value}</button></span>)}
+            <button className="btn ml-2" onClick={()=>rollUp(drill.length-1)}>▲ Roll-up</button></nav>}</div>
+        <div className="flex items-center gap-1">{[['table','Bảng'],['heat','Heatmap'],['chart','Biểu đồ']].map(([k,t])=><button key={k} className={'btn '+(view===k?'btn-main':'')} onClick={()=>setView(k)}>{t}</button>)}
+          <button className="btn" disabled={!data} onClick={csv}>Xuất CSV</button></div></div>
+      {error?<Errored msg={error} retry={retry}/>:loading||!data?<Skeleton h={300}/>:!data.grand.n?<Empty reset={resetAll}/>:
+      view==='chart'?<div className="panel p-4 h-80"><ResponsiveContainer><BarChart data={data.body.map(b=>({k:b.k,v:b.tot[cfg.m]}))}><CartesianGrid vertical={false} stroke="#e5e9ec"/><XAxis dataKey="k" tick={{fontSize:11}}/><YAxis tick={{fontSize:11}} tickFormatter={v=>cfg.m==='rate'?pct(v):v}/><Tooltip formatter={v=>cfg.m==='rate'?pct(v):num(v,2)}/><Bar dataKey="v" name={mName} fill="#0f766e"/></BarChart></ResponsiveContainer></div>:
+      <div className="panel overflow-x-auto"><table className="w-full text-xs"><thead className="bg-slate-50"><tr><th className="text-left py-2 px-3">{DIMS[cfg.rows]}</th>{data.ck.map(c=><th key={c} className="text-right px-3">{c}</th>)}<th className="text-right px-3 bg-slate-100">Tổng</th></tr></thead>
+        <tbody>{data.body.map(b=><tr key={b.k} className="border-t border-slate-100">
+          <th className="text-left py-2 px-3 font-medium">{cfg.rows==='time'&&NEXT[cfg.tl]?<button className="underline decoration-dotted hover:text-teal-800" title="Drill-down xuống mức thấp hơn" onClick={()=>drillInto(b.k)}>▼ {b.k}</button>:b.k}</th>
+          {b.cells.map((c,i)=><td key={i} className={'text-right px-3 '+(c.n&&c.n<15?'text-slate-400 italic':'')} style={heat(c)} title={c.n?`${c.n} đơn${c.n<15?' – mẫu nhỏ':''}`:'Không có dữ liệu'}>{val(c)}</td>)}
+          <td className="text-right px-3 font-semibold bg-slate-50">{val(b.tot)}</td></tr>)}
+          <tr className="border-t-2 border-slate-300 bg-slate-50 font-semibold"><th className="text-left py-2 px-3">Tổng</th>{data.colTot.map((c,i)=><td key={i} className="text-right px-3">{val(c)}</td>)}<td className="text-right px-3">{val(data.grand)}</td></tr></tbody></table>
+        <p className="text-[11px] text-slate-500 p-2">Chữ nghiêng xám: ô dưới 15 đơn (mẫu nhỏ). Rê chuột vào ô để xem số đơn.{data.cutR&&' Chỉ hiển thị 30 hàng nhiều đơn nhất (hàng Tổng vẫn tính trên toàn bộ).'}{data.cutC&&' Chỉ hiển thị 12 cột đầu.'}{cfg.rows==='time'&&NEXT[cfg.tl]&&' Bấm ▼ ở hàng thời gian để drill-down.'}</p></div>}
+      <div className="panel"><button className="w-full text-left px-3 py-2 text-sm font-medium flex justify-between" aria-expanded={sqlOpen} onClick={()=>setSqlOpen(!sqlOpen)}>SQL tương ứng<span>{sqlOpen?'▴':'▾'}</span></button>
+        {sqlOpen&&<pre className="px-3 pb-3 text-xs overflow-x-auto text-slate-700">{sql}</pre>}</div>
+    </section></div>}
+
+// ============ 3. DSS ACTION CENTER ============
+// NGUỒN DỮ LIỆU: toàn bộ DSS chỉ gọi dssRequest(path,{method,body,signal}). Đang dùng DỮ LIỆU MẪU.
+// ĐỔI SANG API THẬT (2 bước):
+//   1) Khối [A]: thêm một dòng chỉ chứa dấu mở comment khối ngay trước dòng "const DSS_SOURCE='sample'",
+//      và một dòng chỉ chứa dấu đóng comment khối ngay sau dòng "hết khối [A]".
+//   2) Khối [B]: xoá hai dòng chỉ chứa dấu mở / dấu đóng comment khối đang bao quanh nó.
+// Khối [A] chỉ dùng chú thích hai dấu gạch chéo nên bọc comment khối được.
+
+// ---- [A] DỮ LIỆU MẪU (đang BẬT) ----
+const DSS_SOURCE='sample';
+const DSS_BADGE=['Dữ liệu mẫu','Số liệu mẫu sinh ngẫu nhiên trong file, không phải số liệu Olist thật'];
+const SAMPLE_LOG=[];
+const OWN={ops:'Quản lý vận hành logistics',pay:'Hệ thống thanh toán / sàn',prom:'Chủ chính sách cam kết giao hàng',sell:'Bộ phận hỗ trợ người bán',
+  approval:'Hệ thống thanh toán / sàn',prep:'Bộ phận hỗ trợ người bán',transit:'Quản lý vận hành, đơn vị vận chuyển'};
+const STG_API=[['appr','approval'],['prep','prep'],['transit','transit']];
+const toApi=r=>String(r).replace('→','->'),fromApi=r=>String(r).replace('->','→'),lvApi=l=>l==='yellow'?'amber':l;
+const ciTxt=ci=>`CI 95%: ${num(ci.avLo,0)}–${num(ci.avHi,0)} đơn`;
+const stageShares=a=>a?{approval:a.appr,prep:a.prep,transit:a.transit}:null;
+const topOf=sh=>sh?Object.keys(sh).sort((x,y)=>sh[y]-sh[x])[0]:null;
+function sampleDss(path,{method='GET',body,sim}={}){
+  if(sim)throw new Error('Không kết nối được máy chủ dữ liệu.');
+  const [name,query='']=path.split('?'),P=Object.fromEntries(new URLSearchParams(query));
+  if(name==='actions'){
+    if(method==='POST'){SAMPLE_LOG.unshift({action:body.action,route:body.route,level:body.level,detail:body.detail,created_at:new Date().toISOString()});return{ok:true}}
+    return SAMPLE_LOG.slice();
+  }
+  const rows=byYear(P.year||'all'),{L,list}=routeStats(rows);
+  const rowsOf=r=>{const f=list.find(s=>s.route===fromApi(r));return f?f.rows:[]};
+  const sellerStats=()=>{const g={};rows.forEach(r=>(g[r.seller]??=[]).push(r));
+    return Object.entries(g).map(([id,a])=>{const n=a.length,k=a.reduce((s,r)=>s+r.late,0),[lo]=wilson(k,n);
+      return{seller_id:id,segment:n<MIN_SELLER?'cần thêm dữ liệu':lo>L?'ưu tiên':'ổn định',orders:n,late_orders:k,late_rate:k/n,bad_review_rate:a.filter(r=>r.review<=2).length/n}})};
+  if(name==='routes'||name==='attribution'){
+    const b=bench(rows,+(P.q||.5)),out=list.map(s=>{const sh=stageShares(attribution(s.rows,b)),top=topOf(sh);
+      return{s,top,row:{route:toApi(s.route),order_routes:s.n,orders:s.n,late_orders:s.k,late_rate:s.p,
+        cause_share_approval:sh?sh.approval:0,cause_share_prep:sh?sh.prep:0,cause_share_transit:sh?sh.transit:0,
+        share_promise:sh?attribution(s.rows,b).resid:0,top_stage:top}}});
+    if(name==='attribution')return{ranked_routes:[...out].sort((x,y)=>y.row.late_rate-x.row.late_rate).map(o=>({route:o.row.route,order_routes:o.row.order_routes,late_orders:o.row.late_orders,late_rate:o.row.late_rate})),rows:out.map(o=>o.row)};
+    return out.filter(o=>o.s.level!=='none').map(o=>({route:o.row.route,level:lvApi(o.s.level),ci_low:o.s.lo,ci_high:o.s.hi,late_orders:o.s.k,late_rate:o.s.p,order_routes:o.s.n,root_cause:{owner:OWN[o.top||'transit']}}));
+  }
+  if(name==='scenario'){
+    const rr=rowsOf(P.route),n=rr.length||1,sh=stageShares(attribution(rr,bench(rows,.5))),bn=topOf(sh)||'transit',key=STG_API.find(x=>x[1]===bn)[0];
+    const mx=Math.ceil(Math.max(1,...rr.map(r=>r[key]))),k=rr.reduce((s,r)=>s+r.late,0),after=simulate(rr,{appr:+P.approval||0,prep:+P.prep||0,transit:+P.transit||0}),series=[];
+    for(let c=0;c<=mx;c++)series.push({cut:c,projected:simulate(rr,{[key]:c})/n});
+    return{avoided:k-after,baseline:k/n,projected:after/n,bottleneck:bn,has_bottleneck:!!sh&&sh[bn]>0,series};
+  }
+  if(name==='promise'){
+    const rr=rowsOf(P.route),t=+P.target||.05,n=rr.length||1;let x=0;
+    while(x<60&&rr.filter(r=>r.delay-x>0).length/n>t)x++;
+    return{extra_days:x,late_after:rr.filter(r=>r.delay-x>0).length/n};
+  }
+  if(name==='promise-policy'){
+    const out=[];[...list].filter(s=>!s.low).sort((a,b)=>b.k-a.k).slice(0,3).forEach(s=>[.85,.9,.95].forEach(sl=>{
+      const need=Math.ceil(quant(s.rows.map(r=>r.total),sl)),av=s.rows.filter(r=>r.late&&r.total<=need).length,nw=s.rows.filter(r=>!r.late&&r.total>need).length;
+      out.push({route:toApi(s.route),service_level:sl,needed_days:need,late_rate:s.rows.filter(r=>r.total>need).length/s.n,avoidable_orders:av,new_late_orders:nw,net_avoided_orders:av-nw})}));
+    return{rows:out};
+  }
+  if(name==='sellers')return{rows:sellerStats()};
+  if(name==='portfolio'){
+    const ss=sellerStats(),tot=ss.reduce((s,x)=>s+x.late_orders,0)||1,sorted=[...ss].sort((a,b)=>b.late_orders-a.late_orders);
+    let acc=0,kk=0;for(const x of sorted){acc+=x.late_orders;kk++;if(acc>=tot*.5)break}
+    return{segments:['ưu tiên','ổn định','cần thêm dữ liệu'].map(sg=>{const g=ss.filter(x=>x.segment===sg),lo=g.reduce((s,x)=>s+x.late_orders,0);return{segment:sg,n_sellers:g.length,late_orders:lo,late_orders_share:lo/tot}}),
+      summary:{top_seller_share_late_orders:sorted.slice(0,10).reduce((s,x)=>s+x.late_orders,0)/tot},coverage_50_percent:{k:kk}};
+  }
+  if(name==='brief'){
+    const B=buildBrief(rows),rt=c=>`Rút: duyệt ${num(c.appr)} + chuẩn bị ${num(c.prep)} + vận chuyển ${num(c.transit)} ngày`;
+    const tight=list.map(s=>({s,need:Math.ceil(quant(s.rows.map(r=>r.total),.95)),med:quant(s.rows.map(r=>r.promise),.5)})).filter(x=>x.med<x.need-1);
+    const before=tight.reduce((a,x)=>a+x.s.k,0),after=tight.reduce((a,x)=>a+x.s.rows.filter(r=>r.total>x.need).length,0),nw=tight.reduce((a,x)=>a+x.s.rows.filter(r=>!r.late&&r.total>x.need).length,0);
+    return{
+      config:{base_rate:B.L,base_rate_label:'toàn bộ đơn-tuyến đang xem (dữ liệu mẫu)'},
+      parameters:{min_orders:MIN_ORDERS,low_sample_threshold:LOW_SAMPLE,seller_min_orders:MIN_SELLER},
+      route_actions:B.routes.map(r=>({route:toApi(r.route),level:lvApi(r.level),owner:OWN.ops,action:`Tránh ~${r.avoided}/${r.k} đơn trễ (${ciTxt(r.ci)}). ${rt(r.cut)}`})),
+      payment_actions:B.pay.map(p=>({payment_type:p.pay,status:evid(p.ci,p.low)[0],owner:OWN.pay,action:`Tránh ~${p.avoided} đơn trễ (${ciTxt(p.ci)}), rút duyệt ${num(p.cut)} ngày; ${int(p.n)} đơn`})),
+      promise_actions:B.promTop.map(x=>({route:toApi(x.route),weight_band:'tất cả',label:x.st,owner:OWN.prom,action:`Cam kết trung vị ${num(x.med)} → cần ${x.need} ngày: ròng +${x.net} đơn được phân loại lại là đúng hạn`})),
+      seller_actions:B.sellers.map(s=>({seller_id:s.id,level:'',segment:s.prio?'ưu tiên':'cần thêm dữ liệu',owner:OWN.sell,action:`${s.k}/${s.n} đơn trễ (${pct(s.p)}), vượt mức hệ thống ~${num(s.excess,0)} đơn`})),
+      low_sample_actions:B.more.map(s=>({route:toApi(s.route),level:lvApi(s.level),status:LV[s.level][0],owner:OWN.ops,action:`${s.n} đơn, tỷ lệ trễ ${pct(s.p)}; cần thêm ít nhất ${LOW_SAMPLE-s.n} đơn`})),
+      promise_summary:{late_orders_before:before,late_orders_after:after,net_avoided_orders:before-after,new_late_orders:nw}};
+  }
+  throw new Error('Endpoint không tồn tại: '+name);
+}
+function dssRequest(path,opts={}){return new Promise((ok,no)=>setTimeout(()=>{try{ok(sampleDss(path,opts))}catch(e){no(e)}},150))}
+// ---- hết khối [A] ----
+
+// ---- [B] API THẬT (đang TẮT): muốn bật thì xoá hai dòng dấu mở / dấu đóng comment khối bao quanh ----
+/*
+const DSS_SOURCE='api';
+const DSS_BADGE=['Dữ liệu thật · API','Số liệu lấy trực tiếp từ /api/dss/*, không có dữ liệu mẫu'];
+const API_BASE=(window.DSS_API_BASE||'http://127.0.0.1:8000/api/dss/').replace(/\/?$/,'/');
+async function requestJson(url,{signal,method='GET',body}={}){
+  const res=await fetch(url,{signal,method,headers:body?{'Content-Type':'application/json','Accept':'application/json'}:{Accept:'application/json'},body:body?JSON.stringify(body):undefined});
+  if(!res.ok){let msg=`HTTP ${res.status}`;try{const b=await res.json();if(b&&b.error)msg=b.error}catch(e){}throw new Error(msg)}
+  return res.json();
+}
+function dssRequest(path,{signal,method,body}={}){return requestJson(API_BASE+path,{signal,method,body})}
+*/
+// ---- hết khối [B] ----
+
+// ---- Phần dùng chung cho cả hai nguồn ----
+const SimCtx=React.createContext(false);
+function useApi(path){
+  const simErr=React.useContext(SimCtx);
+  const [st,setSt]=useState({loading:!!path,error:null,data:null});
+  const [tick,setTick]=useState(0);
+  useEffect(()=>{
+    if(!path){setSt({loading:false,error:null,data:null});return}
+    const c=new AbortController();let alive=true;
+    setSt({loading:true,error:null,data:null});
+    dssRequest(path,{signal:c.signal,sim:simErr})
+      .then(d=>{if(alive)setSt({loading:false,error:null,data:d})})
+      .catch(e=>{if(alive&&e.name!=='AbortError')setSt({loading:false,error:e.message||'Lỗi kết nối',data:null})});
+    return()=>{alive=false;c.abort()};
+  },[path,tick,simErr]);
+  return{...st,retry:()=>setTick(t=>t+1)};
+}
+const qs=obj=>Object.entries(obj).filter(([,v])=>v!==''&&v!=null).map(([k,v])=>`${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+const STAGE_NAMES={approval:'Duyệt thanh toán',prep:'Người bán chuẩn bị',transit:'Vận chuyển'};
+const pctSigned=v=>v==null?'—':(v>0?'+':'')+vn(v*100,1)+'%';
+const routeLabel=r=>r==null?'—':String(r).replace('->','→');
+const shortId=id=>{const s=String(id);return s.length>12?s.slice(0,12)+'…':s};
+const detailOf=l=>{try{const j=JSON.parse(l.detail||'{}');return j.detail||j.action||l.detail||''}catch(e){return l.detail||''}};
+const fmtTime=s=>{try{return new Date(s).toLocaleString('vi-VN')}catch(e){return s||''}};
+
+/* Nút sao chép mã (clipboard API, fallback execCommand khi mở file:// hoặc http). */
+function CopyBtn({text,label='mã người bán'}){
+  const [ok,setOk]=useState(false);
+  const copy=async e=>{
+    e.stopPropagation();
+    const v=String(text);
+    try{await navigator.clipboard.writeText(v)}
+    catch(_){const ta=document.createElement('textarea');ta.value=v;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch(__){}document.body.removeChild(ta)}
+    setOk(true);setTimeout(()=>setOk(false),1500);
+  };
+  return <button type="button" className="btn ml-1 !px-1.5 !py-0 text-[11px] align-middle" onClick={copy} title={'Sao chép '+label+' đầy đủ'} aria-label={'Sao chép '+label}>{ok?'Đã chép ✓':'Chép'}</button>;
+}
+const InlineError=({msg,retry})=><p className="text-xs text-red-700 bg-red-50 rounded px-2 py-1" role="alert">{msg}. <button className="underline" onClick={retry}>Tải lại</button></p>;
+const Status=({level})=>{const [t,c]=LV[level]||LV.none;return <Pill t={t} c={c}/>};
+
+/* Tooltip 1 dòng (fixed nên không bị cắt bởi vùng cuộn); hiện khi rê chuột hoặc focus bàn phím. */
+function Tip({t,children}){const [pos,setPos]=useState(null),ref=useRef(null);
+  const show=()=>{if(!ref.current)return;const r=ref.current.getBoundingClientRect();setPos({x:Math.min(Math.max(r.left+r.width/2,130),window.innerWidth-130),y:r.bottom+6})};
+  return <span ref={ref} tabIndex={0} className="border-b border-dotted border-slate-400 cursor-help" onMouseEnter={show} onMouseLeave={()=>setPos(null)} onFocus={show} onBlur={()=>setPos(null)} onKeyDown={e=>{if(e.key==='Escape')setPos(null)}}>
+    {children}<span className="sr-only"> ({t})</span>
+    {pos&&<span aria-hidden="true" style={{position:'fixed',left:pos.x,top:pos.y,transform:'translateX(-50%)',maxWidth:250}} className="z-50 bg-slate-900 text-white text-[11px] font-normal leading-snug rounded px-2 py-1 shadow-lg">{t}</span>}</span>}
+const TIP={ci:'Khoảng tin cậy 95% do API tính (Wilson). Tuyến không gắn cờ không có khoảng tin cậy trong /routes.',net:'Ròng = đơn chuyển sang đúng hạn trừ đơn trễ mới phát sinh.'};
+/* Nút mở bảng nhỏ (popover); đóng bằng Esc hoặc bấm ra ngoài. */
+function Pop({label,children,w='w-80'}){const [open,setOpen]=useState(false),ref=useRef(null);
+  useEffect(()=>{if(!open)return;const h=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false)},k=e=>{if(e.key==='Escape')setOpen(false)};
+    document.addEventListener('mousedown',h);document.addEventListener('keydown',k);return()=>{document.removeEventListener('mousedown',h);document.removeEventListener('keydown',k)}},[open]);
+  return <div className="relative" ref={ref}><button className="btn" aria-expanded={open} aria-haspopup="dialog" onClick={()=>setOpen(!open)}>{label}</button>
+    {open&&<div role="dialog" aria-label={label} className={'absolute right-0 mt-1 z-50 panel shadow-lg p-3 max-w-[92vw] '+w}>{children}</div>}</div>}
+
+/* ============ KHUNG 6 KHỐI ============ */
+const BLOCKS=[
+  ['route','1','Tuyến ưu tiên','Route Priority','Tuyến nào trễ nhiều một cách đáng tin cậy, cần xử lý trước?','Quản lý vận hành logistics'],
+  ['attr','2','Giai đoạn nghẽn','Attribution','Trong các đơn trễ của tuyến, giai đoạn nào chiếm tỷ trọng lớn?','Quản lý vận hành, đơn vị vận chuyển'],
+  ['cut','3','Mức rút ngắn','Feasible cut','Rút ngắn bao nhiêu ngày thì tránh được bao nhiêu đơn trễ?','Quản lý vận hành logistics'],
+  ['promise','4','Ngày cam kết','Promise policy','Ngày cam kết hiện tại có phù hợp không?','Chủ chính sách cam kết giao hàng'],
+  ['seller','5','Người bán','Seller scorecard','Người bán nào cần được can thiệp?','Bộ phận hỗ trợ người bán'],
+  ['brief','6','Tổng hợp hành động','Decision Brief','Gom lại thành năm nhóm hành động, mỗi nhóm có người phụ trách.','Tất cả']];
+const META=Object.fromEntries(BLOCKS.map(b=>[b[0],b]));
+const SG={'ưu tiên':['Ưu tiên','bg-orange-100 text-orange-900'],'ổn định':['Ổn định','bg-teal-50 text-teal-900'],'cần thêm dữ liệu':['Cần thêm dữ liệu','bg-slate-100 text-slate-700']};
+const PS={tight:['Cam kết chặt','bg-amber-100 text-amber-900'],ok:['Phù hợp','bg-teal-50 text-teal-900'],loose:['Cam kết rộng','bg-slate-100 text-slate-700']};
+
+const Badge=({n})=><span className="shrink-0 w-6 h-6 rounded-full bg-teal-700 text-white text-xs font-semibold grid place-items-center" aria-hidden="true">{n}</span>;
+const Block=({id,aside,children})=>{const [,n,title]=META[id];
+  return <section id={'dss-'+id} className="panel p-4 scroll-mt-28" aria-labelledby={'h-'+id}>
+    <div className="flex flex-wrap items-start justify-between gap-3"><div className="flex gap-3 min-w-0 items-center"><Badge n={n}/>
+      <h2 id={'h-'+id} className="font-semibold leading-tight">{title}</h2></div>
+      {aside&&<div className="flex flex-wrap items-center gap-1">{aside}</div>}</div>
+    <div className="mt-3">{children}</div></section>};
+const Takeaway=({children})=><p className="text-sm bg-teal-50 border border-teal-100 rounded px-3 py-2 mb-3">{children}</p>;
+const Note=({children})=><p className="text-[11px] text-slate-500 mt-2">{children}</p>;
+const NoItem=()=><p className="text-xs text-slate-500 py-2">Không có mục nào đủ điều kiện.</p>;
+const KV=({k,children})=><div className="flex items-center justify-between gap-3 py-1.5 border-b border-slate-100 text-sm"><span className="text-slate-600">{k}</span><b>{children}</b></div>;
+
+/* Thanh tỷ trọng có dấu: mốc 0 ở giữa; φ âm vẽ sang trái, không cắt về 0. */
+function SignedBar({v,max,color}){
+  const w=max>0?Math.min(Math.abs(v||0)/max,1)*50:0;
+  return <div className="relative h-3 bg-slate-100 rounded-sm" aria-hidden="true">
+    <div className="absolute inset-y-0 left-1/2 w-px bg-slate-300"/>
+    <div className="absolute inset-y-0 rounded-sm" style={v>=0?{left:'50%',width:w+'%',background:color}:{right:'50%',width:w+'%',background:color}}/></div>;
+}
+
+/* Decision Brief: mỗi dòng có hai thao tác: xem chi tiết và ghi nhận (chỉ ghi log). */
+function BriefList({rows,done,onRec,onView}){return rows.length?<>{rows.map(r=><div key={r.key} className="border-t border-slate-100 py-2 text-xs flex gap-2 items-start">
+  {r.view?<button className="text-left min-w-0 flex-1 rounded hover:bg-slate-50" onClick={()=>onView(r.view)} title="Bấm để xem chi tiết"><div><b>{r.main}</b> {r.pill}</div><div className="text-slate-600">{r.sub}</div></button>
+    :<div className="min-w-0 flex-1"><div><b>{r.main}</b> {r.pill}</div><div className="text-slate-600">{r.sub}</div></div>}
+  {r.copy&&<CopyBtn text={r.copy}/>}
+  <button className="btn shrink-0" disabled={done(r)} onClick={()=>onRec(r)}>{done(r)?'Đã ghi nhận (không thực thi)':'Ghi nhận khuyến nghị'}</button></div>)}</>:<NoItem/>}
+const BriefGroup=({title,owner,src,children})=><section className="panel p-3"><div className="flex items-start justify-between gap-2"><h3 className="font-semibold text-sm">{title}</h3>
+  <button className="text-[11px] text-teal-800 underline shrink-0" onClick={()=>document.getElementById('dss-'+src)?.scrollIntoView({behavior:'smooth',block:'start'})}>Từ khối {META[src][1]}</button></div>
+  <div className="text-[11px] text-slate-500 mb-1" title={owner}>Phụ trách: {owner}</div>{children}</section>;
+
+/* ============ TAB DSS ============ */
+function Dss({year,setYear,initRoute}){
+  const [sort,setSort]=useState('rate'),[sel,setSel]=useState(initRoute?String(initRoute).replace('→','->'):null),[from,setFrom]=useState(''),[to,setTo]=useState(''),[showAll,setShowAll]=useState(false),[q,setQ]=useState(.5),
+    [cut,setCut]=useState({approval:0,prep:0,transit:0}),[target,setTarget]=useState(.05),[tab,setTab]=useState(null),[openSupport,setOpenSupport]=useState(false),[toast,setToast]=useState(null),[posting,setPosting]=useState(false);
+
+  const brief=useApi(`brief?${qs({year})}`);
+  const routesApi=useApi(`routes?${qs({year,top:1000})}`);
+  const attrApi=useApi(`attribution?${qs({year,q})}`);
+  const policyApi=useApi(`promise-policy?${qs({year})}`);
+  const sellersApi=useApi(`sellers?${qs({year})}`);
+  const portfolioApi=useApi(`portfolio?${qs({year})}`);
+  const logApi=useApi('actions');
+
+  const firstYear=useRef(true);
+  useEffect(()=>{if(firstYear.current){firstYear.current=false;return}setSel(null);setFrom('');setTo('');setShowAll(false)},[year]);
+
+  const cfg=brief.data&&brief.data.config,params=brief.data&&brief.data.parameters;
+  const flagged=routesApi.data||[],ranked=attrApi.data&&attrApi.data.ranked_routes||[],minOrders=params?params.min_orders:null;
+  const flagMap=new Map(flagged.map(r=>[r.route,r]));
+  const routeRows=minOrders==null?[]:ranked.filter(r=>r.order_routes>=minOrders).map(r=>({...r,...(flagMap.get(r.route)||{})}));
+  const cur=routeRows.find(r=>r.route===sel)||routeRows[0]||null;
+  const scenarioApi=useApi(cur?`scenario?${qs({year,route:cur.route,approval:cut.approval,prep:cut.prep,transit:cut.transit})}`:'');
+  const promiseApi=useApi(cur?`promise?${qs({year,route:cur.route,target})}`:'');
+  const attrRow=cur&&attrApi.data?attrApi.data.rows.find(r=>r.route===cur.route)||null:null;
+  const records=logApi.data||[];
+
+  const record=async({id,level,text})=>{
+    setPosting(true);
+    try{
+      await dssRequest('actions',{method:'POST',body:{action:'recommendation',route:String(id||'').slice(0,20),level:String(level||'').slice(0,10),detail:text}});
+      logApi.retry();setToast('Đã ghi nhận khuyến nghị (chỉ ghi log, không thực thi).');
+    }catch(e){setToast('Không ghi nhận được: '+e.message)}
+    finally{setPosting(false)}
+  };
+  const isDone=(id,text)=>records.some(l=>l.action==='recommendation'&&l.route===String(id||'').slice(0,20)&&detailOf(l)===text);
+  const jump=id=>{const el=document.getElementById('dss-'+id);if(el)el.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'})};
+  const go=id=>{if(id==='promise'||id==='seller'){setOpenSupport(true);requestAnimationFrame(()=>jump(id))}else jump(id)};
+  const onView=v=>{if(v.type==='route'){setSel(v.route);jump('attr')}else go(v.grp)};
+
+  const frame=(curRow,body)=><div className="space-y-4">
+    <div className="panel px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
+      <span className="text-[11px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-900 font-medium" title={DSS_BADGE[1]}>{DSS_BADGE[0]}</span>
+      <div className="flex flex-wrap items-center gap-2"><YearSel year={year} setYear={setYear}/>
+          <Pop label="Cách đọc số liệu" w="w-96"><ul className="text-xs space-y-1.5 list-disc pl-4 text-slate-700">
+            <li>Đơn vị phân tích là <b>đơn-tuyến (order-route)</b>: một đơn có nhiều người bán sẽ tạo nhiều dòng và có thể nằm trên nhiều tuyến.</li>
+            <li>Số “tránh được” là mô phỏng theo luật, không phải tác động nhân quả; hệ thống không thực thi hành động vận hành.</li>
+            <li>Tỷ trọng giai đoạn là nhãn mô tả, không phải nguyên nhân; tỷ trọng có dấu nên có thể âm.</li>
+            <li>Khoảng tin cậy 95% do API tính (Wilson); nếu chứa 0 thì kết luận là “chưa đủ bằng chứng”.</li>
+            <li>Cảnh báo mẫu nhỏ (&lt; low_sample_threshold) và “chưa chắc chắn” (CI chứa ngưỡng) do API gắn cờ; UI không tự tính lại.</li>
+            <li>Rút ngắn 1 ngày được coi là giao sớm hơn 1 ngày. Đổi ngày cam kết chỉ đổi định nghĩa “trễ”, không rút ngắn thời gian giao.</li>
+            <li>Các nhóm trong Tổng hợp hành động chồng lấn trên cùng các đơn trễ nên không cộng số giữa các nhóm.</li>
+            <li>Phiếu người bán và điểm đánh giá chỉ là liên hệ, chưa hiệu chỉnh theo cơ cấu tuyến; “trễ vượt tỷ lệ chung” không phải số đơn tránh được.</li>
+            <li className="text-slate-500">Nút “Ghi nhận khuyến nghị” chỉ ghi log (POST /actions), không thực thi hành động.</li>
+            <li className="text-slate-500">Wilson, Shapley (có dấu), bootstrap 300 lần (seed 42) đều do API tính; giao diện chỉ hiển thị.</li></ul></Pop>
+          <Pop label={`Đã ghi nhận (${records.length})`} w="w-96">
+            {logApi.error&&<InlineError msg={logApi.error} retry={logApi.retry}/>}
+            {records.length?<ul className="text-xs max-h-64 overflow-y-auto">{records.map((l,i)=><li key={i} className="border-t border-slate-100 py-1.5 first:border-0">
+              <span className="text-slate-500">{fmtTime(l.created_at)}</span> · {l.action}: <b>{routeLabel(l.route)}</b>{l.level&&<> · <Status level={l.level}/></>}
+              <div className="text-slate-600">{detailOf(l)}</div></li>)}</ul>
+              :<p className="text-xs text-slate-500">Chưa có ghi nhận nào.</p>}
+            <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100"><span className="text-[11px] text-slate-500">Chỉ ghi log, không thực thi hành động.</span>
+              <button className="btn" onClick={logApi.retry}>Tải lại</button></div></Pop></div></div>
+    {curRow&&<div className="sticky top-14 z-20 panel bg-slate-50 px-4 py-1.5 text-xs flex flex-wrap items-center gap-x-3 gap-y-1"><span className="text-slate-500">Đang xem tuyến</span><b className="text-sm">{routeLabel(curRow.route)}</b><span>{pct(curRow.late_rate)} trễ <span className="text-slate-500">({int(curRow.late_orders)}/{int(curRow.order_routes)} đơn-tuyến)</span></span><Status level={curRow.level}/>
+        {lowSample(curRow)&&<Pill t="Mẫu nhỏ" c="bg-slate-100 text-slate-700" title={lowTip}/>}
+        {curRow.root_cause&&curRow.root_cause.owner&&<span className="text-slate-500">Phụ trách giai đoạn: {curRow.root_cause.owner}</span>}
+        <button className="underline text-teal-800" onClick={()=>jump('route')}>Đổi tuyến</button></div>}
+    {body}
+    <div className="fixed bottom-4 right-4 z-50 max-w-[90vw]" role="status" aria-live="polite">{toast&&<div className="bg-slate-900 text-white text-sm rounded px-4 py-2 shadow-lg flex items-center gap-3">{toast}<button className="text-slate-300" aria-label="Đóng" onClick={()=>setToast(null)}>×</button></div>}</div></div>;
+
+  if(brief.error)return frame(null,<Errored msg={brief.error} retry={brief.retry}/>);
+  if(brief.loading||!brief.data)return frame(null,<><Skeleton h={260}/><Skeleton h={260}/></>);
+  if(!cfg||!params)return frame(null,<Errored msg="Thiếu config/parameters trong /brief" retry={brief.retry}/>);
+  if(routesApi.error||attrApi.error)return frame(null,<Errored msg={routesApi.error||attrApi.error} retry={routesApi.error?routesApi.retry:attrApi.retry}/>);
+  if(routesApi.loading||attrApi.loading||!attrApi.data)return frame(null,<><Skeleton h={260}/><Skeleton h={260}/></>);
+  if(!routeRows.length)return frame(null,<Empty msg="Chưa có tuyến nào đủ số đơn để phân tích"/>);
+
+  const ends=s=>String(s.route).split('->'),tally=a=>Object.entries(a).sort((x,y)=>x[0].localeCompare(y[0]));
+  const fromOpts=tally(routeRows.reduce((m,s)=>{const o=ends(s)[0];m[o]=(m[o]||0)+s.order_routes;return m},{})),
+    toOpts=tally(routeRows.filter(s=>!from||ends(s)[0]===from).reduce((m,s)=>{const d=ends(s)[1];m[d]=(m[d]||0)+s.order_routes;return m},{})),
+    toEff=toOpts.some(([d])=>d===to)?to:'',filtered=!!(from||toEff),
+    pool=routeRows.filter(s=>(!from||ends(s)[0]===from)&&(!toEff||ends(s)[1]===toEff)),
+    sorted=[...pool].sort((a,b)=>sort==='rate'?b.late_rate-a.late_rate:b.late_orders-a.late_orders),
+    shownRows=(showAll||filtered)?sorted:sorted.slice(0,10);
+  const nRed=flagged.filter(s=>s.level==='red').length,nYel=flagged.filter(s=>s.level==='amber').length;
+  const lowSample=s=>!!params&&s.order_routes<params.low_sample_threshold;
+  const lowTip=params?`Dưới ngưỡng low_sample_threshold = ${int(params.low_sample_threshold)} đơn-tuyến`:'Dưới ngưỡng mẫu nhỏ';
+
+  const shares=attrRow&&attrRow.late_rate>0?[
+    ['Duyệt thanh toán',attrRow.cause_share_approval,'#94a3b8'],
+    ['Người bán chuẩn bị',attrRow.cause_share_prep,'#0f766e'],
+    ['Vận chuyển',attrRow.cause_share_transit,'#b45309'],
+    ['Chưa giải thích được (liên quan ngày cam kết)',attrRow.share_promise,'#64748b']]:[];
+  const shareMax=Math.max(0,...shares.map(([,v])=>Math.abs(v||0)));
+  const topStage=attrRow&&attrRow.top_stage?STAGE_NAMES[attrRow.top_stage]:null;
+  const topShare=attrRow&&attrRow.top_stage?attrRow['cause_share_'+attrRow.top_stage]:null;
+
+  const sc=scenarioApi.data,seriesMax=sc&&sc.series&&sc.series.length?sc.series[sc.series.length-1].cut:0,anyCut=cut.approval>0||cut.prep>0||cut.transit>0;
+  const scenText=sc&&anyCut?`Kịch bản cắt duyệt ${num(cut.approval)}, chuẩn bị ${num(cut.prep)}, vận chuyển ${num(cut.transit)} ngày → tránh ${int(sc.avoided)} đơn trễ`:'';
+  const pp=promiseApi.data;
+
+  const br=brief.data,ownerOf=rows=>Array.from(new Set((rows||[]).map(r=>r.owner).filter(Boolean))).join(' · ')||'—';
+  const briefRoute=(br.route_actions||[]).map(a=>({key:'r|'+a.route,g:'route',id:a.route,level:(flagMap.get(a.route)||{}).level,main:routeLabel(a.route),pill:<Status level={(flagMap.get(a.route)||{}).level}/>,
+    owner:a.owner,sub:a.action,text:a.action,view:{type:'route',route:a.route}}));
+  const briefPay=(br.payment_actions||[]).map(a=>({key:'p|'+a.payment_type,g:'brief',id:a.payment_type,level:'',main:a.payment_type,pill:<Pill t={a.status} c="bg-teal-50 text-teal-900" wrap/>,
+    owner:a.owner,sub:a.action,text:a.action,view:null}));
+  const briefProm=(br.promise_actions||[]).map(a=>({key:'c|'+a.route+'|'+a.weight_band,g:'promise',id:a.route,level:'',main:routeLabel(a.route)+' × '+a.weight_band,
+    pill:<Pill t={(PS[a.label]||PS.ok)[0]} c={(PS[a.label]||PS.ok)[1]}/>,owner:a.owner,sub:a.action,text:a.action,view:{type:'promise',grp:'promise'}}));
+  const briefSell=(br.seller_actions||[]).map(a=>({key:'s|'+a.seller_id,g:'seller',id:a.seller_id,level:a.level,main:shortId(a.seller_id),copy:a.seller_id,
+    pill:<Pill t={a.segment} c={(SG[a.segment]||SG['cần thêm dữ liệu'])[1]}/>,owner:a.owner,sub:a.action,text:a.action,view:{type:'seller',grp:'seller'}}));
+  const briefMore=(br.low_sample_actions||[]).map(a=>({key:'m|'+a.route,g:'brief',id:a.route,level:a.level,main:routeLabel(a.route),pill:<Pill t={a.status} c="bg-slate-100 text-slate-700"/>,
+    owner:a.owner,sub:a.action,text:a.action,view:{type:'route',route:a.route}}));
+  const doneFor=r=>isDone(r.id,r.text),recFor=r=>record({id:r.id,level:r.level||'',text:r.text}),listProps={done:doneFor,onRec:recFor,onView};
+
+  const port=portfolioApi.data,segs=port?port.segments:[],segNames=segs.map(s=>s.segment),activeTab=tab&&segNames.includes(tab)?tab:segNames[0]||null,
+    shownSellers=(sellersApi.data&&sellersApi.data.rows||[]).filter(s=>s.segment===activeTab).sort((a,b)=>b.late_orders-a.late_orders).slice(0,10);
+
+  return frame(cur,<>
+    <nav aria-label="Luồng quyết định" className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
+      {BLOCKS.map(([id,n,title])=><button key={id} onClick={()=>go(id)} className="panel text-left p-2.5 hover:bg-slate-50">
+        <div className="flex items-center gap-2"><Badge n={n}/><span className="text-sm font-semibold leading-tight">{title}</span></div></button>)}
+    </nav>
+
+    <Block id="route" aside={[['rate','Xếp theo tỷ lệ trễ'],['count','Xếp theo số đơn trễ']].map(([k,t])=><button key={k} className={'btn '+(sort===k?'btn-main':'')} aria-pressed={sort===k} onClick={()=>setSort(k)}>{t}</button>)}>
+      <Takeaway><b>{nRed} tuyến đỏ</b> và <b>{nYel} tuyến vàng</b> trong {routeRows.length} tuyến đủ mẫu (≥ {int(minOrders)} đơn-tuyến). Chọn một tuyến để xem các khối 2, 3 và 4.</Takeaway>
+      <div className="flex flex-wrap items-center gap-2 mb-2">
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Lọc tuyến theo điểm đi và điểm đến">
+          <label className="text-xs text-slate-600 flex items-center gap-2">Điểm đi
+            <select className="sel" value={from} onChange={e=>{setFrom(e.target.value);setTo('')}}><option value="">Tất cả</option>{fromOpts.map(([o])=><option key={o} value={o}>{o}</option>)}</select></label>
+          <span aria-hidden="true" className="text-slate-400">→</span>
+          <label className="text-xs text-slate-600 flex items-center gap-2">Điểm đến
+            <select className="sel" value={toEff} onChange={e=>setTo(e.target.value)}><option value="">Tất cả</option>
+              {toOpts.map(([d])=><option key={d} value={d}>{d}</option>)}</select></label>
+          {filtered&&<button className="btn" onClick={()=>{setFrom('');setTo('')}}>Xoá lọc</button>}</div>
+        <span className="text-xs text-slate-500" aria-live="polite">Hiển thị {shownRows.length}/{pool.length} tuyến</span>
+        {!filtered&&pool.length>10&&<button className="btn" aria-expanded={showAll} onClick={()=>setShowAll(!showAll)}>{showAll?'Thu gọn (top 10)':`Xem tất cả (${pool.length})`}</button>}</div>
+      {!pool.length?<p className="text-sm text-slate-600 py-4 text-center">Không có tuyến nào khớp bộ lọc điểm đi / điểm đến. <button className="underline text-teal-800" onClick={()=>{setFrom('');setTo('')}}>Xoá lọc</button></p>:<>
+        <div className="hidden md:block overflow-auto max-h-[30rem]"><table className="w-full text-xs"><thead className="text-left text-slate-500 bg-white sticky top-0 z-10"><tr>
+          <th className="py-1 px-2 sticky left-0 z-20 bg-white">Tuyến</th><th className="text-right px-2">Đơn-tuyến</th><th className="text-right px-2">Trễ</th><th className="text-right px-2">Tỷ lệ trễ</th>
+          <th className="text-right px-2"><Tip t={TIP.ci}>Khoảng tin cậy</Tip></th><th className="px-2">Trạng thái</th></tr></thead>
+          <tbody>{shownRows.map(s=>{const on=s.route===cur.route;return <tr key={s.route} onClick={()=>setSel(s.route)} className={'border-t border-slate-100 cursor-pointer '+(on?'bg-teal-50':'bg-white hover:bg-slate-50')}>
+            <td className={'py-1.5 px-2 font-medium sticky left-0 bg-inherit border-l-4 '+(on?'border-teal-600':'border-transparent')}><button className="text-left" aria-pressed={on}>{routeLabel(s.route)}{on&&<span className="ml-2 text-[11px] font-normal text-teal-800">● đang xem</span>}</button></td>
+            <td className="text-right px-2">{int(s.order_routes)}</td><td className="text-right px-2">{int(s.late_orders)}</td><td className="text-right px-2 font-semibold">{pct(s.late_rate)}</td>
+            <td className="text-right px-2 text-slate-600">{s.ci_low==null?'—':pct(s.ci_low)+' – '+pct(s.ci_high)}</td><td className="px-2"><Status level={s.level}/>{lowSample(s)&&<> <Pill t="Mẫu nhỏ" c="bg-slate-100 text-slate-700"/></>}</td></tr>})}</tbody></table></div>
+        <ul className="md:hidden space-y-2 max-h-[32rem] overflow-y-auto">{shownRows.map(s=>{const on=s.route===cur.route;return <li key={s.route}><button aria-pressed={on} onClick={()=>setSel(s.route)} className={'w-full text-left panel p-3 '+(on?'border-teal-600 bg-teal-50':'')}>
+          <div className="flex items-center justify-between gap-2"><b>{routeLabel(s.route)}{on&&<span className="ml-2 text-[11px] font-normal text-teal-800">● đang xem</span>}</b><span className="flex gap-1"><Status level={s.level}/>{lowSample(s)&&<Pill t="Mẫu nhỏ" c="bg-slate-100 text-slate-700"/>}</span></div>
+          <div className="text-xs text-slate-600 mt-1">{int(s.order_routes)} đơn-tuyến · {int(s.late_orders)} trễ · <b>{pct(s.late_rate)}</b></div><div className="text-[11px] text-slate-500">Khoảng tin cậy {s.ci_low==null?'—':pct(s.ci_low)+' – '+pct(s.ci_high)}</div></button></li>})}</ul></>}
+      <Note>Tỷ lệ trễ chung <b>{pct(cfg.base_rate)}</b> (vs {cfg.base_rate_label}). Đỏ khi ≥ 2 lần, vàng khi ≥ 1,5 lần mức chung. Chỉ tuyến có ít nhất {int(minOrders)} đơn-tuyến mới xuất hiện trong danh sách chọn.</Note>
+    </Block>
+
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+      <Block id="attr">
+        {attrApi.error?<InlineError msg={attrApi.error} retry={attrApi.retry}/>:attrRow&&attrRow.late_rate>0?<>
+          <Takeaway>Giai đoạn chiếm tỷ trọng lớn nhất trong đơn trễ của <b>{routeLabel(cur.route)}</b>: <b>{topStage||'—'}</b> ({pctSigned(topShare)}).</Takeaway>
+          <div className="space-y-2">{shares.map(([t,v,col])=><div key={t}><div className="flex justify-between text-xs"><span>{t}</span><b>{pctSigned(v)}</b></div><SignedBar v={v} max={shareMax} color={col}/></div>)}</div>
+          <Note>Tỷ trọng có dấu: φ có thể âm khi giai đoạn ngắn hơn benchmark; thanh vẽ từ mốc 0, không cắt về 0. Dựa trên {int(attrRow.orders)} đơn của tuyến này.</Note></>
+        :<p className="text-sm text-slate-600">{attrRow?'Tuyến này không có đơn trễ.':'Chưa có dữ liệu attribution cho tuyến này.'}</p>}
+        <details className="mt-3 text-xs"><summary className="cursor-pointer font-medium text-slate-700">Tùy chọn phân tích</summary>
+          <div className="mt-2 flex flex-wrap items-center gap-2"><span className="text-slate-600">So với mức</span>
+            {[[.5,'Trung vị (mặc định)'],[.25,'Tốt (P25)']].map(([v,t])=><button key={v} className={'btn '+(q===v?'btn-main':'')} aria-pressed={q===v} onClick={()=>setQ(v)}>{t}</button>)}</div></details>
+      </Block>
+
+      <Block id="cut" aside={<button className="btn" onClick={()=>setCut({approval:0,prep:0,transit:0})}>Xoá</button>}>
+        <div aria-live="polite" aria-atomic="true">
+          {sc&&anyCut?<Takeaway>Kịch bản này giúp <b>{routeLabel(cur.route)}</b> tránh được khoảng <b>{int(sc.avoided)}/{int(cur.late_orders)}</b> đơn trễ (tỷ lệ trễ {pct(sc.baseline)} → {pct(sc.projected)}).</Takeaway>
+            :<Takeaway>Kéo các thanh trượt để thử kịch bản cho <b>{routeLabel(cur.route)}</b>.</Takeaway>}</div>
+        {scenarioApi.error?<InlineError msg={scenarioApi.error} retry={scenarioApi.retry}/>:!sc?<Skeleton h={110}/>:<>
+          <div className="space-y-1.5">{[['approval','Duyệt thanh toán'],['prep','Người bán chuẩn bị'],['transit','Vận chuyển']].map(([k,t])=><label key={k} className="flex items-center gap-3 text-xs"><span className="w-36">{t}</span>
+            <input type="range" min="0" max={seriesMax} step="0.5" value={cut[k]} onChange={e=>setCut({...cut,[k]:+e.target.value})} className="flex-1" aria-label={'Rút ngắn '+t}/><b className="w-16 text-right">−{num(cut[k])} ngày</b></label>)}</div>
+          <div className="mt-3 bg-slate-50 rounded p-3 text-sm space-y-1">
+            <div>Giai đoạn nghẽn do API xác định: <b>{STAGE_NAMES[sc.bottleneck]||sc.bottleneck}</b>{cur.root_cause&&cur.root_cause.owner?<> · phụ trách <b>{cur.root_cause.owner}</b></>:null}{!sc.has_bottleneck&&<span className="text-slate-500"> (không có giai đoạn vượt mức trung bình)</span>}</div>
+            {sc.series&&sc.series.length>0&&<div className="text-[11px] text-slate-500">Độ nhạy do API trả: cắt giai đoạn nghẽn 0–{seriesMax} ngày, tỷ lệ trễ {pct(sc.series[0].projected)} → {pct(sc.series[sc.series.length-1].projected)}.</div>}
+            {anyCut&&<div className="pt-1"><button className="btn btn-main" disabled={posting} onClick={()=>record({id:cur.route,level:cur.level,text:scenText})}>Ghi nhận kịch bản</button></div>}</div></>}
+      </Block>
+    </div>
+
+    <details id="dss-support" className="panel p-4 scroll-mt-28" open={openSupport} onToggle={e=>setOpenSupport(e.currentTarget.open)}>
+      <summary className="cursor-pointer font-semibold">Phân tích hỗ trợ: Promise policy và Seller scorecard</summary>
+      <div className="mt-4 space-y-4">
+        <Block id="promise">
+          {promiseApi.error||policyApi.error?<InlineError msg={promiseApi.error||policyApi.error} retry={promiseApi.error?promiseApi.retry:policyApi.retry}/>:!pp?<Skeleton h={90}/>:<>
+            <Takeaway>Cần kéo dài cam kết của <b>{routeLabel(cur.route)}</b> thêm <b>{int(pp.extra_days)} ngày</b> để tỷ lệ trễ ≤ <b>{pct(target)}</b> (còn {pct(pp.late_after)}).</Takeaway>
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.6fr] gap-5">
+              <div><div className="flex items-center justify-between gap-3 py-1.5 border-b border-slate-100 text-sm"><span className="text-slate-600">Mục tiêu tỷ lệ trễ</span>
+                <select className="sel" value={target} onChange={e=>setTarget(+e.target.value)}><option value={0.05}>5%</option><option value={0.10}>10%</option></select></div>
+                <KV k="Số ngày cần kéo dài">{int(pp.extra_days)} ngày</KV><KV k="Tỷ lệ trễ sau khi kéo dài">{pct(pp.late_after)}</KV>
+                <KV k="Tỷ lệ trễ hiện tại">{pct(cur.late_rate)}</KV></div>
+              <div className="overflow-x-auto"><table className="w-full text-xs"><thead className="text-left text-slate-500"><tr><th className="py-1 px-2">Tuyến</th><th className="text-right px-2">Mức phục vụ</th><th className="text-right px-2">Ngày cam kết cần</th><th className="text-right px-2">Tỷ lệ trễ</th><th className="text-right px-2">Đơn tránh được</th><th className="text-right px-2">Đơn trễ mới</th><th className="text-right px-2"><Tip t={TIP.net}>Chênh ròng</Tip></th></tr></thead>
+                <tbody>{(policyApi.data&&policyApi.data.rows||[]).map((v,i)=><tr key={i} className="border-t border-slate-100"><td className="py-1.5 px-2 font-medium">{routeLabel(v.route)}</td><td className="text-right px-2">{pct(v.service_level)}</td>
+                  <td className="text-right px-2">{int(v.needed_days)}</td><td className="text-right px-2">{pct(v.late_rate)}</td><td className="text-right px-2">{int(v.avoidable_orders)}</td><td className="text-right px-2">{int(v.new_late_orders)}</td>
+                  <td className="text-right px-2 font-semibold">{v.net_avoided_orders>=0?'+':'−'}{int(Math.abs(v.net_avoided_orders))}</td></tr>)}</tbody></table></div></div>
+            {br.promise_summary&&<p className="text-xs text-slate-600 mt-3">Toàn hệ thống: trễ {int(br.promise_summary.late_orders_before)} → {int(br.promise_summary.late_orders_after)} đơn; ròng <b>{int(br.promise_summary.net_avoided_orders)}</b> (phát sinh {int(br.promise_summary.new_late_orders)} đơn trễ mới).</p>}
+            <Note>Đổi ngày cam kết chỉ đổi định nghĩa “trễ”, không rút ngắn thời gian giao. Bảng trên là mức phục vụ 85/90/95% cho các tuyến API chọn.</Note></>}
+        </Block>
+
+        <Block id="seller">
+          {portfolioApi.error||sellersApi.error?<InlineError msg={portfolioApi.error||sellersApi.error} retry={portfolioApi.error?portfolioApi.retry:sellersApi.retry}/>:!port?<Skeleton h={120}/>:<>
+            <Takeaway>Cần ít nhất <b>{int(port.coverage_50_percent.k)}</b> người bán để phủ 50% đơn trễ; 10 người đầu chiếm <b>{pct(port.summary.top_seller_share_late_orders)}</b> đơn trễ. Chọn một nhóm để xem danh sách.</Takeaway>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2" role="group" aria-label="Nhóm người bán">
+              {segs.map(s=><button key={s.segment} aria-pressed={activeTab===s.segment} onClick={()=>setTab(s.segment)} className={'panel text-left p-3 hover:bg-slate-50 '+(activeTab===s.segment?'border-teal-600 bg-teal-50':'')}>
+                <Pill t={s.segment} c={(SG[s.segment]||SG['cần thêm dữ liệu'])[1]}/><div className="text-2xl font-semibold mt-1">{int(s.n_sellers)} <span className="text-xs font-normal text-slate-600">người bán</span></div>
+                <div className="text-[11px] text-slate-500">{int(s.late_orders)} đơn trễ ({pct(s.late_orders_share)})</div></button>)}</div>
+            <div className="overflow-x-auto mt-3"><table className="w-full text-xs"><thead className="text-left text-slate-500"><tr><th className="py-1 px-2">Người bán</th><th className="text-right px-2">Đơn</th><th className="text-right px-2">Trễ</th><th className="text-right px-2">Tỷ lệ trễ</th><th className="text-right px-2"><Tip t="Tỷ lệ đơn có review ≤ 2 sao (API: bad_review_rate).">Tỷ lệ đánh giá xấu</Tip></th></tr></thead>
+              <tbody>{shownSellers.map(s=><tr key={s.seller_id} className="border-t border-slate-100"><td className="py-1.5 px-2 font-medium" title={s.seller_id}>{shortId(s.seller_id)}<CopyBtn text={s.seller_id}/></td><td className="text-right px-2">{int(s.orders)}</td><td className="text-right px-2">{int(s.late_orders)}</td><td className="text-right px-2 font-semibold">{pct(s.late_rate)}</td>
+                <td className="text-right px-2">{pct(s.bad_review_rate)}</td></tr>)}
+                {!shownSellers.length&&<tr><td colSpan="5" className="py-4 text-center text-slate-500">Không có người bán nào trong nhóm này.</td></tr>}</tbody></table></div>
+            <Note>Hiển thị tối đa 10 người đầu mỗi nhóm. Nguồn: /portfolio (nhóm, độ phủ) và /sellers (từng người bán).</Note></>}
+        </Block>
+      </div>
+    </details>
+
+    <Block id="brief">
+      <Takeaway>Bấm vào một dòng để xem chi tiết, bấm “Ghi nhận khuyến nghị” để lưu cho đơn vị phụ trách (chỉ ghi log, không thực thi).</Takeaway>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+        <BriefGroup src="route" title="Tuyến cần hành động" owner={ownerOf(br.route_actions)}><BriefList rows={briefRoute} {...listProps}/></BriefGroup>
+        <BriefGroup src="attr" title="Thanh toán" owner={ownerOf(br.payment_actions)}><BriefList rows={briefPay} {...listProps}/></BriefGroup>
+        <BriefGroup src="promise" title="Chính sách cam kết" owner={ownerOf(br.promise_actions)}><BriefList rows={briefProm} {...listProps}/></BriefGroup>
+        <BriefGroup src="seller" title="Người bán" owner={ownerOf(br.seller_actions)}><BriefList rows={briefSell} {...listProps}/></BriefGroup>
+        <BriefGroup src="route" title="Cần thêm dữ liệu" owner={ownerOf(br.low_sample_actions)}><BriefList rows={briefMore} {...listProps}/></BriefGroup>
+      </div>
+      <Note>Năm nhóm chồng lấn trên cùng các đơn trễ nên không cộng số giữa các nhóm. Ngưỡng lấy từ /brief.parameters: min_orders={int(params.min_orders)}, low_sample&lt;{int(params.low_sample_threshold)}, seller_min={int(params.seller_min_orders)}.</Note>
+    </Block>
+  </>);}
+
+/* ============ KHUNG ỨNG DỤNG ============ */
+const TITLES={dashboard:['Tổng quan giao hàng và SLA','Giám sát nhanh: vấn đề lớn đến đâu, đang tăng hay giảm, tập trung ở tuyến nào'],
+  olap:['Truy vấn đa chiều (OLAP)','Tự khám phá: trễ ở đâu, khi nào, với nhóm nào'],dss:['DSS Action Center','Nên xem xét làm gì và kết quả ước tính ra sao']};
+function App(){
+  const [page,setPage]=useState('dashboard'),[open,setOpen]=useState(true),[year,setYear]=useState('all'),[sim,setSim]=useState({error:false}),[dssRoute,setDssRoute]=useState(null);
+  const nav=[['dashboard','▦','BI Dashboard'],['olap','▤','OLAP'],['dss','◆','DSS']];
+  const goDss=r=>{setDssRoute(r||null);setPage('dss')};
+  return <div className="min-h-screen flex">
+    <aside className={(open?'w-52':'w-14')+' hidden md:flex shrink-0 flex-col bg-[#14232e] text-slate-100 sticky top-0 h-screen transition-all'}>
+      <div className="px-3 py-4 flex items-center justify-between border-b border-white/10">{open?<div><div className="font-semibold">Olist DSS</div><div className="text-[11px] text-slate-400">Giao hàng trễ</div></div>:<span className="mx-auto font-semibold">DSS</span>}
+        <button aria-label="Thu gọn menu" className="px-1.5 rounded hover:bg-white/10" onClick={()=>setOpen(!open)}>{open?'‹':'›'}</button></div>
+      <nav className="p-2 space-y-1">{nav.map(([k,i,t])=><button key={k} aria-current={page===k} onClick={()=>{setDssRoute(null);setPage(k)}} className={'w-full flex items-center gap-3 px-3 py-2 rounded text-sm text-left '+(page===k?'bg-teal-700 text-white':'text-slate-300 hover:bg-white/10')}><span aria-hidden>{i}</span>{open&&t}</button>)}</nav>
+      {open&&<div className="mt-auto p-3 text-[11px] text-slate-400 border-t border-white/10">Star schema: Fact_Delivery_SLA</div>}
+    </aside>
+    <main className="flex-1 min-w-0">
+      <header className="sticky top-0 z-30 bg-white border-b border-slate-300 px-5 py-2.5 flex items-center justify-between gap-3">
+        <div><h1 className="font-semibold leading-tight">{TITLES[page][0]}</h1><p className="text-xs text-slate-500">{TITLES[page][1]} · Dữ liệu mẫu sinh ngẫu nhiên, sẽ thay bằng API từ kho dữ liệu</p></div>
+        <div className="flex items-center gap-2"><div className="md:hidden flex gap-1">{nav.map(([k,,t])=><button key={k} className={'btn '+(page===k?'btn-main':'')} onClick={()=>{setDssRoute(null);setPage(k)}}>{t}</button>)}</div>
+          {DEV&&<button className="btn" onClick={()=>setSim({error:!sim.error})}>{sim.error?'Tắt lỗi giả lập':'Giả lập lỗi'}</button>}</div>
+      </header>
+      <div className="px-5 py-4 pb-8 max-w-[1400px] mx-auto">
+        {page==='dashboard'&&<Dashboard year={year} setYear={setYear} sim={sim} goDss={goDss}/>}
+        {page==='olap'&&<Olap sim={sim}/>}
+        {page==='dss'&&<SimCtx.Provider value={!!sim.error}><Dss key={dssRoute||'-'} year={year} setYear={setYear} initRoute={dssRoute}/></SimCtx.Provider>}
+      </div></main></div>}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
