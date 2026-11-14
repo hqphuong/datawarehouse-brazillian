@@ -7,6 +7,7 @@ from flask_cors import CORS
 from werkzeug.exceptions import MethodNotAllowed
 
 from .api import bp
+from .auth_api import bp as auth_bp
 from .bi_api import bp as bi_bp
 from .config import load_config
 from .json_provider import DssJSONProvider
@@ -58,6 +59,18 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     app.json = DssJSONProvider(app)
 
+    # Session support for /api/auth/*.  SECRET_KEY is mandatory outside tests.
+    if not app.config.get("SECRET_KEY"):
+        if app.config.get("TESTING"):
+            app.config["SECRET_KEY"] = "testing-secret-key"
+        else:
+            raise RuntimeError(
+                "SECRET_KEY is required. Set it in backend/.env or the "
+                "environment (see backend/.env.new)."
+            )
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
     CORS(
         app,
         origins="*",
@@ -73,6 +86,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.register_blueprint(bp)
     app.register_blueprint(bi_bp)
     app.register_blueprint(olap_bp)
+    app.register_blueprint(auth_bp)
 
     @app.before_request
     def _method_contract():
