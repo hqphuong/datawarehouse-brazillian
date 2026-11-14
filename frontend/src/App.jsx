@@ -4,7 +4,28 @@ import DashboardView from "./views/DashboardView.js";
 import OlapView from "./views/OlapView.js";
 import DssView from "./views/DssView.js";
 import { DEV } from "./utils/utils.js";
-
+// Hàm xử lý đăng xuất và gọi API
+  const handleLogout = async () => {
+    try {
+      // ===== CHỪA SẴN CHỖ GỌI API LOGOUT Ở ĐÂY =====
+      // Ví dụ gọi đến backend Django:
+      // const response = await fetch('/api/dss/logout/', {
+      //   method: 'POST',
+      //   headers: { 'Content-Type': 'application/json' },
+      // });
+      // if (response.ok) { ... }
+      
+      // Tạm thời giả lập xử lý đăng xuất thành công:
+      alert('Đã đăng xuất thành công!');
+      
+      // Sau khi gọi API thành công, bạn có thể chuyển hướng về trang login hoặc reload:
+      // window.location.href = '/login'; // hoặc điều hướng state tùy logic nhóm
+      
+    } catch (error) {
+      console.error('Lỗi khi đăng xuất:', error);
+      alert('Đăng xuất thất bại, vui lòng thử lại.');
+    }
+  };
 const TITLES = {
   dashboard: [
     "Tổng quan giao hàng và SLA",
@@ -78,8 +99,18 @@ export default function App() {
           ))}
         </nav>
         {open && (
-          <div className="mt-auto p-3 text-[11px] text-slate-400 border-t border-white/10">
-            Star schema: Fact_Delivery_SLA
+          <div className="mt-auto p-2 border-t border-white/10">
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded text-xs text-slate-400 hover:bg-white/5 hover:text-slate-200 transition-colors text-left"
+              title="Đăng xuất khỏi hệ thống"
+            >
+              {/* <!-- Icon cửa mở SVG màu xám đồng bộ --> */}
+              <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"></path>
+              </svg>
+              <span>Đăng xuất</span>
+            </button>
           </div>
         )}
       </aside>
