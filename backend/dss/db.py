@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 
 import psycopg2
+from psycopg2.extras import RealDictCursor
 
 from .config import postgres_settings
 
@@ -24,6 +25,38 @@ def connection(config: dict | None = None):
         raise
     finally:
         conn.close()
+
+
+def fetch_all(
+    sql: str, params: dict | None = None, config: dict | None = None
+) -> list[dict]:
+    """Run a read query and return every row as a plain dict."""
+    with connection(config) as conn, conn.cursor(
+        cursor_factory=RealDictCursor
+    ) as cur:
+        cur.execute(sql, params or {})
+        return [dict(row) for row in cur.fetchall()]
+
+
+def fetch_one(
+    sql: str, params: dict | None = None, config: dict | None = None
+) -> dict | None:
+    """Run a read query and return the first row as a plain dict."""
+    with connection(config) as conn, conn.cursor(
+        cursor_factory=RealDictCursor
+    ) as cur:
+        cur.execute(sql, params or {})
+        row = cur.fetchone()
+        return dict(row) if row is not None else None
+
+
+def execute(
+    sql: str, params: dict | None = None, config: dict | None = None
+) -> int:
+    """Run a write statement and return the affected row count."""
+    with connection(config) as conn, conn.cursor() as cur:
+        cur.execute(sql, params or {})
+        return cur.rowcount
 
 
 def _iso_utc(value: datetime) -> str:

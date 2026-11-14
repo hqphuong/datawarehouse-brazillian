@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from flask import Flask, Response, abort, request
+from flask import Flask, Response, abort, jsonify, request
 from flask_cors import CORS
 from werkzeug.exceptions import MethodNotAllowed
 
 from .api import bp
+from .bi_api import bp as bi_bp
 from .config import load_config
 from .json_provider import DssJSONProvider
+from .olap_api import bp as olap_bp
 
 DJANGO_404 = (
     "\n<!doctype html>\n<html lang=\"en\">\n<head>\n"
@@ -69,6 +71,8 @@ def create_app(test_config: dict | None = None) -> Flask:
     # Match Django's URLConf: no trailing-slash variants and no redirects.
     app.url_map.strict_slashes = False
     app.register_blueprint(bp)
+    app.register_blueprint(bi_bp)
+    app.register_blueprint(olap_bp)
 
     @app.before_request
     def _method_contract():
@@ -114,6 +118,15 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.errorhandler(MethodNotAllowed)
     def _method_not_allowed(exc: MethodNotAllowed):
+        if not request.path.startswith("/api/dss"):
+            # Ported BI/OLAP/auth blueprints use the shared JSON contract.
+            response = jsonify({"message": "Method not allowed"})
+            response.status_code = 405
+            valid = list(exc.valid_methods or [])
+            allowed = [m for m in valid if m not in {"HEAD", "OPTIONS"}] or valid
+            if allowed:
+                response.headers["Allow"] = ", ".join(allowed)
+            return response
         allowed = RESOURCE_METHODS.get(request.path)
         if allowed is None:
             valid = list(exc.valid_methods or [])
