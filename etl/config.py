@@ -10,7 +10,7 @@ bất kỳ thư mục nào mà vẫn tìm đúng data.
     │   ├── raw/              <- dữ liệu gốc từ Olist
     │   └── processed/        <- dữ liệu sau khi làm sạch
     ├── sql/create_tables.sql <- DDL tạo bảng
-    └── src/                  <- code ETL (file này)
+    └── etl/                  <- code ETL (file này)
 """
 
 from __future__ import annotations
@@ -69,6 +69,7 @@ WAREHOUSE_TABLES: dict[str, Path] = {
     "Dim_Time": PROCESSED_DIR / "cleaned_dim_time.csv",
     "Dim_Location": PROCESSED_DIR / "cleaned_dim_location.csv",
     "Dim_Product": PROCESSED_DIR / "cleaned_dim_product.csv",
+    "Dim_Seller": PROCESSED_DIR / "cleaned_dim_seller.csv",
     "Fact_Delivery_SLA": PROCESSED_DIR / "cleaned_fact_orders.csv",
 }
 

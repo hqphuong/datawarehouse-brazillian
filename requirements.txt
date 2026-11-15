@@ -1,6 +1,19 @@
-# Thư viện Python dùng cho pipeline ETL của Brazillian
+# Thư viện Python cho pipeline ETL và backend DSS của Brazillian
 # Cài đặt:  pip install -r requirements.txt
 
+# ETL / phân tích
 pandas>=2.0
 numpy>=1.24
+
+# Backend Flask (pin cố định)
+Flask==3.1.2
+flask-cors==6.0.1
+gunicorn==23.0.0
+waitress==3.0.2
+
+# Kết nối PostgreSQL + cấu hình môi trường
 psycopg2-binary>=2.9
+python-dotenv>=1.0
+
+# Kiểm thử
+pytest>=8.0

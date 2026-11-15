@@ -19,6 +19,20 @@ npm-debug.log*
 # --- Dữ liệu đã xử lý (sinh ra từ data/raw, có thể tạo lại bằng ETL) ---
 data/processed/
 
+# --- Log sinh ra khi chạy ---
+backend/logs/
+
+# --- Tài liệu học tập / giải thích (không cần để chạy code) ---
+reports/material/
+reports/study/
+docs/
+
+# --- Báo cáo LaTeX (không cần để chạy code) ---
+CO4031_BaoCao/
+
 # --- Hệ điều hành / IDE ---
 .DS_Store
 Thumbs.db
+
+*.zip
+*.pdf

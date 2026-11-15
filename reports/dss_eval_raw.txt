@@ -1,0 +1,491 @@
+## Thông tin dữ liệu
+- Tóm tắt dữ liệu gốc: {'orders': 99441, 'status': {'delivered': 96478, 'shipped': 1107, 'canceled': 625, 'unavailable': 609, 'invoiced': 314, 'processing': 301, 'created': 5, 'approved': 2}, 'non_delivered': 2963, 'delivered': 96478, 'delivered_dropna': 96455, 'delivered_dropped_nan_time': 23, 'item_rows': 112650, 'item_orders': 98666, 'delivered_item_rows': 110173, 'payment_orders': 99440, 'payment_multi_row_share': 0.02977674979887369, 'payment_multi_type_share': 0.02258648431214803, 'review_orders': 98673, 'review_multi_share': 0.00554356308209946}
+- Số dòng (đơn, tuyến) dùng cho DSS: 95591
+- Số đơn duy nhất: 95082
+- Tỷ lệ trễ trên đơn-tuyến: 0.081556 (8.1556%)
+- Tỷ lệ trễ trên đơn đã giao (unique order_id): 0.081950 (8.1950%)
+- Loại do giai đoạn âm/NaN: 1390 order-route (1.4333%), prep<0=1361, transit<0=29, nan=0
+- promise_days − (total_lead_days − delay_days) max abs: 0
+- late0 != (delay_days > 0): 0 dòng
+- Đơn nằm trên >1 tuyến: 502
+- Đơn có >1 người bán: 502
+- GMV (tổng price trong đơn-tuyến): 13043202.42
+- Số order-route trước khi loại (gồm dòng không hợp lệ): 96981
+
+## Backtest theo min_orders
+
+### min_orders=30
+| period | next_period | flagged_routes | flagged_orders | other_orders | total_orders | flagged_late_rate | other_late_rate | diff | baseline_routes | baseline_flagged_orders | baseline_other_orders | baseline_flagged_late_rate | baseline_other_late_rate | baseline_diff | baseline_through_routes | baseline_through_flagged_orders | baseline_through_other_orders | baseline_through_flagged_late_rate | baseline_through_other_late_rate | baseline_through_diff |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 201701 | 201702 | 1 | 44 | 1597 | 1641 | 0.0227273 | 0.0325611 | -0.00983378 | 1 | 44 | 1597 | 0.0227273 | 0.0325611 | -0.00983378 | 1 | 44 | 1597 | 0.0227273 | 0.0325611 | -0.00983378 |
+| 201702 | 201703 | 2 | 102 | 2444 | 2546 | 0.196078 | 0.0499182 | 0.14616 | 2 | 121 | 2425 | 0.0413223 | 0.0564948 | -0.0151725 | 2 | 199 | 2347 | 0.0351759 | 0.0575202 | -0.0223444 |
+| 201703 | 201704 | 1 | 63 | 2225 | 2288 | 0.15873 | 0.0759551 | 0.0827751 | 1 | 63 | 2225 | 0.15873 | 0.0759551 | 0.0827751 | 1 | 63 | 2225 | 0.15873 | 0.0759551 | 0.0827751 |
+| 201704 | 201705 | 4 | 321 | 3224 | 3545 | 0.0404984 | 0.03567 | 0.00482847 | 4 | 536 | 3009 | 0.0466418 | 0.0342306 | 0.0124111 | 4 | 321 | 3224 | 0.0404984 | 0.03567 | 0.00482847 |
+| 201705 | 201706 | 4 | 1100 | 2040 | 3140 | 0.0472727 | 0.0333333 | 0.0139394 | 4 | 259 | 2881 | 0.030888 | 0.0388754 | -0.00798736 | 4 | 259 | 2881 | 0.030888 | 0.0388754 | -0.00798736 |
+| 201706 | 201707 | 3 | 172 | 3684 | 3856 | 0.0988372 | 0.0314875 | 0.0673497 | 3 | 251 | 3605 | 0.0438247 | 0.0338419 | 0.00998281 | 3 | 251 | 3605 | 0.0438247 | 0.0338419 | 0.00998281 |
+| 201707 | 201708 | 6 | 366 | 3850 | 4216 | 0.0464481 | 0.0316883 | 0.0147598 | 6 | 1940 | 2276 | 0.0252577 | 0.0395431 | -0.0142853 | 6 | 393 | 3823 | 0.0381679 | 0.0324353 | 0.00573268 |
+| 201708 | 201709 | 5 | 424 | 3727 | 4151 | 0.0353774 | 0.0533942 | -0.0180168 | 5 | 352 | 3799 | 0.110795 | 0.0460648 | 0.0647307 | 5 | 378 | 3773 | 0.10582 | 0.0461171 | 0.059703 |
+| 201709 | 201710 | 5 | 339 | 4166 | 4505 | 0.129794 | 0.0463274 | 0.0834661 | 5 | 378 | 4127 | 0.0873016 | 0.0494306 | 0.037871 | 5 | 346 | 4159 | 0.124277 | 0.0466458 | 0.0776316 |
+| 201710 | 201711 | 5 | 1121 | 6212 | 7333 | 0.283675 | 0.116871 | 0.166805 | 5 | 593 | 6740 | 0.172007 | 0.139763 | 0.0322441 | 5 | 1224 | 6109 | 0.278595 | 0.115076 | 0.163519 |
+| 201711 | 201712 | 6 | 811 | 4716 | 5527 | 0.235512 | 0.0570399 | 0.178472 | 6 | 416 | 5111 | 0.105769 | 0.0813931 | 0.0243762 | 6 | 923 | 4604 | 0.218852 | 0.0560382 | 0.162813 |
+| 201712 | 201801 | 5 | 938 | 6160 | 7098 | 0.135394 | 0.0545455 | 0.080849 | 5 | 1053 | 6045 | 0.128205 | 0.0542597 | 0.0739454 | 5 | 1053 | 6045 | 0.128205 | 0.0542597 | 0.0739454 |
+| 201801 | 201802 | 9 | 1227 | 5330 | 6557 | 0.336593 | 0.119325 | 0.217269 | 9 | 1347 | 5210 | 0.332591 | 0.115355 | 0.217236 | 9 | 1347 | 5210 | 0.332591 | 0.115355 | 0.217236 |
+| 201802 | 201803 | 9 | 1305 | 5729 | 7034 | 0.395402 | 0.171409 | 0.223994 | 9 | 1372 | 5662 | 0.398688 | 0.167962 | 0.230726 | 9 | 1331 | 5703 | 0.407964 | 0.167456 | 0.240508 |
+| 201803 | 201804 | 9 | 1102 | 5349 | 6451 | 0.128857 | 0.0396336 | 0.089223 | 9 | 1232 | 5219 | 0.117695 | 0.040046 | 0.0776488 | 9 | 1203 | 5248 | 0.121363 | 0.0396341 | 0.0817291 |
+| 201804 | 201805 | 6 | 455 | 6265 | 6720 | 0.182418 | 0.0747007 | 0.107717 | 6 | 952 | 5768 | 0.127101 | 0.0745492 | 0.0525516 | 6 | 947 | 5773 | 0.127772 | 0.0744847 | 0.0532872 |
+| 201805 | 201806 | 8 | 941 | 5072 | 6013 | 0.0201913 | 0.0124211 | 0.00777015 | 8 | 998 | 5015 | 0.0230461 | 0.0117647 | 0.0112814 | 8 | 998 | 5015 | 0.0230461 | 0.0117647 | 0.0112814 |
+| 201806 | 201807 | 4 | 324 | 5310 | 5634 | 0.058642 | 0.046516 | 0.012126 | 4 | 650 | 4984 | 0.0415385 | 0.0479535 | -0.00641499 | 4 | 650 | 4984 | 0.0415385 | 0.0479535 | -0.00641499 |
+| 201807 | 201808 | 3 | 162 | 6159 | 6321 | 0.0123457 | 0.106348 | -0.0940028 | 3 | 570 | 5751 | 0.0385965 | 0.110416 | -0.0718191 | 3 | 570 | 5751 | 0.0385965 | 0.110416 | -0.0718191 |
+
+Tóm tắt: {'min_orders': 30, 'red': 2.0, 'amber': 1.5, 'start_year': 2017, 'min_period_orders': 500, 'periods_considered': 19, 'periods_evaluated': 19, 'periods_without_flags': 0, 'periods_without_flagged_orders': 0, 'higher_periods': 16, 'share_higher': 0.8421052631578947, 'weighted_diff': 0.08282611581022702, 'weighted_diff_basis': 'total_orders', 'weighted_diff_flagged': 0.104623887827688, 'mean_diff': 0.0724026044910525, 'baseline_periods_evaluated': 19, 'baseline_periods_without_flags': 0, 'baseline_higher_periods': 13, 'baseline_share_higher': 0.6842105263157895, 'baseline_weighted_diff': 0.05229950621467227, 'baseline_weighted_diff_flagged': 0.06456661844558288, 'baseline_mean_diff': 0.042224592796352954, 'paired_periods': 19, 'baseline_better_periods': 5, 'dss_better_periods': 12, 'tied_periods': 2, 'baseline_through_periods_evaluated': 19, 'baseline_through_periods_without_flags': 0, 'baseline_through_higher_periods': 14, 'baseline_through_share_higher': 0.7368421052631579, 'baseline_through_weighted_diff': 0.07371464112517714, 'baseline_through_weighted_diff_flagged': 0.09679682020875317, 'baseline_through_mean_diff': 0.059293330944386026, 'paired_through_periods': 19, 'baseline_through_better_periods': 4, 'dss_better_vs_through_periods': 12, 'tied_vs_through_periods': 3}
+
+#### So sánh baseline lịch sử (min_orders=30)
+| period | flagged_routes | baseline_routes | baseline_through_routes | diff | baseline_diff | baseline_through_diff |
+| --- | --- | --- | --- | --- | --- | --- |
+| 201701 | 1 | 1 | 1 | -0.00983378 | -0.00983378 | -0.00983378 |
+| 201702 | 2 | 2 | 2 | 0.14616 | -0.0151725 | -0.0223444 |
+| 201703 | 1 | 1 | 1 | 0.0827751 | 0.0827751 | 0.0827751 |
+| 201704 | 4 | 4 | 4 | 0.00482847 | 0.0124111 | 0.00482847 |
+| 201705 | 4 | 4 | 4 | 0.0139394 | -0.00798736 | -0.00798736 |
+| 201706 | 3 | 3 | 3 | 0.0673497 | 0.00998281 | 0.00998281 |
+| 201707 | 6 | 6 | 6 | 0.0147598 | -0.0142853 | 0.00573268 |
+| 201708 | 5 | 5 | 5 | -0.0180168 | 0.0647307 | 0.059703 |
+| 201709 | 5 | 5 | 5 | 0.0834661 | 0.037871 | 0.0776316 |
+| 201710 | 5 | 5 | 5 | 0.166805 | 0.0322441 | 0.163519 |
+| 201711 | 6 | 6 | 6 | 0.178472 | 0.0243762 | 0.162813 |
+| 201712 | 5 | 5 | 5 | 0.080849 | 0.0739454 | 0.0739454 |
+| 201801 | 9 | 9 | 9 | 0.217269 | 0.217236 | 0.217236 |
+| 201802 | 9 | 9 | 9 | 0.223994 | 0.230726 | 0.240508 |
+| 201803 | 9 | 9 | 9 | 0.089223 | 0.0776488 | 0.0817291 |
+| 201804 | 6 | 6 | 6 | 0.107717 | 0.0525516 | 0.0532872 |
+| 201805 | 8 | 8 | 8 | 0.00777015 | 0.0112814 | 0.0112814 |
+| 201806 | 4 | 4 | 4 | 0.012126 | -0.00641499 | -0.00641499 |
+| 201807 | 3 | 3 | 3 | -0.0940028 | -0.0718191 | -0.0718191 |
+
+### min_orders=50
+| period | next_period | flagged_routes | flagged_orders | other_orders | total_orders | flagged_late_rate | other_late_rate | diff | baseline_routes | baseline_flagged_orders | baseline_other_orders | baseline_flagged_late_rate | baseline_other_late_rate | baseline_diff | baseline_through_routes | baseline_through_flagged_orders | baseline_through_other_orders | baseline_through_flagged_late_rate | baseline_through_other_late_rate | baseline_through_diff |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 201701 | 201702 | 0 | 0 | 1641 | 1641 | — | 0.0322974 | — | 0 | 0 | 1641 | — | 0.0322974 | — | 0 | 0 | 1641 | — | 0.0322974 | — |
+| 201702 | 201703 | 0 | 0 | 2546 | 2546 | — | 0.0557738 | — | 0 | 0 | 2546 | — | 0.0557738 | — | 0 | 0 | 2546 | — | 0.0557738 | — |
+| 201703 | 201704 | 1 | 63 | 2225 | 2288 | 0.15873 | 0.0759551 | 0.0827751 | 1 | 63 | 2225 | 0.15873 | 0.0759551 | 0.0827751 | 1 | 63 | 2225 | 0.15873 | 0.0759551 | 0.0827751 |
+| 201704 | 201705 | 2 | 178 | 3367 | 3545 | 0.0449438 | 0.03564 | 0.00930378 | 2 | 378 | 3167 | 0.0449735 | 0.0350489 | 0.0099246 | 2 | 178 | 3367 | 0.0449438 | 0.03564 | 0.00930378 |
+| 201705 | 201706 | 3 | 1073 | 2067 | 3140 | 0.0465983 | 0.0338655 | 0.0127328 | 3 | 228 | 2912 | 0.0350877 | 0.0384615 | -0.00337382 | 3 | 228 | 2912 | 0.0350877 | 0.0384615 | -0.00337382 |
+| 201706 | 201707 | 1 | 62 | 3794 | 3856 | 0.0645161 | 0.0340011 | 0.0305151 | 1 | 102 | 3754 | 0.0588235 | 0.0338306 | 0.0249929 | 1 | 102 | 3754 | 0.0588235 | 0.0338306 | 0.0249929 |
+| 201707 | 201708 | 5 | 343 | 3873 | 4216 | 0.0495627 | 0.0315001 | 0.0180626 | 5 | 1881 | 2335 | 0.0255183 | 0.0389722 | -0.0134538 | 5 | 448 | 3768 | 0.0401786 | 0.0321125 | 0.00806604 |
+| 201708 | 201709 | 4 | 375 | 3776 | 4151 | 0.0346667 | 0.0532309 | -0.0185643 | 4 | 329 | 3822 | 0.115502 | 0.0460492 | 0.0694523 | 4 | 329 | 3822 | 0.115502 | 0.0460492 | 0.0694523 |
+| 201709 | 201710 | 3 | 273 | 4232 | 4505 | 0.0989011 | 0.0496219 | 0.0492792 | 3 | 269 | 4236 | 0.104089 | 0.049339 | 0.0547502 | 3 | 269 | 4236 | 0.104089 | 0.049339 | 0.0547502 |
+| 201710 | 201711 | 4 | 1073 | 6260 | 7333 | 0.287978 | 0.117412 | 0.170565 | 4 | 1176 | 6157 | 0.282313 | 0.115641 | 0.166672 | 4 | 1176 | 6157 | 0.282313 | 0.115641 | 0.166672 |
+| 201711 | 201712 | 5 | 778 | 4749 | 5527 | 0.239075 | 0.0576964 | 0.181378 | 5 | 888 | 4639 | 0.217342 | 0.0575555 | 0.159787 | 5 | 890 | 4637 | 0.221348 | 0.0567177 | 0.164631 |
+| 201712 | 201801 | 3 | 810 | 6288 | 7098 | 0.134568 | 0.0562977 | 0.0782702 | 3 | 939 | 6159 | 0.13525 | 0.0545543 | 0.080696 | 3 | 811 | 6287 | 0.12947 | 0.0569429 | 0.0725269 |
+| 201801 | 201802 | 7 | 1183 | 5374 | 6557 | 0.343195 | 0.11965 | 0.223545 | 7 | 1290 | 5267 | 0.331783 | 0.117904 | 0.213879 | 7 | 1290 | 5267 | 0.331783 | 0.117904 | 0.213879 |
+| 201802 | 201803 | 6 | 1206 | 5828 | 7034 | 0.388889 | 0.176561 | 0.212327 | 6 | 1199 | 5835 | 0.394495 | 0.175664 | 0.218831 | 6 | 1198 | 5836 | 0.417362 | 0.171008 | 0.246355 |
+| 201803 | 201804 | 6 | 1007 | 5444 | 6451 | 0.131082 | 0.0407788 | 0.0903036 | 6 | 1098 | 5353 | 0.112933 | 0.0429666 | 0.069966 | 6 | 1098 | 5353 | 0.112933 | 0.0429666 | 0.069966 |
+| 201804 | 201805 | 4 | 396 | 6324 | 6720 | 0.184343 | 0.0755851 | 0.108758 | 4 | 820 | 5900 | 0.115854 | 0.0772881 | 0.0385655 | 4 | 820 | 5900 | 0.115854 | 0.0772881 | 0.0385655 |
+| 201805 | 201806 | 6 | 867 | 5146 | 6013 | 0.0219146 | 0.0122425 | 0.00967213 | 6 | 905 | 5108 | 0.0243094 | 0.0117463 | 0.0125631 | 6 | 905 | 5108 | 0.0243094 | 0.0117463 | 0.0125631 |
+| 201806 | 201807 | 3 | 293 | 5341 | 5634 | 0.0648464 | 0.046246 | 0.0186004 | 3 | 577 | 5057 | 0.0450607 | 0.047459 | -0.00239831 | 3 | 577 | 5057 | 0.0450607 | 0.047459 | -0.00239831 |
+| 201807 | 201808 | 1 | 77 | 6244 | 6321 | 0.012987 | 0.105061 | -0.0920738 | 1 | 40 | 6281 | 0 | 0.104601 | -0.104601 | 1 | 418 | 5903 | 0.0502392 | 0.107742 | -0.0575026 |
+
+Tóm tắt: {'min_orders': 50, 'red': 2.0, 'amber': 1.5, 'start_year': 2017, 'min_period_orders': 500, 'periods_considered': 19, 'periods_evaluated': 17, 'periods_without_flags': 2, 'periods_without_flagged_orders': 0, 'higher_periods': 15, 'share_higher': 0.8823529411764706, 'weighted_diff': 0.0803589379428584, 'weighted_diff_basis': 'total_orders', 'weighted_diff_flagged': 0.10777675657679539, 'mean_diff': 0.06973242933107239, 'baseline_periods_evaluated': 17, 'baseline_periods_without_flags': 2, 'baseline_higher_periods': 13, 'baseline_share_higher': 0.7647058823529411, 'baseline_weighted_diff': 0.07212964467846252, 'baseline_weighted_diff_flagged': 0.08941216107562938, 'baseline_mean_diff': 0.06347223939243198, 'paired_periods': 17, 'baseline_better_periods': 6, 'dss_better_periods': 10, 'tied_periods': 1, 'baseline_through_periods_evaluated': 17, 'baseline_through_periods_without_flags': 2, 'baseline_through_higher_periods': 14, 'baseline_through_share_higher': 0.8235294117647058, 'baseline_through_weighted_diff': 0.07819923663686362, 'baseline_through_weighted_diff_flagged': 0.10339095086777787, 'baseline_through_mean_diff': 0.06889551939840487, 'paired_through_periods': 17, 'baseline_through_better_periods': 5, 'dss_better_vs_through_periods': 10, 'tied_vs_through_periods': 2}
+
+### min_orders=100
+| period | next_period | flagged_routes | flagged_orders | other_orders | total_orders | flagged_late_rate | other_late_rate | diff | baseline_routes | baseline_flagged_orders | baseline_other_orders | baseline_flagged_late_rate | baseline_other_late_rate | baseline_diff | baseline_through_routes | baseline_through_flagged_orders | baseline_through_other_orders | baseline_through_flagged_late_rate | baseline_through_other_late_rate | baseline_through_diff |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 201701 | 201702 | 0 | 0 | 1641 | 1641 | — | 0.0322974 | — | 0 | 0 | 1641 | — | 0.0322974 | — | 0 | 0 | 1641 | — | 0.0322974 | — |
+| 201702 | 201703 | 0 | 0 | 2546 | 2546 | — | 0.0557738 | — | 0 | 0 | 2546 | — | 0.0557738 | — | 0 | 0 | 2546 | — | 0.0557738 | — |
+| 201703 | 201704 | 0 | 0 | 2288 | 2288 | — | 0.0782343 | — | 0 | 0 | 2288 | — | 0.0782343 | — | 0 | 0 | 2288 | — | 0.0782343 | — |
+| 201704 | 201705 | 0 | 0 | 3545 | 3545 | — | 0.0361072 | — | 0 | 0 | 3545 | — | 0.0361072 | — | 0 | 0 | 3545 | — | 0.0361072 | — |
+| 201705 | 201706 | 1 | 957 | 2183 | 3140 | 0.045977 | 0.0348145 | 0.0111625 | 1 | 272 | 2868 | 0.0367647 | 0.0383543 | -0.00158955 | 1 | 272 | 2868 | 0.0367647 | 0.0383543 | -0.00158955 |
+| 201706 | 201707 | 0 | 0 | 3856 | 3856 | — | 0.0344917 | — | 0 | 0 | 3856 | — | 0.0344917 | — | 0 | 0 | 3856 | — | 0.0344917 | — |
+| 201707 | 201708 | 1 | 99 | 4117 | 4216 | 0.040404 | 0.0327909 | 0.00761317 | 1 | 99 | 4117 | 0.040404 | 0.0327909 | 0.00761317 | 1 | 99 | 4117 | 0.040404 | 0.0327909 | 0.00761317 |
+| 201708 | 201709 | 1 | 179 | 3972 | 4151 | 0.027933 | 0.0526183 | -0.0246854 | 1 | 117 | 4034 | 0.222222 | 0.0466039 | 0.175618 | 1 | 117 | 4034 | 0.222222 | 0.0466039 | 0.175618 |
+| 201709 | 201710 | 2 | 213 | 4292 | 4505 | 0.103286 | 0.0500932 | 0.0531932 | 2 | 213 | 4292 | 0.103286 | 0.0500932 | 0.0531932 | 2 | 213 | 4292 | 0.103286 | 0.0500932 | 0.0531932 |
+| 201710 | 201711 | 2 | 880 | 6453 | 7333 | 0.314773 | 0.118859 | 0.195913 | 2 | 371 | 6962 | 0.199461 | 0.139328 | 0.0601331 | 2 | 371 | 6962 | 0.199461 | 0.139328 | 0.0601331 |
+| 201711 | 201712 | 3 | 668 | 4859 | 5527 | 0.254491 | 0.0596831 | 0.194808 | 3 | 750 | 4777 | 0.245333 | 0.0577768 | 0.187556 | 3 | 750 | 4777 | 0.245333 | 0.0577768 | 0.187556 |
+| 201712 | 201801 | 2 | 735 | 6363 | 7098 | 0.133333 | 0.0573629 | 0.0759705 | 2 | 735 | 6363 | 0.133333 | 0.0573629 | 0.0759705 | 2 | 735 | 6363 | 0.133333 | 0.0573629 | 0.0759705 |
+| 201801 | 201802 | 4 | 930 | 5627 | 6557 | 0.34086 | 0.130087 | 0.210773 | 4 | 1016 | 5541 | 0.336614 | 0.127594 | 0.20902 | 4 | 1016 | 5541 | 0.336614 | 0.127594 | 0.20902 |
+| 201802 | 201803 | 5 | 1130 | 5904 | 7034 | 0.376991 | 0.181572 | 0.195419 | 5 | 1122 | 5912 | 0.407308 | 0.176083 | 0.231226 | 5 | 1122 | 5912 | 0.407308 | 0.176083 | 0.231226 |
+| 201803 | 201804 | 3 | 793 | 5658 | 6451 | 0.123581 | 0.0452457 | 0.0783357 | 3 | 856 | 5595 | 0.0969626 | 0.0484361 | 0.0485265 | 3 | 793 | 5658 | 0.123581 | 0.0452457 | 0.0783357 |
+| 201804 | 201805 | 2 | 276 | 6444 | 6720 | 0.199275 | 0.0769708 | 0.122305 | 2 | 716 | 6004 | 0.120112 | 0.0774484 | 0.0426634 | 2 | 716 | 6004 | 0.120112 | 0.0774484 | 0.0426634 |
+| 201805 | 201806 | 3 | 662 | 5351 | 6013 | 0.0256798 | 0.0121473 | 0.0135325 | 3 | 676 | 5337 | 0.0325444 | 0.0112423 | 0.0213021 | 3 | 676 | 5337 | 0.0325444 | 0.0112423 | 0.0213021 |
+| 201806 | 201807 | 1 | 155 | 5479 | 5634 | 0.0645161 | 0.0467239 | 0.0177923 | 1 | 369 | 5265 | 0.0379404 | 0.0478632 | -0.00992287 | 1 | 369 | 5265 | 0.0379404 | 0.0478632 | -0.00992287 |
+| 201807 | 201808 | 0 | 0 | 6321 | 6321 | — | 0.103939 | — | 0 | 0 | 6321 | — | 0.103939 | — | 0 | 0 | 6321 | — | 0.103939 | — |
+
+Tóm tắt: {'min_orders': 100, 'red': 2.0, 'amber': 1.5, 'start_year': 2017, 'min_period_orders': 500, 'periods_considered': 19, 'periods_evaluated': 13, 'periods_without_flags': 6, 'periods_without_flagged_orders': 0, 'higher_periods': 12, 'share_higher': 0.9230769230769231, 'weighted_diff': 0.10113539169713918, 'weighted_diff_basis': 'total_orders', 'weighted_diff_flagged': 0.11738398077822783, 'mean_diff': 0.08862558966878627, 'baseline_periods_evaluated': 13, 'baseline_periods_without_flags': 6, 'baseline_higher_periods': 11, 'baseline_share_higher': 0.8461538461538461, 'baseline_weighted_diff': 0.08982998775237155, 'baseline_weighted_diff_flagged': 0.11018022648882465, 'baseline_mean_diff': 0.08471615942852556, 'paired_periods': 13, 'baseline_better_periods': 3, 'dss_better_periods': 7, 'tied_periods': 3, 'baseline_through_periods_evaluated': 13, 'baseline_through_periods_without_flags': 6, 'baseline_through_higher_periods': 11, 'baseline_through_share_higher': 0.8461538461538461, 'baseline_through_weighted_diff': 0.09241537946847278, 'baseline_through_weighted_diff_flagged': 0.1139770043638007, 'baseline_through_mean_diff': 0.08700917125080584, 'paired_through_periods': 13, 'baseline_through_better_periods': 3, 'dss_better_vs_through_periods': 6, 'tied_vs_through_periods': 4}
+
+## Bootstrap CI (min_orders=30, n_boot=10 000, seed=42, trọng số=total_orders)
+- weight_col: total_orders, seed: 42
+
+### Pair bootstrap (resample kỳ)
+  vs 0 (DSS > 0):     [+3.77; +12.55] pp
+  vs prior:           [+0.52; +5.92] pp
+  vs through (so sánh chính): [-0.50; +2.52] pp
+
+### Block bootstrap (khối 3 tháng, circular)
+  vs 0 (DSS > 0):     [+2.08; +13.46] pp
+  vs prior:           [+0.69; +6.29] pp
+  vs through (so sánh chính): [-0.30; +2.35] pp
+
+Kết luận pair bootstrap:
+  DSS vs 0:     CI=[+3.77; +12.55] → CI không chứa 0
+  DSS vs through: CI=[-0.50; +2.52] → chưa đủ bằng chứng (CI chứa 0)
+  CI chứa 0 được diễn giải là chưa đủ bằng chứng.
+
+## Độ nhạy ngưỡng (S8: min_orders × red/amber)
+- Lưới: min_orders ∈ {50, 100, 150, 200} × 6 cặp ngưỡng, thiết kế một-nhân-tố-mỗi-lần + kết hợp quanh mặc định (2,0; 1,5).
+- Sáu cặp: mặc định (2,0; 1,5); chỉ siết red (2,5; 1,5); chỉ nới amber (2,0; 1,25); nới cả hai (1,5; 1,25); chỉ siết amber (2,0; 1,75); siết cả hai (2,5; 2,0).
+- Ngưỡng đỏ/vàng là QUY ƯỚC vận hành, không phải chân lý; bảng này cho thấy số tuyến bị gắn cờ thay đổi theo cả min_orders và ngưỡng.
+- Tại min_orders=50: 7–30 tuyến bị gắn cờ; toàn lưới: 4–30.
+- Mặc định min_orders=100 / red=2,0 / amber=1,5: 14 tuyến (6 đỏ, 8 vàng).
+| min_orders | red | amber | flagged_routes | red_routes | amber_routes | is_default |
+| --- | --- | --- | --- | --- | --- | --- |
+| 50 | 2 | 1.5 | 21 | 7 | 14 | True |
+| 50 | 2.5 | 1.5 | 21 | 4 | 17 | False |
+| 50 | 2 | 1.25 | 30 | 7 | 23 | False |
+| 50 | 1.5 | 1.25 | 30 | 21 | 9 | False |
+| 50 | 2 | 1.75 | 13 | 7 | 6 | False |
+| 50 | 2.5 | 2 | 7 | 4 | 3 | False |
+| 100 | 2 | 1.5 | 14 | 6 | 8 | True |
+| 100 | 2.5 | 1.5 | 14 | 3 | 11 | False |
+| 100 | 2 | 1.25 | 21 | 6 | 15 | False |
+| 100 | 1.5 | 1.25 | 21 | 14 | 7 | False |
+| 100 | 2 | 1.75 | 10 | 6 | 4 | False |
+| 100 | 2.5 | 2 | 6 | 3 | 3 | False |
+| 150 | 2 | 1.5 | 12 | 4 | 8 | True |
+| 150 | 2.5 | 1.5 | 12 | 2 | 10 | False |
+| 150 | 2 | 1.25 | 17 | 4 | 13 | False |
+| 150 | 1.5 | 1.25 | 17 | 12 | 5 | False |
+| 150 | 2 | 1.75 | 8 | 4 | 4 | False |
+| 150 | 2.5 | 2 | 4 | 2 | 2 | False |
+| 200 | 2 | 1.5 | 11 | 4 | 7 | True |
+| 200 | 2.5 | 1.5 | 11 | 2 | 9 | False |
+| 200 | 2 | 1.25 | 16 | 4 | 12 | False |
+| 200 | 1.5 | 1.25 | 16 | 11 | 5 | False |
+| 200 | 2 | 1.75 | 8 | 4 | 4 | False |
+| 200 | 2.5 | 2 | 4 | 2 | 2 | False |
+
+## Top 3 tuyến
+| route | orders | late_orders | baseline | level | stage | has_bottleneck | excess_approval | excess_prep | excess_transit | excess_ratio_approval | excess_ratio_prep | excess_ratio_transit | stage_ratio_diff | approval_cut_1 | approval_cut_3 | approval_cut_5 | approval_goal_cut | prep_cut_1 | prep_cut_3 | prep_cut_5 | prep_goal_cut | transit_cut_1 | transit_cut_3 | transit_cut_5 | transit_goal_cut | promise_days | promise_late_after |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| SP->RJ | 8016 | 1259 | 0.157061 | amber | transit | True | -0.0319286 | 0.204748 | 3.61952 | -0.0793859 | 0.0719491 | 0.387083 | False | 0.153568 | 0.152819 | 0.152819 |  | 0.14496 | 0.135604 | 0.130863 |  | 0.143214 | 0.124501 | 0.10978 | — | 15 | 0.0470309 |
+| SP->BA | 2267 | 340 | 0.149978 | amber | transit | True | 0.0643073 | 0.0135438 | 7.16929 | 0.159891 | 0.00475933 | 0.766706 | False | 0.144243 | 0.143361 | 0.14292 |  | 0.132775 | 0.118659 | 0.112925 |  | 0.128805 | 0.105426 | 0.0864579 | 10 | 10 | 0.0471989 |
+| SP->ES | 1443 | 205 | 0.142065 | amber | transit | True | 0.0267526 | 0.0848606 | 3.10232 | 0.0665164 | 0.0298203 | 0.331772 | False | 0.137907 | 0.135828 | 0.135828 |  | 0.126819 | 0.112266 | 0.108801 |  | 0.123354 | 0.0977131 | 0.0790021 | 9 | 9 | 0.045045 |
+
+## Tuyến mẫu nhỏ — nhóm 'cần thêm dữ liệu' (S7)
+- `route_priority` GIỮ NGUYÊN hành vi (H7); bảng này chỉ tách riêng các tuyến chưa đủ mẫu để không trộn vào danh sách ưu tiên chính.
+- Ngưỡng: orders < 200; level là nhãn TẠM theo bội số red=2 / amber=1.5 so với tỷ lệ trễ chung 0.081556.
+- Tuyến mẫu nhỏ: 357/406; có tín hiệu (red/amber tạm): 89; đơn trễ trong nhóm: 382/670.
+- `needed_orders` = số đơn còn thiếu để đạt ngưỡng; không kết luận nhân quả, chỉ là danh sách cần thu thập thêm dữ liệu.
+
+### Top 10 tuyến mẫu nhỏ có tín hiệu
+| route | orders | late_orders | late_rate | ci_low | ci_high | level | needed_orders | status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| MA->SP | 118 | 31 | 0.262712 | 0.191688 | 0.348699 | red | 82 | cần thêm dữ liệu |
+| SP->TO | 195 | 25 | 0.128205 | 0.088367 | 0.182409 | amber | 5 | cần thêm dữ liệu |
+| PR->BA | 144 | 24 | 0.166667 | 0.114632 | 0.236024 | red | 56 | cần thêm dữ liệu |
+| PR->AL | 37 | 13 | 0.351351 | 0.218254 | 0.512413 | red | 163 | cần thêm dữ liệu |
+| RJ->PE | 95 | 12 | 0.126316 | 0.073756 | 0.207923 | amber | 105 | cần thêm dữ liệu |
+| PR->PE | 87 | 12 | 0.137931 | 0.080697 | 0.225788 | amber | 113 | cần thêm dữ liệu |
+| RJ->CE | 57 | 12 | 0.210526 | 0.124744 | 0.332864 | red | 143 | cần thêm dữ liệu |
+| SC->BA | 78 | 10 | 0.128205 | 0.071152 | 0.220161 | amber | 122 | cần thêm dữ liệu |
+| PR->CE | 68 | 10 | 0.147059 | 0.081887 | 0.249976 | amber | 132 | cần thêm dữ liệu |
+| MG->MA | 64 | 10 | 0.15625 | 0.087147 | 0.264283 | amber | 136 | cần thêm dữ liệu |
+
+### Kiểm tra 3 tuyến được hỏi: MA->SP, PR->BA, SP->TO (đối chiếu 14 tuyến gắn cờ mặc định)
+| route | orders | late_orders | late_rate | level | in_flagged | flagged_rank | low_sample | needed_orders | status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| MA->SP | 118 | 31 | 0.262712 | red | True | 5 | True | 82 | cần thêm dữ liệu |
+| PR->BA | 144 | 24 | 0.166667 | red | True | 6 | True | 56 | cần thêm dữ liệu |
+| SP->TO | 195 | 25 | 0.128205 | amber | True | 14 | True | 5 | cần thêm dữ liệu |
+- `in_flagged=True` nghĩa là tuyến nằm trong tập gắn cờ mặc định (min_orders=100, red=2,0, amber=1,5). Vì orders < 200, cả ba được xếp vào nhóm 'cần thêm dữ liệu' thay vì danh sách ưu tiên chính.
+
+## Thời gian âm
+Thống kê cấp (đơn, tuyến): {'order_route_rows': 96981, 'approval_negative': 0, 'prep_negative': 1361, 'transit_negative': 29, 'any_negative': 1390, 'nan_stage': 0}
+Đã loại khỏi DSS: 1390 order-route
+| route | removed_rows | orders_keep | orders_drop | baseline_keep | baseline_drop | stage_keep | stage_drop | has_bottleneck_keep | has_bottleneck_drop | excess_approval_keep | excess_approval_drop | excess_prep_keep | excess_prep_drop | excess_transit_keep | excess_transit_drop |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| SP->RJ | 92 | 8108 | 8016 | 0.155772 | 0.157061 | transit | transit | True | True | -0.0365295 | -0.0319286 | 0.21257 | 0.204748 | 3.60283 | 3.61952 |
+| SP->BA | 28 | 2295 | 2267 | 0.149891 | 0.149978 | transit | transit | True | True | 0.0640323 | 0.0643073 | 0.0172637 | 0.0135438 | 7.20337 | 7.16929 |
+| SP->ES | 16 | 1459 | 1443 | 0.141193 | 0.142065 | transit | transit | True | True | 0.0215265 | 0.0267526 | 0.0911328 | 0.0848606 | 3.11442 | 3.10232 |
+
+## Attribution (peer group theo giai đoạn + Shapley)
+- Thiết kế: approval theo payment_type; prep theo weight_band; transit theo distance_band (decile khoảng cách toàn cục, XUYÊN tuyến).
+- Fallback: nhóm < min_orders hoặc khóa "NA" dùng median toàn cục của chính giai đoạn.
+- Sensitivity chỉ q=0,25 và q=0,5. q=0,75 bị loại: benchmark 75th percentile chậm hơn actual, phi âm, phân rã không hợp lệ.
+- NHÃN: `cause_share_*`/`share_promise` là TỶ TRỌNG trong tập ĐƠN TRỄ, KHÔNG phải tỷ lệ trễ. Transit là khâu dài nhất nên chiếm tỷ trọng lớn là điều dễ hiểu.
+- Cột `orders` đếm ĐƠN-TUYẾN (order-route), không phải đơn hàng duy nhất.
+- Giá trị DSS nằm ở so sánh giữa các tuyến + số đơn trễ có thể tránh; phần promise chỉ nêu dạng khoảng theo q (≈1–13% toàn hệ thống ở q=0,25–0,5), không kết luận mạnh.
+
+### q=0.5
+- Bất biến: {'n_orders': 95591, 'l1_row_efficiency': True, 'l1_max_error': 1.1102230246251565e-16, 'l2_aggregate_efficiency': True, 'l2_error': 0.0, 'l3_validity': True, 'passed': True}
+- Fallback theo giai đoạn: {'approval': {'peer': 0.99999, 'global': 1e-05}, 'prep': {'peer': 1.0}, 'transit': {'peer': 0.995041, 'global': 0.004959}}
+- Toàn hệ thống: {'orders': 95591, 'late_rate': 0.081556, 'share_approval': 0.015777, 'share_prep': 0.151488, 'share_transit': 0.69882, 'share_promise': 0.133915}
+| route | orders | late_rate | cause_share_approval | cause_share_prep | cause_share_transit | share_promise | phi_transit | top_stage |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| SP->SP | 30178 | 0.062927 | 0.024136 | 0.224767 | 0.390907 | 0.36019 | 0.024598 | transit |
+| SP->RJ | 8016 | 0.157061 | 0.007281 | 0.070029 | 0.898067 | 0.024623 | 0.141051 | transit |
+| SP->MG | 7283 | 0.064259 | 0.020299 | 0.142094 | 0.801282 | 0.036325 | 0.05149 | transit |
+| SP->RS | 3520 | 0.076989 | 0.0123 | 0.093481 | 0.824108 | 0.070111 | 0.063447 | transit |
+| SP->PR | 3044 | 0.054862 | 0.00998 | 0.129741 | 0.770459 | 0.08982 | 0.042269 | transit |
+- SP->RJ: phi_transit=0.141051 (14.1051 pp), late_rate=0.157061, share_promise (tỷ trọng trong đơn trễ)=0.024623
+- SP->SP: phi_transit=0.024598 (2.4598 pp), late_rate=0.062927, share_promise (tỷ trọng trong đơn trễ)=0.360190
+
+### q=0.25
+- Bất biến: {'n_orders': 95591, 'l1_row_efficiency': True, 'l1_max_error': 1.1102230246251565e-16, 'l2_aggregate_efficiency': True, 'l2_error': 1.3877787807814457e-17, 'l3_validity': True, 'passed': True}
+- Fallback theo giai đoạn: {'approval': {'peer': 0.99999, 'global': 1e-05}, 'prep': {'peer': 1.0}, 'transit': {'peer': 0.995041, 'global': 0.004959}}
+- Toàn hệ thống: {'orders': 95591, 'late_rate': 0.081556, 'share_approval': 0.025291, 'share_prep': 0.200765, 'share_transit': 0.763297, 'share_promise': 0.010646}
+| route | orders | late_rate | cause_share_approval | cause_share_prep | cause_share_transit | share_promise | phi_transit | top_stage |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| SP->SP | 30178 | 0.062927 | 0.043444 | 0.324118 | 0.601369 | 0.031069 | 0.037842 | transit |
+| SP->RJ | 8016 | 0.157061 | 0.009267 | 0.099815 | 0.88933 | 0.001589 | 0.139679 | transit |
+| SP->MG | 7283 | 0.064259 | 0.026709 | 0.183761 | 0.787393 | 0.002137 | 0.050597 | transit |
+| SP->RS | 3520 | 0.076989 | 0.02706 | 0.130381 | 0.842558 | 0 | 0.064867 | transit |
+| SP->PR | 3044 | 0.054862 | 0.022954 | 0.199601 | 0.777445 | 0 | 0.042652 | transit |
+- Liên hệ trong cùng dữ liệu giữa trễ/đúng hạn và review xấu (không hàm ý nhân quả): {'n_reviewed': 94945, 'n_missing_review': 646, 'n_late': 7631, 'n_ontime': 87314, 'bad_review_rate_late': 0.5416066046389726, 'bad_review_rate_ontime': 0.09441784822594315, 'absolute_uplift_pp': 44.718875641302944, 'relative_uplift': 5.736273541660268}
+
+## Bootstrap route-level (V2)
+- Resample tuyến, q=0.5, 500 lần, seed=42; CI percentile 95% cho tỷ trọng trong đơn trễ; chỉ đo nhiễu lấy mẫu giữa các tuyến tại q=0.5, không đo độ nhạy benchmark theo q.
+| cause | estimate | ci_low | ci_high |
+| --- | --- | --- | --- |
+| approval | 0.0157987 | 0.0107526 | 0.0199906 |
+| prep | 0.151638 | 0.106215 | 0.191531 |
+| transit | 0.699162 | 0.564003 | 0.835136 |
+| promise | 0.133402 | 0.044096 | 0.231705 |
+- Hạng #1 theo tuyến (chia số tuyến có đơn trễ mà transit là top stage cho tổng số tuyến có đơn trễ): 165/226 (73.01%).
+- Tập tuyến ở thống kê trên: các tuyến có ít nhất một đơn trễ (late > 0) trong mẫu phân tích, sau khi loại thời gian giai đoạn âm.
+- Hạng #1 cấp hệ thống: transit đứng đầu trong 500/500 lần bootstrap (100.00%); đây là tần suất trong phân phối bootstrap tại q=0.5.
+- Tỷ trọng là đại lượng không âm theo định nghĩa; CI không phải kiểm định khác 0, nên không gắn nhãn ý nghĩa thống kê.
+
+## Sign test (V4)
+- Backtest là tương quan hồi cứu; min_orders=30. Ở min_orders=100 có 13 kỳ đủ điều kiện. n trong bảng là số đơn-tuyến ở kỳ kế tiếp. Exact sign test giả định các kỳ độc lập; các tháng liền kề có thể tương quan, nên p-value có thể lạc quan.
+| period | next_period | n | diff | diff_vs_prior | diff_vs_through |
+| --- | --- | --- | --- | --- | --- |
+| 201701 | 201702 | 1641 | -0.00983378 | -0.00983378 | -0.00983378 |
+| 201702 | 201703 | 2546 | 0.14616 | -0.0151725 | -0.0223444 |
+| 201703 | 201704 | 2288 | 0.0827751 | 0.0827751 | 0.0827751 |
+| 201704 | 201705 | 3545 | 0.00482847 | 0.0124111 | 0.00482847 |
+| 201705 | 201706 | 3140 | 0.0139394 | -0.00798736 | -0.00798736 |
+| 201706 | 201707 | 3856 | 0.0673497 | 0.00998281 | 0.00998281 |
+| 201707 | 201708 | 4216 | 0.0147598 | -0.0142853 | 0.00573268 |
+| 201708 | 201709 | 4151 | -0.0180168 | 0.0647307 | 0.059703 |
+| 201709 | 201710 | 4505 | 0.0834661 | 0.037871 | 0.0776316 |
+| 201710 | 201711 | 7333 | 0.166805 | 0.0322441 | 0.163519 |
+| 201711 | 201712 | 5527 | 0.178472 | 0.0243762 | 0.162813 |
+| 201712 | 201801 | 7098 | 0.080849 | 0.0739454 | 0.0739454 |
+| 201801 | 201802 | 6557 | 0.217269 | 0.217236 | 0.217236 |
+| 201802 | 201803 | 7034 | 0.223994 | 0.230726 | 0.240508 |
+| 201803 | 201804 | 6451 | 0.089223 | 0.0776488 | 0.0817291 |
+| 201804 | 201805 | 6720 | 0.107717 | 0.0525516 | 0.0532872 |
+| 201805 | 201806 | 6013 | 0.00777015 | 0.0112814 | 0.0112814 |
+| 201806 | 201807 | 5634 | 0.012126 | -0.00641499 | -0.00641499 |
+| 201807 | 201808 | 6321 | -0.0940028 | -0.0718191 | -0.0718191 |
+- DSS vs_zero: +16/−3 (non-tie n=19); p một phía=0.00221252; p hai phía=0.00442505.
+- DSS vs_prior: +12/−5 (non-tie n=17); p một phía=0.0717316; p hai phía=0.143463.
+- DSS vs_through: +12/−4 (non-tie n=16); p một phía=0.0384064; p hai phía=0.0768127.
+
+## Promise calibration (S3: route × weight_band, Q95)
+- Đơn vị: ĐƠN-TUYẾN (order-route). Nhóm route × weight_band; ô < 100 đơn-tuyến bị loại khỏi bảng.
+- needed_days = ceil(Q95 total_lead_days); gap_days = median promise_days − needed_days.
+- Nhãn: tight nếu gap < −1 ngày; loose nếu gap > +1 ngày; còn lại ok.
+- avoidable_orders = số đơn ĐANG TRỄ nhưng sẽ đúng hạn nếu đặt promise = needed_days.
+- CẢNH BÁO: đổi promise = đổi ĐỊNH NGHĨA trễ, KHÔNG rút ngắn thời gian giao thực tế; không đọc là 'giảm trễ' vận hành.
+- Ô giữ/loại: 130/1157 (loại 1027 ô nhỏ = 12487 đơn-tuyến).
+- Đơn-tuyến trong ô đủ mẫu: 83104/95591.
+- Số ô tight/ok/loose: 89/11/30.
+- GROSS đơn trễ tránh được (chỉ đếm phần giảm): 3751/6720 đơn-tuyến trễ.
+- Siết ô loose làm phát sinh 884 đơn trễ mới; NET = GROSS − new late = 2867 đơn-tuyến.
+- Đơn trễ sau hiệu chỉnh: 3853/83104 (= late − GROSS + new late). Decision Brief CHỈ dùng NET.
+- Tỷ lệ trễ hiện tại (ô đủ mẫu): 0.080863; nếu promise = needed_days: 0.046364.
+
+### Top 10 ô theo số đơn trễ có thể tránh
+| route | weight_band | n_orders | median_promise_days | needed_days | gap_days | label | late_orders | avoidable_orders | calibrated_late_rate |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| SP->SP | Q4 | 7174 | 18.2648 | 22 | -3.73516 | tight | 499 | 283 | 0.042933 |
+| SP->SP | Q1 | 8567 | 15.3651 | 17 | -1.63486 | tight | 520 | 277 | 0.042839 |
+| SP->RJ | Q3 | 2166 | 24.139 | 40 | -15.861 | tight | 357 | 255 | 0.047553 |
+| SP->RJ | Q4 | 2109 | 25.3647 | 43 | -17.6353 | tight | 346 | 249 | 0.046942 |
+| SP->SP | Q3 | 7233 | 17.6608 | 19 | -1.33916 | tight | 471 | 220 | 0.047975 |
+| SP->SP | Q2 | 7204 | 16.3826 | 18 | -1.61743 | tight | 409 | 218 | 0.042199 |
+| SP->RJ | Q2 | 1861 | 24.4225 | 40 | -15.5775 | tight | 304 | 214 | 0.049436 |
+| SP->RJ | Q1 | 1880 | 24.0929 | 38 | -13.9071 | tight | 252 | 166 | 0.046277 |
+| SP->BA | Q1 | 651 | 29.2853 | 35 | -5.71468 | tight | 91 | 67 | 0.046083 |
+| SP->BA | Q4 | 573 | 30.48 | 40 | -9.52002 | tight | 87 | 65 | 0.048866 |
+
+### Mức phục vụ 85/90/95% cho top 5 tuyến (needed_days = ceil(Qq total_lead_days))
+| route | service_level | orders | needed_days | late_rate | current_late_rate | avoidable_orders | new_late_orders | net_avoided_orders |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| SP->SP | 0.85 | 30178 | 13 | 0.134403 | 0.062927 | 548 | 2705 | -2157 |
+| SP->SP | 0.9 | 30178 | 15 | 0.089469 | 0.062927 | 701 | 1502 | -801 |
+| SP->SP | 0.95 | 30178 | 19 | 0.045961 | 0.062927 | 967 | 455 | 512 |
+| SP->RJ | 0.85 | 8016 | 26 | 0.149202 | 0.157061 | 267 | 204 | 63 |
+| SP->RJ | 0.9 | 8016 | 32 | 0.093189 | 0.157061 | 560 | 48 | 512 |
+| SP->RJ | 0.95 | 8016 | 41 | 0.047031 | 0.157061 | 892 | 10 | 882 |
+| SP->BA | 0.85 | 2267 | 29 | 0.147772 | 0.149978 | 86 | 81 | 5 |
+| SP->BA | 0.9 | 2267 | 33 | 0.089987 | 0.149978 | 169 | 33 | 136 |
+| SP->BA | 0.95 | 2267 | 38 | 0.04764 | 0.149978 | 243 | 11 | 232 |
+| SP->MG | 0.85 | 7283 | 19 | 0.131539 | 0.064259 | 34 | 524 | -490 |
+| SP->MG | 0.9 | 7283 | 21 | 0.096938 | 0.064259 | 61 | 299 | -238 |
+| SP->MG | 0.95 | 7283 | 26 | 0.044075 | 0.064259 | 218 | 71 | 147 |
+| SP->SC | 0.85 | 2272 | 24 | 0.145687 | 0.112676 | 38 | 113 | -75 |
+| SP->SC | 0.9 | 2272 | 28 | 0.091989 | 0.112676 | 88 | 41 | 47 |
+| SP->SC | 0.95 | 2272 | 34 | 0.044454 | 0.112676 | 161 | 6 | 155 |
+- `late_rate` là tỷ lệ trễ NẾU cam kết bằng `needed_days` (đổi định nghĩa trễ, không rút ngắn giao thực tế). `net_avoided_orders` = avoidable − new late.
+
+### SP->SP (kiểm riêng)
+| route | weight_band | n_orders | median_promise_days | needed_days | gap_days | label | late_orders | avoidable_orders | calibrated_late_rate |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| SP->SP | Q4 | 7174 | 18.2648 | 22 | -3.73516 | tight | 499 | 283 | 0.042933 |
+| SP->SP | Q1 | 8567 | 15.3651 | 17 | -1.63486 | tight | 520 | 277 | 0.042839 |
+| SP->SP | Q3 | 7233 | 17.6608 | 19 | -1.33916 | tight | 471 | 220 | 0.047975 |
+| SP->SP | Q2 | 7204 | 16.3826 | 18 | -1.61743 | tight | 409 | 218 | 0.042199 |
+- share_promise SP->SP (tỷ trọng trong đơn trễ): q=0,5 = 0.360190 (36.0190%); q=0,25 = 0.031069 (3.1069%).
+- Nhãn S3 tại SP->SP: {'tight': 4}.
+- S3 (Q95 lead time) ủng hộ 'cam kết chặt' tại SP->SP: mọi ô đủ mẫu có promise < Q95.
+- Lưu ý: share_promise phụ thuộc mạnh vào q của benchmark; q=0,5 và q=0,25 cho hai bức tranh khác nhau. S3 dùng Q95 nên là lát cắt 'mức phục vụ 95%', không đồng nhất với benchmark q=0,5.
+
+## Feasible max cut (S4: peer P25 + bootstrap 300×, seed 42)
+- Peer P25 dùng CÙNG định nghĩa peer với S1: approval theo payment_type; prep theo weight_band; transit theo distance_band (decile khoảng cách toàn cục, XUYÊN tuyến).
+- cut_s = max(0, mean(actual_s) − mean(peer_p25_s)); mô phỏng bằng scenario, chặn theo thời gian thực tế từng đơn.
+- Đây là MÔ PHỎNG theo luật, không có counterfactual thật: nói diễn đạt bằng câu 'NẾU cắt được ... THÌ ƯỚC TÍNH', không trình bày mô phỏng như kết quả thực tế.
+- Bootstrap 300 lần theo đơn-tuyến trong mỗi tuyến; CI 95% cho mức giảm tỷ lệ trễ (điểm phần trăm). CI phản ánh sampling noise, không chứng minh tính khả thi. CI chứa 0 → 'chưa đủ bằng chứng'.
+- Tuyến đủ mẫu 100 đơn-tuyến: 71/406; bootstrap 10 tuyến.
+
+### Top 10 tuyến theo số đơn trễ có thể tránh
+| route | n_orders | cut_approval | cut_prep | cut_transit | total_cut_days | baseline_late_rate | projected_late_rate | avoided_orders | delta_pp | delta_ci_low_pp | delta_ci_high_pp | status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| SP->SP | 30178 | 0.248037 | 1.89067 | 2.26856 | 4.40727 | 0.062927 | 0.029028 | 1023 | 3.38989 | 3.18916 | 3.60859 | ước lượng ổn định (CI hẹp) |
+| SP->RJ | 8016 | 0.257225 | 2.14828 | 7.67043 | 10.0759 | 0.157061 | 0.07485 | 659 | 8.22106 | 7.52121 | 8.82641 | ước lượng ổn định (CI hẹp) |
+| SP->MG | 7283 | 0.271591 | 1.99093 | 3.78598 | 6.04851 | 0.064259 | 0.028422 | 261 | 3.58369 | 3.08218 | 4.00282 | ước lượng ổn định (CI hẹp) |
+| SP->BA | 2267 | 0.34563 | 1.95977 | 8.04672 | 10.3521 | 0.149978 | 0.048081 | 231 | 10.1897 | 8.79687 | 11.2947 | ước lượng ổn định (CI hẹp) |
+| SP->SC | 2272 | 0.294753 | 1.99833 | 6.87479 | 9.16787 | 0.112676 | 0.034331 | 178 | 7.83451 | 6.57901 | 9.02289 | ước lượng ổn định (CI hẹp) |
+| SP->RS | 3520 | 0.307836 | 1.84264 | 6.06875 | 8.21922 | 0.076989 | 0.036364 | 143 | 4.0625 | 3.39418 | 4.74432 | ước lượng ổn định (CI hẹp) |
+| SP->ES | 1443 | 0.298475 | 2.03103 | 5.72265 | 8.05216 | 0.142065 | 0.057519 | 122 | 8.45461 | 6.93001 | 10.3257 | ước lượng ổn định (CI hẹp) |
+| SP->PR | 3044 | 0.28873 | 1.93877 | 4.22439 | 6.4519 | 0.054862 | 0.022339 | 99 | 3.2523 | 2.72668 | 3.81078 | ước lượng ổn định (CI hẹp) |
+| SP->GO | 1389 | 0.365622 | 1.84152 | 6.33911 | 8.54625 | 0.092873 | 0.034557 | 81 | 5.83153 | 4.60763 | 7.09323 | ước lượng ổn định (CI hẹp) |
+| SP->CE | 945 | 0.326357 | 2.02733 | 8.03217 | 10.3859 | 0.155556 | 0.069841 | 81 | 8.57143 | 6.56085 | 10.3704 | ước lượng ổn định (CI hẹp) |
+
+### Top 5 tuyến: mục tiêu peer P50 từng giai đoạn (tham chiếu, KHÔNG dùng để cắt)
+| route | n_orders | actual_mean_approval | actual_mean_prep | actual_mean_transit | peer_p50_approval | peer_p50_prep | peer_p50_transit | peer_p50_total_days | status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| SP->SP | 30178 | 0.377982 | 2.78883 | 4.79588 | 0.246337 | 1.84206 | 4.13634 | 6.22474 | ước lượng ổn định (CI hẹp) |
+| SP->RJ | 8016 | 0.370266 | 3.05048 | 12.9703 | 0.21359 | 1.85431 | 7.36829 | 9.43619 | ước lượng ổn định (CI hẹp) |
+| SP->MG | 7283 | 0.402865 | 2.89123 | 9.13092 | 0.248781 | 1.8486 | 7.52161 | 9.619 | ước lượng ổn định (CI hẹp) |
+| SP->BA | 2267 | 0.466502 | 2.85928 | 16.5201 | 0.228731 | 1.84538 | 12.3368 | 14.4109 | ước lượng ổn định (CI hẹp) |
+| SP->SC | 2272 | 0.441952 | 2.89879 | 12.6475 | 0.279554 | 1.84864 | 7.93781 | 10.066 | ước lượng ổn định (CI hẹp) |
+- `actual_mean_*` là trung bình thực tế; `peer_p50_*` là benchmark P50 cùng định nghĩa peer S1. Mức cắt S4 vẫn dùng peer P25, P50 chỉ để đối chiếu.
+
+### Kiểm tra H10: cắt 1 ngày mỗi giai đoạn tại SP->RJ (một giai đoạn tại một thời điểm)
+- approval: projected=0.153568, avoided=28 (baseline=0.157061)
+- prep: projected=0.144960, avoided=97 (baseline=0.157061)
+- transit: projected=0.143214, avoided=111 (baseline=0.157061)
+
+### Cắt biên tại SP->SP (mỗi giai đoạn cắt riêng, các giai đoạn khác = 0)
+| stage | cut_days | projected_late_rate | avoided_orders | marginal_avoided_orders | marginal_avoided_per_day |
+| --- | --- | --- | --- | --- | --- |
+| approval | 0 | 0.062927 | 0 | 0 | 0 |
+| approval | 0.248037 | 0.062496 | 13 | 13 | 52.4116 |
+| prep | 0 | 0.062927 | 0 | 0 | 0 |
+| prep | 1 | 0.04891 | 423 | 423 | 423 |
+| prep | 1.89067 | 0.043177 | 596 | 173 | 194.235 |
+| transit | 0 | 0.062927 | 0 | 0 | 0 |
+| transit | 1 | 0.047021 | 480 | 480 | 480 |
+| transit | 2 | 0.039234 | 715 | 235 | 235 |
+| transit | 2.26856 | 0.038836 | 727 | 12 | 44.6832 |
+
+## Seller scorecard (S5: chỉ đơn single-seller)
+- Đơn vị: ĐƠN HÀNG (unique order_id), không phải đơn-tuyến. Đơn nhiều người bán bị loại vì không quy được trách nhiệm cho một seller.
+- Loại 502 đơn nhiều seller + 0 đơn thiếu seller_id = 0.5280% số đơn (1.0576% số đơn-tuyến).
+- Đơn single-seller dùng được: 94580/95082; 2948 seller; tỷ lệ trễ chung 0.082343.
+- `level`: red nếu Wilson low > tỷ lệ chung; amber nếu điểm ước lượng > chung nhưng CI còn chứa chung; ok còn lại. CI Wilson giả định các đơn độc lập (V2).
+- `segment`: ưu tiên (đủ mẫu + red/amber), ổn định (đủ mẫu + ok), cần thêm dữ liệu (dưới min_orders).
+- `bad_review_rate` (review ≤ 2) chỉ là LIÊN HỆ, không phải nhân quả; đơn trễ có review xấu nhiều hơn; đây là liên hệ, không xác định chiều tác động.
+- Seller đủ mẫu: 609/2948 (min_orders=30).
+- Số seller ÍT NHẤT phủ 50% đơn trễ: 102 seller (3902/7788 đơn trễ, 50.1027%).
+
+### Phân khúc người bán
+| segment | n_sellers | orders | late_orders | gmv | late_rate | late_orders_share | gmv_share |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| ưu tiên | 252 | 33863 | 4117 | 4.4595e+06 | 0.121578 | 0.528634 | 0.344903 |
+| ổn định | 357 | 44733 | 2332 | 5.44842e+06 | 0.052132 | 0.299435 | 0.421387 |
+| cần thêm dữ liệu | 2339 | 15984 | 1339 | 3.0218e+06 | 0.083771 | 0.171931 | 0.23371 |
+
+### Top 10 seller theo số đơn trễ (chiếm 15.3570% đơn trễ, 9.7920% GMV)
+| seller_id | orders | late_orders | late_rate | wilson_low | wilson_high | late_rate_lift | level | segment | bad_review_rate | gmv_share |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 4a3ca9315b744ce9f8e9374361493884 | 1706 | 194 | 0.113716 | 0.099511 | 0.129657 | 1.38101 | red | ưu tiên | 0.176645 | 0.015162 |
+| 1f50f920176fa81dab994f9023523100 | 1372 | 148 | 0.107872 | 0.092538 | 0.125395 | 1.31003 | red | ưu tiên | 0.134601 | 0.008209 |
+| 4869f7a5dfa277a7dca6462dcf3b52b2 | 1103 | 130 | 0.11786 | 0.100144 | 0.138229 | 1.43134 | red | ưu tiên | 0.125114 | 0.017299 |
+| ea8482cd71df3c1969d7b9473ff13abc | 1099 | 118 | 0.10737 | 0.090415 | 0.127061 | 1.30394 | red | ưu tiên | 0.140897 | 0.002742 |
+| 6560211a19b47992c3666cc44a7e94c0 | 1747 | 114 | 0.065255 | 0.054601 | 0.077817 | 0.792475 | ok | ổn định | 0.154556 | 0.009026 |
+| cc419e0650a3c5ba77189a1882b7556a | 1643 | 101 | 0.061473 | 0.05085 | 0.074142 | 0.746547 | ok | ổn định | 0.127517 | 0.007882 |
+| da8622b14eb17ae2831f4ac5b9dab84a | 1264 | 99 | 0.078323 | 0.064756 | 0.094445 | 0.951177 | ok | ổn định | 0.112083 | 0.012038 |
+| 955fee9216a65b617aa5c0531780ce60 | 1225 | 98 | 0.08 | 0.066088 | 0.096538 | 0.971546 | ok | ổn định | 0.099425 | 0.009906 |
+| 7c67e1448b00f6e969d365cea6b010ab | 966 | 98 | 0.101449 | 0.08396 | 0.122096 | 1.23203 | red | ưu tiên | 0.253125 | 0.014338 |
+| 8b321bb669392f5163d04c59e235e066 | 909 | 96 | 0.105611 | 0.087264 | 0.127277 | 1.28257 | red | ưu tiên | 0.137017 | 0.001319 |
+
+## Decision Brief (S6: hành động theo 4 loại, KHÔNG cộng chéo)
+- Brief là lớp trình bày từ S3/S4/S5/S7. Các nhóm route/payment/promise/seller CHỒNG LẤN trên cùng đơn-tuyến.
+- TUYỆT ĐỐI KHÔNG cộng 'đơn tránh được' giữa các loại; chỉ được cộng trong cùng một loại.
+- Promise chỉ dùng NET. Mọi con số avoided/NET là mô phỏng theo luật: dùng câu điều kiện 'nếu ... thì ước tính'; không phải counterfactual thật.
+- Các tổng chỉ áp dụng đúng top-N đã chọn: route top 5 theo P25; payment top 5 theo payment_type, chỉ approval/tác động thấp; promise top 5 ô NET; seller top 5 theo excess. Không so sánh chúng như tổng S4 top-10 hay NET S3 toàn bộ ô.
+- Phạm vi đối chiếu: S4 top-10 = 2878 đơn; S3 NET = 2867 đơn trên 130 ô đủ mẫu.
+- GMV là tổng GMV của đúng nhóm; excess seller là mức vượt tham chiếu liên hệ, không phải số đơn tránh được theo tuyến.
+
+### 1) Hành động theo tuyến (S4, peer P25 + bootstrap CI)
+| route | stage | owner | gmv | avoided_orders | avoided_ci_low | avoided_ci_high | delta_pp | status | action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| SP->SP | approval + prep + transit | Duyệt thanh toán + Người bán + Đơn vị vận chuyển | 3451815 | 1023 | 962 | 1089 | 3.38989 | ước lượng ổn định (CI hẹp) | Nếu cả 3 giai đoạn về peer P25 (approval 0.25 + prep 1.89 + transit 2.27 = 4.41 ngày), thì ước tính tránh 1023 đơn trễ (CI 962–1089); GMV toàn tuyến (tham chiếu): R$ 3.451.815. |
+| SP->RJ | approval + prep + transit | Duyệt thanh toán + Người bán + Đơn vị vận chuyển | 1044166 | 659 | 603 | 708 | 8.22106 | ước lượng ổn định (CI hẹp) | Nếu cả 3 giai đoạn về peer P25 (approval 0.26 + prep 2.15 + transit 7.67 = 10.08 ngày), thì ước tính tránh 659 đơn trễ (CI 603–708); GMV toàn tuyến (tham chiếu): R$ 1.044.166. |
+| SP->MG | approval + prep + transit | Duyệt thanh toán + Người bán + Đơn vị vận chuyển | 908756 | 261 | 224 | 292 | 3.58369 | ước lượng ổn định (CI hẹp) | Nếu cả 3 giai đoạn về peer P25 (approval 0.27 + prep 1.99 + transit 3.79 = 6.05 ngày), thì ước tính tránh 261 đơn trễ (CI 224–292); GMV toàn tuyến (tham chiếu): R$ 908.756. |
+| SP->BA | approval + prep + transit | Duyệt thanh toán + Người bán + Đơn vị vận chuyển | 305594 | 231 | 199 | 256 | 10.1897 | ước lượng ổn định (CI hẹp) | Nếu cả 3 giai đoạn về peer P25 (approval 0.35 + prep 1.96 + transit 8.05 = 10.36 ngày), thì ước tính tránh 231 đơn trễ (CI 199–256); GMV toàn tuyến (tham chiếu): R$ 305.594. |
+| SP->SC | approval + prep + transit | Duyệt thanh toán + Người bán + Đơn vị vận chuyển | 298393 | 178 | 149 | 205 | 7.83451 | ước lượng ổn định (CI hẹp) | Nếu cả 3 giai đoạn về peer P25 (approval 0.29 + prep 2.00 + transit 6.87 = 9.16 ngày), thì ước tính tránh 178 đơn trễ (CI 149–205); GMV toàn tuyến (tham chiếu): R$ 298.393. |
+- Tổng top 5 tuyến theo S4 peer P25 (không cộng với nhóm khác): 2352 đơn tránh được.
+
+### 2) Hành động theo loại thanh toán (chỉ cắt approval)
+| payment_type | owner | gmv | avoided_orders | avoided_ci_low | avoided_ci_high | delta_pp | status | action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| boleto | Duyệt thanh toán | 2299158 | 92 | 72 | 112 | 0.484823 | ước lượng ổn định (CI hẹp) | Nếu rút ngắn duyệt thanh toán cho boleto khoảng 0.72 ngày (về peer P25), thì ước tính tránh 92 đơn trễ (CI 72–112); GMV toàn nhóm (tham chiếu): R$ 2.299.158. |
+| credit_card | Duyệt thanh toán | 10286717 | 20 | 12 | 28 | 0.027714 | ước lượng ổn định (CI hẹp) | Nếu rút ngắn duyệt thanh toán cho credit_card khoảng 0.15 ngày (về peer P25), thì ước tính tránh 20 đơn trễ (CI 12–28); GMV toàn nhóm (tham chiếu): R$ 10.286.717. |
+| debit_card | Duyệt thanh toán | 172573 | 2 | 0 | 5 | 0.138217 | chưa đủ bằng chứng | Nếu rút ngắn duyệt thanh toán cho debit_card khoảng 0.27 ngày (về peer P25), thì ước tính tránh 2 đơn trễ (CI 0–5); GMV toàn nhóm (tham chiếu): R$ 172.573. |
+| voucher | Duyệt thanh toán | 284620 | 0 | 0 | 0 | 0 | chưa đủ bằng chứng | Nếu rút ngắn duyệt thanh toán cho voucher khoảng 0.29 ngày (về peer P25), thì ước tính tránh 0 đơn trễ (CI 0–0); GMV toàn nhóm (tham chiếu): R$ 284.620. |
+- Tổng top 5 payment_type, chỉ approval và tác động thấp (không cộng với nhóm khác): 114 đơn tránh được.
+
+### 3) Hiệu chỉnh promise (S3, CHỈ NET)
+- Trước: 6720 đơn trễ (0.080863); sau: 3853 (0.046364).
+- NET theo định nghĩa promise mới: 2867; phát sinh mới: 884; ô đủ mẫu: 130.
+| route | weight_band | owner | gmv | needed_days | net_avoided_orders | new_late_orders | late_orders | label | action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| SP->RJ | Q3 | Vận hành cam kết giao hàng | 241078 | 40 | 254 | 1 | 357 | tight | Nếu đặt promise = 40 ngày cho ô SP->RJ × Q3, thì ước tính NET 254 đơn trễ được phân loại lại là đúng hạn theo promise mới (phát sinh 1 đơn trễ mới); đổi định nghĩa trễ, không rút ngắn thời gian giao. GMV ô (tham chiếu): R$ 241.078. |
+| SP->RJ | Q4 | Vận hành cam kết giao hàng | 468191 | 43 | 247 | 2 | 346 | tight | Nếu đặt promise = 43 ngày cho ô SP->RJ × Q4, thì ước tính NET 247 đơn trễ được phân loại lại là đúng hạn theo promise mới (phát sinh 2 đơn trễ mới); đổi định nghĩa trễ, không rút ngắn thời gian giao. GMV ô (tham chiếu): R$ 468.191. |
+| SP->RJ | Q2 | Vận hành cam kết giao hàng | 222523 | 40 | 212 | 2 | 304 | tight | Nếu đặt promise = 40 ngày cho ô SP->RJ × Q2, thì ước tính NET 212 đơn trễ được phân loại lại là đúng hạn theo promise mới (phát sinh 2 đơn trễ mới); đổi định nghĩa trễ, không rút ngắn thời gian giao. GMV ô (tham chiếu): R$ 222.523. |
+| SP->SP | Q4 | Vận hành cam kết giao hàng | 1467114 | 22 | 191 | 92 | 499 | tight | Nếu đặt promise = 22 ngày cho ô SP->SP × Q4, thì ước tính NET 191 đơn trễ được phân loại lại là đúng hạn theo promise mới (phát sinh 92 đơn trễ mới); đổi định nghĩa trễ, không rút ngắn thời gian giao. GMV ô (tham chiếu): R$ 1.467.114. |
+| SP->RJ | Q1 | Vận hành cam kết giao hàng | 112374 | 38 | 165 | 1 | 252 | tight | Nếu đặt promise = 38 ngày cho ô SP->RJ × Q1, thì ước tính NET 165 đơn trễ được phân loại lại là đúng hạn theo promise mới (phát sinh 1 đơn trễ mới); đổi định nghĩa trễ, không rút ngắn thời gian giao. GMV ô (tham chiếu): R$ 112.374. |
+- Tổng top 5 ô route×weight_band theo NET (không cộng với nhóm khác): 1069 đơn trễ được phân loại lại theo định nghĩa promise.
+
+### 4) Hành động theo người bán (S5, chỉ liên hệ)
+| seller_id | owner | gmv | orders | late_orders | late_rate | wilson_low | wilson_high | level | estimated_excess_late_orders | action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 06a2c3af7b3aee5d69171b0e14f0ee87 | Người bán | 34159 | 369 | 90 | 0.243902 | 0.202871 | 0.290211 | red | 60 | Làm việc với seller 06a2c3af…: 90 đơn trễ, tỷ lệ 24.39% (CI 20.29%–29.02%); ước tính 60 đơn trễ vượt mức hệ thống (liên hệ, không phải đơn tránh được); GMV toàn seller (tham chiếu): R$ 34.159. |
+| 4a3ca9315b744ce9f8e9374361493884 | Người bán | 196037 | 1706 | 194 | 0.113716 | 0.099511 | 0.129657 | red | 54 | Làm việc với seller 4a3ca931…: 194 đơn trễ, tỷ lệ 11.37% (CI 9.95%–12.97%); ước tính 54 đơn trễ vượt mức hệ thống (liên hệ, không phải đơn tránh được); GMV toàn seller (tham chiếu): R$ 196.037. |
+| 4869f7a5dfa277a7dca6462dcf3b52b2 | Người bán | 223665 | 1103 | 130 | 0.11786 | 0.100144 | 0.138229 | red | 39 | Làm việc với seller 4869f7a5…: 130 đơn trễ, tỷ lệ 11.79% (CI 10.01%–13.82%); ước tính 39 đơn trễ vượt mức hệ thống (liên hệ, không phải đơn tránh được); GMV toàn seller (tham chiếu): R$ 223.665. |
+| 1f50f920176fa81dab994f9023523100 | Người bán | 106140 | 1372 | 148 | 0.107872 | 0.092538 | 0.125395 | red | 35 | Làm việc với seller 1f50f920…: 148 đơn trễ, tỷ lệ 10.79% (CI 9.25%–12.54%); ước tính 35 đơn trễ vượt mức hệ thống (liên hệ, không phải đơn tránh được); GMV toàn seller (tham chiếu): R$ 106.140. |
+| 8160255418d5aaa7dbdc9f4c64ebda44 | Người bán | 45613 | 365 | 62 | 0.169863 | 0.134824 | 0.211779 | red | 32 | Làm việc với seller 81602554…: 62 đơn trễ, tỷ lệ 16.99% (CI 13.48%–21.18%); ước tính 32 đơn trễ vượt mức hệ thống (liên hệ, không phải đơn tránh được); GMV toàn seller (tham chiếu): R$ 45.613. |
+- Tổng top 5 seller theo excess (không cộng với nhóm khác): 220 đơn trễ vượt mức hệ thống (chỉ là liên hệ, không nhân quả).
+
+### 5) Cần thêm dữ liệu (S7, không đưa vào ưu tiên chính)
+| route | gmv | orders | late_orders | late_rate | level | needed_orders | in_flagged | flagged_rank | status | action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| MA->SP | 10875 | 118 | 31 | 0.262712 | red | 82 | True | 5 | cần thêm dữ liệu | Thu thập thêm 82 đơn cho tuyến MA->SP rồi đánh giá lại (hiện 118 đơn, 31 trễ; GMV toàn tuyến (tham chiếu): R$ 10.875). |
+| SP->TO | 35183 | 195 | 25 | 0.128205 | amber | 5 | True | 14 | cần thêm dữ liệu | Thu thập thêm 5 đơn cho tuyến SP->TO rồi đánh giá lại (hiện 195 đơn, 25 trễ; GMV toàn tuyến (tham chiếu): R$ 35.183). |
+| PR->BA | 34042 | 144 | 24 | 0.166667 | red | 56 | True | 6 | cần thêm dữ liệu | Thu thập thêm 56 đơn cho tuyến PR->BA rồi đánh giá lại (hiện 144 đơn, 24 trễ; GMV toàn tuyến (tham chiếu): R$ 34.042). |
+| PR->AL | 12219 | 37 | 13 | 0.351351 | red | 163 | False | — | cần thêm dữ liệu | Thu thập thêm 163 đơn cho tuyến PR->AL rồi đánh giá lại (hiện 37 đơn, 13 trễ; GMV toàn tuyến (tham chiếu): R$ 12.219). |
+| RJ->PE | 22295 | 95 | 12 | 0.126316 | amber | 105 | False | — | cần thêm dữ liệu | Thu thập thêm 105 đơn cho tuyến RJ->PE rồi đánh giá lại (hiện 95 đơn, 12 trễ; GMV toàn tuyến (tham chiếu): R$ 22.295). |
+
+### Ghi chú bắt buộc
+- KHÔNG cộng 'đơn tránh được' giữa route / payment / promise / seller: tổng các nhóm KHÔNG phải tổng đơn tránh được (chồng lấn trên cùng tập đơn trễ). Chỉ cộng trong cùng một loại.
+- Tập mỗi tổng là riêng: route = top 5 tuyến theo peer P25; payment = top 5 payment_type, chỉ approval và tác động thấp; promise = top 5 ô route×weight_band theo NET; seller = top 5 seller theo excess. Các top-N khác danh sách 10 tuyến P25 và NET toàn bộ ô đủ mẫu.
+- Số đếm theo tuyến là đơn-tuyến; số seller là đơn single-seller.
+- Promise chỉ dùng NET (đã trừ đơn trễ mới do siết ô loose), không dùng GROSS; đổi định nghĩa trễ, không rút ngắn thời gian giao.
+- Mọi con số avoided/NET là mô phỏng theo luật: nói 'nếu ... thì ước tính', Mô phỏng cần được diễn đạt bằng câu điều kiện; không phải counterfactual thật.
+- Seller và review chỉ là liên hệ, không phải kết luận nhân quả.
+- GMV là số nguyên và mô tả đúng tập nhóm; excess seller không phải số đơn tránh được theo tuyến.
+- MA→SP, PR→BA, SP→TO nằm trong 14 tuyến gắn cờ mặc định nhưng có <200 đơn, nên được xếp vào 'cần thêm dữ liệu', không tính trùng như hành động ưu tiên chính.
