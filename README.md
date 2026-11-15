@@ -9,8 +9,8 @@ Hệ thống gồm 4 phần:
 |---|---|---|
 | Data Warehouse | PostgreSQL (Star Schema) | Lưu dữ liệu phân tích |
 | ETL | Python + pandas + psycopg2 | Làm sạch, tính toán, nạp DW |
-| Backend | Flask 3 (app factory + Blueprint) | API DSS `/api/dss/*`, psycopg2 |
-| Frontend | HTML + JavaScript (single file) | Giao diện DSS gọi API trực tiếp |
+| Backend | Flask 3 (app factory + Blueprint) | API DSS, BI/OLAP, auth trên một cổng `:8000`, psycopg2 |
+| Frontend | React 19 + Vite 8 + Tailwind | 5 API thật (Dashboard, OLAP, Analytics); tab DSS còn mock |
 
 ---
 
@@ -20,16 +20,18 @@ Hệ thống gồm 4 phần:
   PostgreSQL.
 - **DW**: 5 bảng `Dim_Time`, `Dim_Location`, `Dim_Product`, `Dim_Seller`,
   `Fact_Delivery_SLA` đã được tạo và nạp dữ liệu.
-- **Backend**: Flask 3, app factory `create_app()`, Blueprint `/api/dss`. API DSS
-  gồm `routes`, `scenario`, `promise`, `actions`, `brief`, `attribution`,
-  `promise-policy`, `sellers`, `portfolio`; tài liệu: `reports/api_dss.md`.
-  Dữ liệu phân tích đọc từ CSV (`data/processed/`); bảng log hành động dùng
-  `psycopg2` trực tiếp.
-- **Frontend**: file HTML đơn lẻ gọi API trực tiếp (không cần build); đặt
-  `window.DSS_API_BASE` nếu backend không chạy ở `http://127.0.0.1:8000/api/dss/`.
-- **Prisma**: schema mô tả DW và Prisma Client (dùng cho tooling/Node).
+- **Backend**: Flask 3, app factory `create_app()`, một app duy nhất phục vụ
+  `:8000`: 9 route `/api/dss/*`, 12 route BI/OLAP (`/api/olap/*`,
+  `/api/dashboard/*`, `/api/analytics/*`, `/api/health`) và 3 route auth
+  `/api/auth/*`. Tài liệu DSS: `reports/api_dss.md`.
+  Dữ liệu phân tích đọc từ CSV (`data/processed/`); `dss_action_log` và
+  `accounts` dùng `psycopg2` trực tiếp.
+- **Frontend**: React 19 + Vite 8 trong `frontend/`, gọi 5 endpoint thật
+  (`/api/olap/metadata`, `/api/olap/query`, `/api/dashboard/overview`,
+  `/api/analytics/sla-breakdown`, `/api/analytics/regions`). Dev chạy Vite
+  `:5173` và proxy `/api` sang Flask `:8000`.
 - **Kiểm thử gần nhất**: pytest 113/113; golden parity Django → Flask PASS cho
-  cả 9 endpoint; `verify_report_numbers.py` khớp toàn bộ số liệu báo cáo.
+  cả 9 endpoint; `scripts/verify_report_numbers.py` khớp toàn bộ số liệu báo cáo.
 
 ### Các khối DSS và API
 
@@ -47,7 +49,7 @@ lấn và không phải tổng đơn tránh được. Nội dung what-if là “
 
 ### Snapshot đánh giá hiện hành
 
-- Fact có 21 cột theo DDL; raw eval ghi nhận 110.173 dòng cấp item.
+- Fact có 20 cột theo DDL; raw eval ghi nhận 110.173 dòng cấp item.
 - Sau lọc 1.390 đơn-tuyến có stage time âm, còn 95.591 đơn-tuyến trên
   95.082 đơn duy nhất.
 - Tỷ lệ trễ: 8,1556% theo đơn-tuyến; 8,1950% theo đơn duy nhất.
@@ -58,9 +60,9 @@ lấn và không phải tổng đơn tránh được. Nội dung what-if là “
   500/500 lần. CI và attribution chi tiết ở `reports/dss_eval_raw.txt`.
 
 > **⚠️ Nhãn cảnh báo giao diện:**
-> - Tab **Dashboard**, **OLAP**, **ETL Monitor** hiển thị **dữ liệu mẫu** (mock
->   data, do thành viên khác phát triển, chưa nối API thật). Số
->   liệu trên các tab này **không phản ánh dữ liệu Olist thực tế**.
+> - Tab **DSS** hiển thị **dữ liệu mẫu** (mock data) và chưa nối `/api/dss/*`.
+> - Các tab **Dashboard**, **OLAP**, **Analytics** đã gọi API thật và phản ánh
+>   dữ liệu Olist trong database.
 
 ---
 
@@ -68,19 +70,17 @@ lấn và không phải tổng đơn tránh được. Nội dung what-if là “
 
 ```
 Brazillian/
-├── .env                        # DATABASE_URL cho ETL & Prisma (không commit)
+├── .env                        # DATABASE_URL cho ETL (không commit)
 ├── .gitignore
-├── requirements.txt            # Thư viện Python cho ETL
-├── package.json                # Prisma & tiện ích Node ở thư mục gốc
-├── prisma.config.ts
+├── requirements.txt            # Thư viện Python cho ETL + backend
+├── README.md
 ├── Assignment.code-workspace   # Mở project bằng VS Code
-├── web/Olist_Logistics_DSS_v3.html  # Giao diện DSS (tab DSS gọi API thật)
 │
 ├── data/
 │   ├── raw/                    # 9 file CSV gốc Olist — KHÔNG sửa
 │   └── processed/              # CSV sau ETL (sinh tự động, không commit)
 │
-├── etl/                        # Pipeline ETL
+├── etl/                        # Pipeline ETL + mô hình DSS
 │   ├── config.py               # Đường dẫn + cấu hình kết nối DB
 │   ├── main.py                 # Điểm chạy pipeline (Transform / --load)
 │   ├── dim_time.py             # Sinh Dim_Time
@@ -88,32 +88,44 @@ Brazillian/
 │   ├── dim_product.py          # Sinh Dim_Product
 │   ├── dim_seller.py           # Sinh Dim_Seller
 │   ├── fact_delivery_sla.py    # Sinh Fact_Delivery_SLA
-│   └── load_data.py            # Nạp CSV vào PostgreSQL (1 transaction)
+│   ├── load_data.py            # Nạp CSV vào PostgreSQL (1 transaction)
+│   ├── dss_models.py           # Model Base DSS rule-based
+│   └── dss_eval.py             # Backtest, bootstrap, threshold sensitivity
 │
 ├── sql/
-│   └── create_tables.sql       # DDL tạo 5 bảng DW
-│
-├── prisma/
-│   └── schema.prisma           # Mô hình DW cho Prisma Client
+│   ├── create_tables.sql       # DDL 5 bảng DW + dss_action_log
+│   ├── create_accounts.sql     # Bảng accounts cho auth
+│   └── create_indexes.sql      # Index hiệu năng
 │
 ├── backend/                    # Flask 3
 │   ├── wsgi.py                 # Entry point (flask run / gunicorn / waitress)
-│   ├── .env                    # Cấu hình Flask + PostgreSQL (không commit)
-│   ├── .env.new                # File mẫu cấu hình
-│   ├── dss/                    # app factory, Blueprint, service, psycopg2
+│   ├── .env.example            # Mẫu cấu hình (copy thành .env)
+│   ├── dss/                    # App factory, Blueprint, service, psycopg2
 │   │   ├── app.py              # create_app(), CORS, error handlers
 │   │   ├── api.py              # 9 route /api/dss/*
-│   │   ├── service.py          # glue framework-free gọi etl/
-│   │   ├── db.py               # psycopg2 cho dss_action_log
-│   │   ├── config.py           # đọc biến môi trường
+│   │   ├── bi_api.py           # /api/dashboard/*, /api/analytics/*
+│   │   ├── olap_api.py         # /api/olap/*
+│   │   ├── auth_api.py         # /api/auth/*
+│   │   ├── bi_service.py       # Nghiệp vụ BI/OLAP
+│   │   ├── bi_repo.py          # SQL cho BI/OLAP
+│   │   ├── bi_validation.py    # Validate tham số
+│   │   ├── auth_service.py     # Hash/verify mật khẩu
+│   │   ├── api_errors.py       # JSON error handlers
+│   │   ├── service.py          # Glue framework-free gọi etl/
+│   │   ├── db.py               # psycopg2 (fetch/execute, action log)
+│   │   ├── config.py           # Đọc biến môi trường
 │   │   └── json_provider.py    # JSON tương thích JsonResponse
-│   ├── logs/                   # Log theo ngày
+│   ├── logs/                   # Log theo ngày (untracked)
 │   └── env/                    # Virtualenv Python của backend (không commit)
 │
-└── frontend/                   # Vite + React
-    ├── src/
-    ├── public/
-    └── package.json
+├── frontend/                   # React 19 + Vite 8
+│   ├── src/
+│   ├── public/
+│   └── package.json
+│
+├── examples/                   # Trang demo HTML gọi API DSS
+├── scripts/                    # check.ps1, clear_action_log.py, verify_report_numbers.py
+└── tests/                      # pytest + golden parity
 ```
 
 ---
@@ -122,7 +134,7 @@ Brazillian/
 
 - Python **3.13**
 - PostgreSQL (đã tạo database và user)
-- Node.js **18+** (Prisma và frontend)
+- Node.js **20.19+** (Vite 8)
 
 ---
 
@@ -136,8 +148,12 @@ Ví dụ với user `brazillian_admin` (đổi thông tin cho khớp `.env` củ
 psql -U postgres -c "CREATE USER brazillian_admin WITH PASSWORD '123456789';"
 psql -U postgres -c "CREATE DATABASE ""Brazillian"" OWNER brazillian_admin;"
 
-# Tạo 5 bảng DW
+# Tạo 5 bảng DW + dss_action_log
 psql -U brazillian_admin -d Brazillian -f sql\create_tables.sql
+
+# Bảng accounts (auth) + index hiệu năng
+psql -U brazillian_admin -d Brazillian -f sql\create_accounts.sql
+psql -U brazillian_admin -d Brazillian -f sql\create_indexes.sql
 ```
 
 > Nếu database/user đã tồn tại, bỏ qua bước `CREATE` tương ứng. `create_tables.sql`
@@ -157,17 +173,19 @@ pip install -r requirements.txt
 
 ### 3. Cấu hình kết nối
 
-**ETL & Prisma** đọc file `.env` ở thư mục gốc:
+**ETL** đọc file `.env` ở thư mục gốc:
 
 ```env
 DATABASE_URL="postgresql://brazillian_admin:123456789@localhost:5432/Brazillian?schema=public"
 ```
 
-**Flask** đọc file `backend/.env` (xem mẫu `backend/.env.new`):
+**Flask** đọc file `backend/.env` (xem mẫu `backend/.env.example`):
 
 ```env
 SECRET_KEY=...
 FLASK_DEBUG=true
+BACKEND_HOST=localhost
+BACKEND_PORT=8000
 # DJANGO_ALLOWED_HOSTS vẫn được đọc nếu muốn giới hạn Host
 DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
 
@@ -180,6 +198,8 @@ POSTGRES_PORT=5432
 CORS_ALLOW_ALL_ORIGINS=true
 ```
 
+`SECRET_KEY` là bắt buộc khi chạy thật (chỉ được phép rỗng khi `TESTING`).
+
 ### 4. Backend Flask
 
 ```powershell
@@ -191,24 +211,30 @@ $env:FLASK_APP = "wsgi"
 flask run --host 127.0.0.1 --port 8000
 ```
 
-Backend chạy tại `http://127.0.0.1:8000/`; API ở `/api/dss/*` (không có dấu
-`/` cuối, giống URLConf cũ). Không cần migration: bảng `dss_action_log` đã nằm
-trong `sql/create_tables.sql`. Bảng phải rỗng sau khi chạy test.
+Backend chạy tại `http://127.0.0.1:8000/` — một app duy nhất cho:
+`/api/dss/*` (9 route, không có dấu `/` cuối, giống URLConf cũ),
+`/api/olap/*`, `/api/dashboard/*`, `/api/analytics/*`, `/api/auth/*` và
+`/api/health`. Không cần migration: bảng `dss_action_log` và `accounts` nằm
+trong `sql/create_tables.sql` / `sql/create_accounts.sql`; `dss_action_log` phải
+rỗng sau khi chạy test.
 
 ### 5. Frontend
 
-Giao diện DSS chính là một file HTML đơn lẻ, mở trực tiếp bằng trình duyệt
-(`file://`) hoặc phục vụ tĩnh. Mặc định gọi
-`http://127.0.0.1:8000/api/dss/`; đổi bằng `window.DSS_API_BASE` trước khi nạp
-script nếu backend ở địa chỉ khác.
-
-Project Vite trong `frontend/` chỉ còn là khung tham khảo:
+Giao diện chính là React 19 + Vite 8 trong `frontend/`, gọi 5 API thật:
+`GET /api/olap/metadata`, `POST /api/olap/query`,
+`GET /api/dashboard/overview`, `GET /api/analytics/sla-breakdown`,
+`GET /api/analytics/regions`. Tab DSS vẫn dùng dữ liệu mẫu.
 
 ```powershell
 cd frontend
 npm install
 npm run dev
 ```
+
+Mở `http://localhost:5173/`. Vite proxy `/api` sang Flask `:8000`
+(`frontend/vite.config.js`, đọc `BACKEND_HOST` / `BACKEND_PORT` trong `.env` ở
+thư mục gốc, mặc định `localhost:8000`), nên trình duyệt chỉ thấy một origin và
+không cần cấu hình CORS.
 
 ### 6. Kiểm thử
 
@@ -219,7 +245,7 @@ cd Brazillian
 pytest -q                                      # 113 test
 python tests\golden_capture.py flask           # ghi tests/golden/flask.json
 python tests\golden_compare.py                 # so với tests/golden/django.json
-python verify_report_numbers.py                # số liệu phải khớp báo cáo
+python -m scripts.verify_report_numbers        # số liệu phải khớp báo cáo
 ```
 
 `tests/golden/django.json` là snapshot bất biến của backend cũ; không sửa file
@@ -237,15 +263,6 @@ waitress-serve --listen=0.0.0.0:8000 wsgi:application
 
 # Linux/macOS
 gunicorn wsgi:application --bind 0.0.0.0:8000 --workers 2
-```
-
-### 8. Prisma (tuỳ chọn)
-
-```powershell
-cd Brazillian
-npm install
-npx prisma generate
-npx prisma validate
 ```
 
 ---
@@ -376,9 +393,9 @@ phân, dùng điều kiện `delay_days > 0`.
 
 ## Ghi chú phát triển
 
-- Prisma (`prisma/schema.prisma`) phải được cập nhật đồng bộ khi thay đổi DDL.
 - Bảng DW do `sql/create_tables.sql` quản lý; backend Flask không dùng ORM hay
-  migration. `dss_action_log` cũng nằm trong file DDL này.
+  migration. `dss_action_log` nằm trong `sql/create_tables.sql`, `accounts` nằm
+  trong `sql/create_accounts.sql`, index ở `sql/create_indexes.sql`.
 - Công thức DSS nằm trong `etl/`; `backend/dss/service.py` chỉ là lớp glue
   framework-free. Không hardcode ngưỡng trong route: đọc từ hợp đồng
   `/brief.parameters` (`min_orders`, `seller_min_orders`, `low_sample_threshold`)
@@ -387,4 +404,3 @@ phân, dùng điều kiện `delay_days > 0`.
   1. Cập nhật `sql/create_tables.sql`
   2. Drop & tạo lại bảng (hoặc `ALTER TABLE`)
   3. Chạy lại ETL: `python etl\main.py --load`
-  4. Cập nhật Prisma nếu có cột thay đổi
