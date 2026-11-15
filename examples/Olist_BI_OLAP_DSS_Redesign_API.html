@@ -360,7 +360,7 @@ function dssRequest(path,opts={}){return new Promise((ok,no)=>setTimeout(()=>{tr
 
 // ---- [B] API THẬT (đang BẬT) ----
 const DSS_SOURCE='api';
-const DSS_BADGE=['Dữ liệu thật · API','Số liệu lấy trực tiếp từ /api/dss/*, không có dữ liệu mẫu'];
+const DSS_BADGE=['Số liệu lấy trực tiếp từ /api/dss/*, không có dữ liệu mẫu'];
 const API_BASE=(window.DSS_API_BASE||'http://127.0.0.1:8000/api/dss/').replace(/\/?$/,'/');
 async function requestJson(url,{signal,method='GET',body}={}){
   const res=await fetch(url,{signal,method,headers:body?{'Content-Type':'application/json','Accept':'application/json'}:{Accept:'application/json'},body:body?JSON.stringify(body):undefined});
@@ -507,7 +507,7 @@ function Dss({year,setYear,initRoute}){
 
   const frame=(curRow,body)=><div className="space-y-4">
     <div className="panel px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
-      <span className="text-[11px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-900 font-medium" title={DSS_BADGE[1]}>{DSS_BADGE[0]}</span>
+      <span className="text-[11px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-900 font-medium"></span>
       <div className="flex flex-wrap items-center gap-2"><YearSel year={year} setYear={setYear}/>
           <Pop label="Cách đọc số liệu" w="w-96"><ul className="text-xs space-y-1.5 list-disc pl-4 text-slate-700">
             <li>Đơn vị phân tích là <b>đơn-tuyến (order-route)</b>: một đơn có nhiều người bán sẽ tạo nhiều dòng và có thể nằm trên nhiều tuyến.</li>
@@ -691,7 +691,7 @@ function Dss({year,setYear,initRoute}){
 
 /* ============ KHUNG ỨNG DỤNG ============ */
 const TITLES={dashboard:['Tổng quan giao hàng và SLA','Giám sát nhanh: vấn đề lớn đến đâu, đang tăng hay giảm, tập trung ở tuyến nào'],
-  olap:['Truy vấn đa chiều (OLAP)','Tự khám phá: trễ ở đâu, khi nào, với nhóm nào'],dss:['DSS Action Center','Nên xem xét làm gì và kết quả ước tính ra sao']};
+  olap:['Truy vấn đa chiều (OLAP)','Tự khám phá: trễ ở đâu, khi nào, với nhóm nào'],dss:['DSS Action Center']};
 function App(){
   const [page,setPage]=useState('dashboard'),[open,setOpen]=useState(true),[year,setYear]=useState('all'),[sim,setSim]=useState({error:false}),[dssRoute,setDssRoute]=useState(null);
   const nav=[['dashboard','▦','BI Dashboard'],['olap','▤','OLAP'],['dss','◆','DSS']];
