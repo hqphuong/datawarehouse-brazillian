@@ -66,7 +66,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         else:
             raise RuntimeError(
                 "SECRET_KEY is required. Set it in backend/.env or the "
-                "environment (see backend/.env.new)."
+                "environment (see backend/.env.example)."
             )
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
@@ -125,6 +125,24 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     # Run after flask-cors so the fixed header lists win.
     app.after_request_funcs[None].insert(0, _cors_contract)
+
+    def _legacy_cors_contract(response: Response):
+        if request.path.startswith("/api/dss"):
+            return response
+        origin = request.headers.get("Origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Vary"] = "Origin"
+        else:
+            response.headers.setdefault("Access-Control-Allow-Origin", "*")
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Methods"] = (
+            "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+        )
+        return response
+
+    app.after_request_funcs[None].insert(0, _legacy_cors_contract)
 
     @app.errorhandler(404)
     def _not_found(_exc):
