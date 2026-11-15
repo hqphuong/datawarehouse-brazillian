@@ -10,10 +10,8 @@ $outputPath = Join-Path $reportsDir "CHECK_OUTPUT.txt"
 $failures = New-Object System.Collections.Generic.List[string]
 $report = New-Object System.Collections.Generic.List[string]
 $pytestOutput = @()
-$djangoOutput = @()
 $regenOutput = @()
 $pytestExit = 1
-$djangoExit = 1
 $regenExit = 0
 
 $python = $null
@@ -53,33 +51,6 @@ if ($pytestText -match "(\d+) error") { $pytestFailed += [int]$Matches[1] }
 if ($pytestExit -ne 0 -and $pytestFailed -eq 0) { $pytestFailed = 1 }
 if ($pytestExit -ne 0) { $failures.Add("pytest") }
 
-$djangoPython = Join-Path $root "backend\env\Scripts\python.exe"
-if (Test-Path $djangoPython) {
-    Push-Location (Join-Path $root "backend")
-    $djangoOutput = @(& $djangoPython manage.py test dss analytics 2>&1)
-    $djangoExit = $LASTEXITCODE
-    Pop-Location
-} else {
-    $djangoOutput = @("backend\env\Scripts\python.exe not found.")
-    $djangoExit = 127
-}
-
-$djangoText = $djangoOutput -join [Environment]::NewLine
-$djangoRan = 0
-$djangoSkipped = 0
-$djangoPassed = 0
-$djangoFailed = 0
-if ($djangoText -match "Ran (\d+) tests?") { $djangoRan = [int]$Matches[1] }
-if ($djangoText -match "FAILED \(failures=(\d+)") {
-    $djangoFailed += [int]$Matches[1]
-}
-if ($djangoText -match "errors=(\d+)") { $djangoFailed += [int]$Matches[1] }
-if ($djangoText -match "skipped=(\d+)") { $djangoSkipped = [int]$Matches[1] }
-if ($djangoExit -eq 0) { $djangoFailed = 0 }
-elseif ($djangoFailed -eq 0) { $djangoFailed = 1 }
-$djangoPassed = [Math]::Max(0, $djangoRan - $djangoFailed - $djangoSkipped)
-if ($djangoExit -ne 0) { $failures.Add("Django") }
-
 if (-not $Quick) {
     if ($python) {
         Push-Location $root
@@ -93,9 +64,8 @@ if (-not $Quick) {
     if ($regenExit -ne 0) { $failures.Add("regen_eval") }
 }
 
-$report.Add("PASS: $($pytestPassed + $djangoPassed)  FAIL: $($pytestFailed + $djangoFailed)")
+$report.Add("PASS: $pytestPassed  FAIL: $pytestFailed")
 $report.Add("pytest: pass=$pytestPassed fail=$pytestFailed")
-$report.Add("Django: pass=$djangoPassed fail=$djangoFailed")
 if ($Quick) {
     $report.Add("regen_eval: skipped (-Quick)")
 } else {
@@ -106,11 +76,6 @@ if ($pytestExit -ne 0) {
     $report.Add("")
     $report.Add("pytest failing output (last 40 lines):")
     foreach ($line in @($pytestOutput | Select-Object -Last 40)) { $report.Add([string]$line) }
-}
-if ($djangoExit -ne 0) {
-    $report.Add("")
-    $report.Add("Django failing output (last 40 lines):")
-    foreach ($line in @($djangoOutput | Select-Object -Last 40)) { $report.Add([string]$line) }
 }
 if ($regenExit -ne 0 -and -not $Quick) {
     $report.Add("")

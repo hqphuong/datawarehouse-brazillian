@@ -1,5 +1,4 @@
 import argparse
-import os
 import sys
 from pathlib import Path
 
@@ -21,16 +20,11 @@ def main() -> int:
         parser.error("Deletion requires the explicit --yes flag.")
 
     sys.path.insert(0, str(ROOT / "backend"))
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")
-    import django
-
-    django.setup()
-
-    from dss.models import ActionLog
+    from dss import db
 
     # This intentionally deletes all ActionLog rows, which may include non-test rows.
-    _, deleted_by_model = ActionLog.objects.all().delete()
-    deleted = deleted_by_model.get(ActionLog._meta.label, 0)
+    deleted = db.count_actions()
+    db.clear_actions()
     print(f"Deleted {deleted} ActionLog row(s).")
     return 0
 
