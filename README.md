@@ -21,7 +21,7 @@ Hệ thống gồm 4 phần:
 - **DW**: 5 bảng `Dim_Time`, `Dim_Location`, `Dim_Product`, `Dim_Seller`,
   `Fact_Delivery_SLA` đã được tạo và nạp dữ liệu.
 - **Backend**: Flask 3, app factory `create_app()`, một app duy nhất phục vụ
-  `:8000`: 9 route `/api/dss/*`, 12 route BI/OLAP (`/api/olap/*`,
+  `:8000`: 9 route `/api/dss/*`, 13 route BI/OLAP (`/api/olap/*`,
   `/api/dashboard/*`, `/api/analytics/*`, `/api/health`) và 3 route auth
   `/api/auth/*`. Tài liệu DSS: `reports/api_dss.md`.
   Dữ liệu phân tích đọc từ CSV (`data/processed/`); `dss_action_log` và
@@ -30,8 +30,9 @@ Hệ thống gồm 4 phần:
   (`/api/olap/metadata`, `/api/olap/query`, `/api/dashboard/overview`,
   `/api/analytics/sla-breakdown`, `/api/analytics/regions`). Dev chạy Vite
   `:5173` và proxy `/api` sang Flask `:8000`.
-- **Kiểm thử gần nhất**: pytest 113/113; golden parity Django → Flask PASS cho
-  cả 9 endpoint; `scripts/verify_report_numbers.py` khớp toàn bộ số liệu báo cáo.
+- **Kiểm thử**: chạy `pytest -q`; dùng `tests/golden_compare.py` để đối chiếu
+  snapshot Django → Flask và `scripts/verify_report_numbers.py` để kiểm tra
+  số liệu báo cáo.
 
 ### Các khối DSS và API
 
@@ -242,7 +243,7 @@ không cần cấu hình CORS.
 cd Brazillian
 .\backend\env\Scripts\Activate.ps1
 
-pytest -q                                      # 113 test
+pytest -q                                      # chạy toàn bộ test suite
 python tests\golden_capture.py flask           # ghi tests/golden/flask.json
 python tests\golden_compare.py                 # so với tests/golden/django.json
 python -m scripts.verify_report_numbers        # số liệu phải khớp báo cáo
@@ -283,6 +284,7 @@ Chạy từng bước riêng lẻ:
 python etl\dim_time.py
 python etl\dim_location.py
 python etl\dim_product.py
+python etl\dim_seller.py
 python etl\fact_delivery_sla.py
 python etl\load_data.py
 ```
@@ -314,11 +316,13 @@ python etl\config.py
    - `seller_prep_time_days`: duyệt đơn → giao cho vận chuyển
    - `carrier_transit_time_days`: giao cho vận chuyển → giao khách
    - `delay_days`: giao thực tế − dự kiến giao
-3. **Review (text mining)**: lấy review mới nhất của mỗi đơn, dò từ khoá
+3. **Review (text mining)**: lấy review mới nhất theo `review_creation_date`;
+   nếu hòa, lần lượt dùng `review_answer_timestamp` rồi `review_id`. Dò từ khoá
    logistics tiếng Bồ Đào Nha; đánh dấu `has_logistics_complaint` khi
    `review_score <= 2` **và** có từ khoá.
-4. **Payment**: chọn bản ghi thanh toán có `payment_value` lớn nhất của mỗi đơn
-   làm `payment_type`.
+4. **Payment**: cộng `payment_value` theo loại thanh toán của mỗi đơn, chọn
+   loại có tổng cao nhất; nếu hòa, chọn `payment_sequential` nhỏ nhất rồi
+   `payment_type` theo thứ tự A→Z.
 5. **Ghép bảng**: order items (inner) → địa điểm khách/người bán → review →
    payment.
 6. **Xuất CSV** và (tuỳ chọn) nạp vào PostgreSQL.
@@ -347,7 +351,7 @@ python etl\config.py
 
 | Cột | Kiểu | Ghi chú |
 |---|---|---|
-| `location_id` | VARCHAR(50) (PK) | Prefix mã bưu điện (5 ký tự) |
+| `location_id` | VARCHAR(5) (PK) | Prefix mã bưu điện (5 ký tự) |
 | `zip_code_prefix` | VARCHAR(5) | Mã bưu điện |
 | `city`, `state` | VARCHAR | Thành phố / bang |
 | `latitude`, `longitude` | DOUBLE | Toạ độ trung bình theo mã bưu điện |
@@ -366,18 +370,24 @@ Khóa chính kết hợp: `(order_id, order_item_id)`.
 
 | Cột | Kiểu | Ghi chú |
 |---|---|---|
-| `order_id`, `order_item_id` | VARCHAR, INT | PK kết hợp |
-| `product_id` | VARCHAR | FK → `Dim_Product` |
-| `customer_location_id` | VARCHAR | FK → `Dim_Location` |
-| `seller_location_id` | VARCHAR | FK → `Dim_Location` |
+| `order_id` | VARCHAR(50) | Thành phần PK kết hợp |
+| `order_item_id` | INT | Thành phần PK kết hợp |
+| `product_id` | VARCHAR(50) | FK → `Dim_Product` |
+| `seller_id` | VARCHAR(50) | FK → `Dim_Seller` |
+| `customer_location_id` | VARCHAR(5) | FK → `Dim_Location` |
+| `seller_location_id` | VARCHAR(5) | FK → `Dim_Location` |
 | `time_id` | INT | FK → `Dim_Time` (ngày mua) |
 | `payment_type` | VARCHAR(50) | Chiều suy biến (degenerate dimension) |
-| `approval_time_days` | DOUBLE | Số ngày từ mua đến duyệt đơn |
-| `seller_prep_time_days` | DOUBLE | Số ngày người bán chuẩn bị hàng |
-| `carrier_transit_time_days` | DOUBLE | Số ngày vận chuyển đến khách |
-| `freight_value` | DOUBLE | Phí vận chuyển |
+| `price`, `freight_value` | DOUBLE PRECISION | Giá sản phẩm / phí vận chuyển |
+| `shipping_limit_date` | TIMESTAMP | Hạn giao cho đơn vị vận chuyển |
+| `approval_time_days` | DOUBLE PRECISION | Số ngày từ mua đến duyệt đơn |
+| `seller_prep_time_days` | DOUBLE PRECISION | Số ngày người bán chuẩn bị hàng |
+| `carrier_transit_time_days` | DOUBLE PRECISION | Số ngày vận chuyển đến khách |
+| `delay_days` | DOUBLE PRECISION | Chênh lệch ngày giao thực tế so với dự kiến |
+| `total_lead_days` | DOUBLE PRECISION | Tổng thời gian từ mua đến giao |
+| `promise_days` | DOUBLE PRECISION | Thời gian cam kết giao |
+| `distance_km` | DOUBLE PRECISION | Khoảng cách người bán–khách hàng |
 | `review_score` | INT | Điểm đánh giá 1–5 (NULL nếu chưa có) |
-| `delay_days` | DOUBLE | Số ngày giao muộn so với cam kết |
 | `has_logistics_complaint` | BOOLEAN | Khiếu nại liên quan logistics |
 
 **Quy ước `delay_days`:**
