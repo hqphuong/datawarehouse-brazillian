@@ -32,13 +32,13 @@ Hệ thống hỗ trợ:
 |---|---|
 | ETL | Hoàn chỉnh, sinh 5 CSV trong `data/processed/` và nạp được PostgreSQL |
 | Data Warehouse | 5 bảng đã tạo và nạp dữ liệu |
-| Backend Django | App `analytics` ánh xạ DW + app `dss` với 9 API endpoint thật |
+| Backend Flask | Một app Flask duy nhất (`backend/dss/`) phục vụ 9 API `/api/dss/*`, 12 API BI/OLAP và 3 API auth trên cổng 8000 |
 | DSS rule-based | Có route priority, attribution/Shapley, promise, feasible cut, seller scorecard/portfolio, low-sample, threshold sensitivity và Decision Brief |
-| Giao diện DSS | `web/Olist_Logistics_DSS_v3.html` — 4 tab, tab DSS gọi API thật |
-| Frontend Vite | Vẫn là scaffold mặc định, chưa phải giao diện DSS thật |
+| Giao diện DSS | React 19 + Vite 8 trong `frontend/` — 5 endpoint thật (`/api/olap/*`, `/api/dashboard/*`, `/api/analytics/*`); tab DSS còn mock |
+| Frontend | Dev qua Vite `:5173` proxy `/api` sang Flask `:8000` (cùng origin, không cần CORS) |
 | ML | Đã gỡ: không còn `etl/dss_ml.py`, endpoint `at-risk`, `scikit-learn`, `joblib` |
-| Kiểm thử gần nhất | **78 pytest + 22 Django test**; lần check dùng `-Quick` nên không tái tạo raw eval |
-| Git | Working tree còn nhiều thay đổi chưa commit sau khi gỡ ML |
+| Kiểm thử gần nhất | **113 pytest**; golden parity DSS Django → Flask PASS |
+| Git | Working tree sạch sau khi hợp nhất frontend + backend về một app Flask |
 
 ---
 
@@ -57,16 +57,16 @@ Olist CSV gốc (9 file)
  PostgreSQL — Star Schema
  Dim_Time / Dim_Location / Dim_Product / Dim_Seller / Fact_Delivery_SLA
         │
-        ├──► Django ORM (analytics, managed=False)
+        ├──► Flask API (`backend/dss/`, psycopg2)
         │
         └──► DSS Model Base (etl/dss_models.py)
                     │
                     ▼
-             Django API /api/dss/*
+             Flask API /api/dss/*
                     │
                     ▼
-      web/Olist_Logistics_DSS_v3.html
-      (React + Recharts, gọi API thật)
+      frontend/ (React 19 + Vite 8)
+      (gọi API thật, dev qua proxy :5173 → :8000)
 ```
 
 ---
@@ -77,12 +77,11 @@ Olist CSV gốc (9 file)
 |---|---|
 | Data Warehouse | PostgreSQL, Star Schema |
 | ETL | Python 3.13, pandas, numpy, psycopg2 |
-| Backend | Django 6, django-cors-headers |
-| API | Django function views, JSON |
-| Giao diện DSS | HTML + React (CDN) + Recharts |
-| Frontend scaffold | React 19 + Vite |
-| ORM/tooling phụ | Prisma (schema mô tả DW) |
-| Kiểm thử | pytest, Django TestCase |
+| Backend | Flask 3 (app factory + Blueprint) |
+| API | Flask views, JSON (`/api/dss/*`, `/api/olap/*`, `/api/dashboard/*`, `/api/analytics/*`, `/api/auth/*`) |
+| Giao diện DSS | React 19 + Vite 8 + Tailwind (`frontend/`) |
+| Truy cập DB | psycopg2, SQL thuần |
+| Kiểm thử | pytest (+ golden parity JSON) |
 
 ---
 
@@ -90,13 +89,10 @@ Olist CSV gốc (9 file)
 
 ```
 Brazillian/
-├── .env                      # DATABASE_URL cho ETL & Prisma (không commit)
-├── requirements.txt          # pandas, numpy, psycopg2, django, cors, pytest
-├── package.json              # Prisma & tiện ích Node
+├── .env                      # DATABASE_URL cho ETL (không commit)
+├── requirements.txt          # pandas, numpy, Flask, psycopg2, pytest
 ├── README.md                 # tổng quan, cài đặt, ETL, Star Schema
-├── STATE.md                  # trạng thái ngắn, số đã kiểm chứng
-├── DSS_HUONG_DAN.md          # lý thuyết + 9 bước triển khai DSS
-├── PROMPT_AI_TIEP_TUC.md     # ngữ cảnh cho phiên làm việc tiếp theo
+├── examples/                 # trang demo HTML gọi API DSS
 │
 ├── data/
 │   ├── raw/                  # 9 CSV Olist gốc (gitignore)
@@ -114,34 +110,35 @@ Brazillian/
 │   ├── dss_models.py         # Model Base DSS rule-based
 │   └── dss_eval.py           # backtest, bootstrap, threshold sensitivity
 │
-├── sql/create_tables.sql     # DDL 5 bảng DW
-├── prisma/schema.prisma      # mô hình DW cho Prisma Client
+├── sql/
+│   ├── create_tables.sql     # DDL 5 bảng DW
+│   ├── create_accounts.sql   # bảng accounts cho auth
+│   └── create_indexes.sql    # index hiệu năng
 │
 ├── backend/
-│   ├── manage.py
-│   ├── core/                 # settings, urls, wsgi, asgi
-│   ├── config/               # EnvConfig, LoggingConfig
-│   ├── analytics/            # model ánh xạ DW, managed=False
-│   ├── dss/                  # API DSS + ActionLog + tests
+│   ├── wsgi.py               # entry point (flask run / gunicorn / waitress)
+│   ├── .env.example          # mẫu cấu hình (copy thành .env)
+│   ├── dss/                  # app Flask: api, service, db, bi_*, olap_api, auth_*
 │   ├── logs/                 # log theo ngày (untracked)
 │   └── env/                  # virtualenv backend (không commit)
 │
-├── frontend/                 # Vite + React scaffold
-├── web/
-│   └── Olist_Logistics_DSS_v3.html   # giao diện DSS thật
+├── frontend/                 # React 19 + Vite 8 (5 endpoint thật)
+├── examples/                 # trang demo HTML gọi API DSS
 │
 ├── tests/
 │   ├── conftest.py
+│   ├── test_dss_api.py
 │   ├── test_dss_models.py
 │   ├── test_dss_eval.py
-│   └── test_models.py
+│   ├── test_models.py
+│   └── golden/               # golden parity Django → Flask
 │
 └── reports/
     ├── api_dss.md
     ├── dss_formulas.md
     ├── dss_results.md
     ├── dss_eval_raw.txt
-    └── run_guide.md
+    └── dss_requirements.md
 ```
 
 ---
@@ -337,36 +334,30 @@ Base URL: `http://127.0.0.1:8000/api/dss/`
 | GET | `/portfolio` | `k` | Portfolio seller; `k=102` bao phủ 50,10% đơn trễ |
 
 Đặc điểm kỹ thuật:
-- Dữ liệu kho được load **một lần khi module `views.py` được import**.
+- Mỗi request mở connection psycopg2 riêng, đóng ngay sau khi trả kết quả.
 - `year` rỗng hoặc `all` = toàn bộ dữ liệu.
 - NaN/Infinity được chuyển thành `null` để JSON hợp lệ.
-- `actions` được `csrf_exempt`.
+- `/actions` không yêu cầu CSRF (session auth dùng cookie `HttpOnly`).
 - Lỗi tham số trả JSON `{"error": "..."}` với HTTP 400.
 
 ---
 
 ## 12. Giao diện
 
-File thật: `web/Olist_Logistics_DSS_v3.html`
+Giao diện chính: `frontend/` (React 19 + Vite 8 + Tailwind).
 
-| Tab | Trạng thái dữ liệu |
+| Tab / vùng | Trạng thái dữ liệu |
 |---|---|
-| **BI Dashboard** | Dữ liệu mẫu (mock) |
-| **DSS Action Center** | **Gọi API thật** `http://localhost:8000/api/dss` |
-| **OLAP Query** | Dữ liệu mẫu (mock) |
-| **ETL Monitor** | Dữ liệu mẫu (mock) |
+| **Dashboard (BI)** | **Gọi API thật** `GET /api/dashboard/overview` |
+| **OLAP** | **Gọi API thật** `GET /api/olap/metadata`, `POST /api/olap/query` |
+| **Analytics** | **Gọi API thật** `GET /api/analytics/sla-breakdown`, `GET /api/analytics/regions` |
+| **DSS Action Center** | Dữ liệu mẫu (mock) — 4 khối Route Priority, Root Cause, Scenario / What-if, Recommendation & Action |
 
-Tab **DSS Action Center** gồm 4 khối tương ứng:
-1. Route Priority
-2. Root Cause
-3. Scenario / What-if
-4. Recommendation & Action
+Tab DSS hiện chưa nối `/api/dss/*`; các endpoint đó vẫn chạy và có golden parity
+với bản Django cũ.
 
-Các tab còn lại do thành viên khác phát triển bằng Flask và **chưa nối Django
-thật**, nên số liệu không phản ánh Olist thực tế.
-
-`frontend/` (Vite + React) hiện vẫn là scaffold mặc định, chưa phải giao diện DSS
-thật.
+Dev: Vite chạy `:5173` và proxy `/api` sang Flask `:8000`
+(`frontend/vite.config.js`), nên trình duyệt chỉ thấy một origin, không cần CORS.
 
 ---
 
@@ -374,8 +365,8 @@ thật.
 
 | Bộ test | Số lượng | Lệnh |
 |---|---:|---|
-| pytest toàn repo | **78 passed** | `python -m pytest -q` |
-| Django app `dss analytics` | **22 tests OK** | `cd backend; ..\backend\env\Scripts\python.exe manage.py test dss analytics` |
+| pytest toàn repo | **113 passed** | `python -m pytest -q` |
+| Golden parity DSS | **PASS** (Django → Flask) | `python tests/golden_compare.py` |
 | Regen eval | **pass** | `.\scripts\check.ps1` |
 
 File test:
@@ -383,7 +374,10 @@ File test:
   scenario, goal seek.
 - `tests/test_dss_eval.py` — test backtest, bootstrap, threshold sensitivity.
 - `tests/test_models.py` — test model DW.
-- `backend/dss/tests.py` — kiểm thử API DSS.
+- `tests/test_dss_api.py` — 9 endpoint DSS.
+- `tests/test_bi_api.py`, `tests/test_olap_api.py`, `tests/test_auth_api.py` —
+  BI/OLAP/auth (port từ backend Flask cũ).
+- `tests/golden/` — snapshot parity DSS.
 
 ---
 
@@ -409,8 +403,8 @@ Có thể dùng chung `backend\env`.
 
 ### 3) Cấu hình
 
-- `.env` ở thư mục gốc: `DATABASE_URL` cho ETL & Prisma.
-- `backend\.env`: cấu hình Django + PostgreSQL.
+- `.env` ở thư mục gốc: `DATABASE_URL` cho ETL.
+- `backend\.env`: copy từ `backend\.env.example`, điền `SECRET_KEY` và thông tin PostgreSQL.
 
 Không commit các file này.
 
@@ -425,16 +419,13 @@ python -m etl.main --load   # transform + nạp DB
 
 ```powershell
 cd backend
-python manage.py runserver
+$env:FLASK_APP = "wsgi"
+flask run --host 127.0.0.1 --port 8000
 ```
 
-Backend: `http://127.0.0.1:8000/`
+Backend: `http://127.0.0.1:8000/`; kiểm tra `GET /api/health`.
 
-### 6) Mở giao diện DSS
-
-Mở trực tiếp `web/Olist_Logistics_DSS_v3.html` bằng trình duyệt.
-
-### 7) Frontend scaffold (không bắt buộc)
+### 6) Chạy giao diện
 
 ```powershell
 cd frontend
@@ -442,14 +433,14 @@ npm install
 npm run dev
 ```
 
-`http://localhost:5173/`
+`http://localhost:5173/` — Vite proxy `/api` sang Flask `:8000`
+(không cần CORS).
 
-### 8) Chạy test
+### 7) Chạy test
 
 ```powershell
 python -m pytest -q
-cd backend
-python manage.py test dss
+python tests/golden_compare.py
 ```
 
 ---
@@ -458,14 +449,10 @@ python manage.py test dss
 
 | File | Nội dung |
 |---|---|
-| `README.md` | Tổng quan, cài đặt, ETL, Star Schema |
-| `STATE.md` | Trạng thái ngắn, số đã kiểm chứng, việc còn lại |
-| `DSS_HUONG_DAN.md` | Lý thuyết DSS + 9 bước triển khai |
-| `PROMPT_AI_TIEP_TUC.md` | Ngữ cảnh cho phiên làm việc tiếp theo |
+| `README.md` | Tổng quan, cài đặt, ETL, Star Schema, chạy Flask + Vite |
 | `reports/dss_formulas.md` | Công thức và giả định toàn bộ hàm DSS |
 | `reports/dss_results.md` | Kết quả test, backtest, threshold, 14 tuyến, bootstrap, hạn chế |
 | `reports/api_dss.md` | Tài liệu chi tiết 9 endpoint DSS |
-| `reports/run_guide.md` | Hướng dẫn chạy và test |
 | `reports/dss_eval_raw.txt` | Output thô của đánh giá |
 
 ---
@@ -524,18 +511,16 @@ Kết quả: **0 dòng khớp**.
   thiện** so với baseline này.
 
 ### Việc còn lại
-- Giao diện: còn **6 huy hiệu** cần xử lý theo ghi chú trong `STATE.md`.
-- `frontend/` Vite chưa nối API, chưa phải giao diện thật.
-- 3 tab Dashboard / OLAP / ETL vẫn dùng dữ liệu mẫu.
-- API DSS hiện có 9 endpoint; Dashboard/OLAP/ETL Monitor vẫn là mock.
-- Working tree chưa commit sau khi gỡ ML.
+- Tab DSS trong `frontend/` vẫn dùng dữ liệu mẫu; 9 endpoint `/api/dss/*` đã
+  chạy nhưng chưa nối vào UI.
+- Các tab đang gọi API thật: Dashboard, OLAP, Analytics (5 endpoint).
 
 ---
 
 ## Tóm tắt một câu
 
 Đây là đồ án **Data Warehouse + DSS logistics** ở tầng dữ liệu, ETL, backend API
-và mô hình ra quyết định dựa trên luật; giao diện DSS thật đã nối API, còn
-frontend Vite và 3 tab phụ vẫn là mock/scaffold. Toàn bộ phần ML đã được gỡ;
-check gần nhất có **78 pytest + 22 Django tests**; `regen_eval` bị bỏ qua do
-dùng `-Quick`, nên không xác nhận raw eval vừa được tái tạo.
+và mô hình ra quyết định dựa trên luật; backend đã hợp nhất về **một app Flask
+duy nhất (cổng 8000)**, frontend React 19 + Vite 8 gọi 5 API thật, riêng tab DSS
+còn mock. Toàn bộ phần ML đã được gỡ; check gần nhất có **113 pytest** và golden
+parity DSS Django → Flask **PASS**.
