@@ -1,6 +1,6 @@
 """Recompute the key numbers printed in main.pdf from data/processed.
 
-Chạy: ``python verify_report_numbers.py``. Script không sửa dữ liệu; nó đọc
+Chạy: ``python -m scripts.verify_report_numbers`` (từ thư mục gốc). Script không sửa dữ liệu; nó đọc
 lại CSV đã làm sạch, gọi đúng các hàm DSS và so khớp với con số trong báo cáo.
 Thoát mã 1 nếu bất kỳ mục nào lệch.
 

@@ -34,5 +34,5 @@ CO4031_BaoCao/
 .DS_Store
 Thumbs.db
 
-.zip
-.pdf
+*.zip
+*.pdf
