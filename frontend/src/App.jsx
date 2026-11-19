@@ -6,15 +6,9 @@ import DssView from "./views/DssView.js";
 import { DEV } from "./utils/utils.js";
 
 const TITLES = {
-  dashboard: [
-    "Tổng quan giao hàng và SLA",
-    "Giám sát nhanh: vấn đề lớn đến đâu, đang tăng hay giảm, tập trung ở tuyến nào",
-  ],
-  olap: [
-    "Truy vấn đa chiều (OLAP)",
-    "Tự khám phá: trễ ở đâu, khi nào, với nhóm nào",
-  ],
-  dss: ["DSS Action Center", "Nên xem xét làm gì và kết quả ước tính ra sao"],
+  dashboard: "Tổng quan giao hàng và SLA",
+  olap: "Truy vấn đa chiều (OLAP)",
+  dss: "DSS Action Center",
 };
 export default function App() {
   const [page, setPage] = useState("dashboard"),
@@ -86,10 +80,7 @@ export default function App() {
       <main className="flex-1 min-w-0">
         <header className="sticky top-0 z-30 bg-white border-b border-slate-300 px-5 py-2.5 flex items-center justify-between gap-3">
           <div>
-            <h1 className="font-semibold leading-tight">{TITLES[page][0]}</h1>
-            <p className="text-xs text-slate-500">
-              {TITLES[page][1]} · Dashboard, OLAP và DSS đều dùng API thật
-            </p>
+            <h1 className="font-semibold leading-tight">{TITLES[page]}</h1>
           </div>
           <div className="flex items-center gap-2">
             <div className="md:hidden flex gap-1">
@@ -117,16 +108,19 @@ export default function App() {
           </div>
         </header>
         <div className="px-5 py-4 pb-8 max-w-[1400px] mx-auto">
-          {page === "dashboard" && (
+          {/* Giữ cả 3 view mounted: chuyển tab chỉ ẩn/hiện, không fetch lại API. */}
+          <div className={page === "dashboard" ? undefined : "hidden"}>
             <DashboardView
               year={year}
               setYear={setYear}
               sim={sim}
               goDss={goDss}
             />
-          )}
-          {page === "olap" && <OlapView sim={sim} />}
-          {page === "dss" && (
+          </div>
+          <div className={page === "olap" ? undefined : "hidden"}>
+            <OlapView sim={sim} />
+          </div>
+          <div className={page === "dss" ? undefined : "hidden"}>
             <DssView
               key={dssRoute || "-"}
               year={year}
@@ -134,7 +128,7 @@ export default function App() {
               sim={sim}
               initRoute={dssRoute}
             />
-          )}
+          </div>
         </div>
       </main>
     </div>
