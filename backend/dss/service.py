@@ -14,6 +14,7 @@ import math
 from functools import lru_cache
 from pathlib import Path
 import sys
+import threading
 
 import numpy as np
 
@@ -188,6 +189,30 @@ def brief(orders):
     }
     payload["config"] = config()
     return payload
+
+
+# Decision Brief là phép bootstrap nặng (~25s mỗi lần). Cache theo năm để đổi
+# năm / chuyển tab không phải tính lại. Khoá riêng từng năm giúp năm khác không
+# bị chờ theo năm đang tính, đồng thời tránh hai luồng cùng tính một khoá.
+_brief_cache: dict[str | int, dict] = {}
+_brief_locks: dict[str | int, threading.Lock] = {}
+_brief_guard = threading.Lock()
+
+
+def brief_for_year(year):
+    """Trả payload /brief của một năm, chỉ tính lần đầu cho mỗi năm."""
+    with _brief_guard:
+        if year in _brief_cache:
+            return _brief_cache[year]
+        lock = _brief_locks.setdefault(year, threading.Lock())
+    with lock:
+        with _brief_guard:
+            if year in _brief_cache:
+                return _brief_cache[year]
+        result = brief(orders_for_year(year))
+        with _brief_guard:
+            _brief_cache[year] = result
+        return result
 
 
 def attribution(year, quantile):

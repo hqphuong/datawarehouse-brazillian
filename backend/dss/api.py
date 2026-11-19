@@ -107,11 +107,11 @@ def actions():
 @bp.get("/brief")
 def brief():
     try:
-        orders = S.selected_orders(request.args)
+        year = S.year_value(request.args)
     except ValueError as exc:
         return _bad(str(exc))
     try:
-        result = S.brief(orders)
+        result = S.brief_for_year(year)
     except ValueError as exc:
         return _bad(str(exc))
     return _json(S.clean(result))

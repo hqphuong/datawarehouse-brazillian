@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from threading import Thread
+
 from flask import Flask, Response, abort, jsonify, request
 from flask_cors import CORS
 from werkzeug.exceptions import MethodNotAllowed
 
+from . import service as S
 from .api import bp
 from .auth_api import bp as auth_bp
 from .bi_api import bp as bi_bp
@@ -49,6 +52,17 @@ RESOURCE_METHODS = {
     "/api/dss/sellers": ["GET"],
     "/api/dss/portfolio": ["GET"],
 }
+
+
+def _warm_brief() -> None:
+    """Tính sẵn Decision Brief của năm mặc định trong nền.
+
+    Chỉ là tối ưu thời gian chờ; lỗi được bỏ qua để app vẫn phục vụ bình thường.
+    """
+    try:
+        S.brief_for_year("all")
+    except Exception:  # pragma: no cover - warm-up không được chặn request
+        pass
 
 
 def create_app(test_config: dict | None = None) -> Flask:
@@ -170,5 +184,10 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.errorhandler(500)
     def _server_error(_exc):
         return Response(DJANGO_500, status=500, mimetype="text/html")
+
+    # Khi chạy thật, tính sẵn brief trong nền để lần đầu mở tab DSS không phải
+    # đợi bootstrap ~25s. Bỏ qua trong test để không sinh luồng nền ngoài ý muốn.
+    if not app.config.get("TESTING"):
+        Thread(target=_warm_brief, daemon=True).start()
 
     return app
