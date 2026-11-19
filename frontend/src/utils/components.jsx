@@ -22,7 +22,7 @@ export const Errored=({msg,retry})=><div className="panel p-10 text-center" role
 export const Empty=({reset,msg='Không có đơn hàng khớp bộ lọc'})=><div className="panel p-10 text-center"><p className="font-semibold">{msg}</p><p className="text-sm text-slate-600 mt-1">Mở rộng khoảng thời gian hoặc bỏ bớt điều kiện lọc.</p>{reset&&<button className="btn mt-3" onClick={reset}>Đặt lại bộ lọc</button>}</div>;
 export const Pill=({t,c})=><span className={'px-2 py-0.5 rounded text-[11px] font-medium whitespace-nowrap '+c}>{t}</span>;
 export const ST={ok:'bg-teal-50 text-teal-900',warn:'bg-amber-50 text-amber-900',more:'bg-slate-100 text-slate-700'};
-export const LV={red:['Đỏ','bg-red-100 text-red-900'],yellow:['Vàng','bg-amber-100 text-amber-900'],none:['—','text-slate-400']};
+export const LV={red:['Đỏ','bg-red-100 text-red-900'],yellow:['Vàng','bg-amber-100 text-amber-900'],amber:['Vàng','bg-amber-100 text-amber-900'],none:['—','text-slate-400']};
 export const flagsOf=s=><>{s.low&&<Pill t="Mẫu nhỏ" c="bg-slate-100 text-slate-700"/>} {s.uncertain&&<Pill t="Chưa chắc chắn" c="bg-amber-50 text-amber-900"/>}</>;
 
 /* ============ 1. BI DASHBOARD: giám sát nhanh ============ */
