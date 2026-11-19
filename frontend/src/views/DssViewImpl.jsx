@@ -76,6 +76,7 @@ export default function DssView({ year, setYear, sim, initRoute }) {
   const [q, setQ] = useState(0.5);
   const [cut, setCut] = useState({ approval: 0, prep: 0, transit: 0 });
   const [target, setTarget] = useState(0.05);
+  const [policyScope, setPolicyScope] = useState("route");
   const [tab, setTab] = useState(null);
   const [openSupport, setOpenSupport] = useState(false);
   const [toast, setToast] = useState(null);
@@ -168,13 +169,7 @@ export default function DssView({ year, setYear, sim, initRoute }) {
 
   const frame = (curRow, body) => (
     <div className="space-y-4">
-      <div className="panel px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
-        <span
-          className="text-[11px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-900 font-medium"
-          title="Số liệu lấy trực tiếp từ backend DSS, không có dữ liệu mẫu"
-        >
-          Dữ liệu thật · API
-        </span>
+      <div className="panel px-4 py-2.5 flex flex-wrap items-center justify-end gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <YearSel year={year} setYear={setYear} />
           <Pop label="Cách đọc số liệu" w="w-96">
@@ -300,6 +295,11 @@ export default function DssView({ year, setYear, sim, initRoute }) {
     : "";
   const pp = promiseApi.data ? mapPromise(promiseApi.data) : null;
   const policyRows = mapPolicyRows(policyApi.data);
+  const onRouteRows = policyRows.filter((v) => v.route === cur?.route);
+  const policyShown = policyScope === "route"
+    ? onRouteRows
+    : [...policyRows].sort((a, b) =>
+        Number(b.route === cur?.route) - Number(a.route === cur?.route));
   const sellerRows = mapSellerRows(sellersApi.data);
   const port = portfolioApi.data ? mapPortfolio(portfolioApi.data) : null;
   const segs = port?.segments || [];
@@ -620,33 +620,56 @@ export default function DssView({ year, setYear, sim, initRoute }) {
                     <KV k="Tỷ lệ trễ sau khi kéo dài">{pct(pp.lateAfter)}</KV>
                     <KV k="Tỷ lệ trễ hiện tại">{pct(cur.lateRate)}</KV>
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead className="text-left text-slate-500">
-                        <tr>
-                          <th className="py-1 px-2">Tuyến</th>
-                          <th className="text-right px-2">Mức phục vụ</th>
-                          <th className="text-right px-2">Ngày cam kết cần</th>
-                          <th className="text-right px-2">Tỷ lệ trễ</th>
-                          <th className="text-right px-2">Đơn tránh được</th>
-                          <th className="text-right px-2">Đơn trễ mới</th>
-                          <th className="text-right px-2"><Tip t={TIPS.net}>Chênh ròng</Tip></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {policyRows.map((v, i) => (
-                          <tr key={i} className="border-t border-slate-100">
-                            <td className="py-1.5 px-2 font-medium">{routeLabel(v.route)}</td>
-                            <td className="text-right px-2">{pct(v.serviceLevel)}</td>
-                            <td className="text-right px-2">{int(v.neededDays)}</td>
-                            <td className="text-right px-2">{pct(v.lateRate)}</td>
-                            <td className="text-right px-2">{int(v.avoidable)}</td>
-                            <td className="text-right px-2">{int(v.newLate)}</td>
-                            <td className="text-right px-2 font-semibold">{v.net >= 0 ? "+" : "−"}{int(Math.abs(v.net))}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 mb-2" role="group" aria-label="Phạm vi bảng mức phục vụ">
+                      <button className={"btn " + (policyScope === "route" ? "btn-main" : "")} aria-pressed={policyScope === "route"} onClick={() => setPolicyScope("route")}>
+                        Tuyến đang xem {onRouteRows.length ? `(${onRouteRows.length})` : ""}
+                      </button>
+                      <button className={"btn " + (policyScope === "top" ? "btn-main" : "")} aria-pressed={policyScope === "top"} onClick={() => setPolicyScope("top")}>
+                        Top 5 của API ({policyRows.length})
+                      </button>
+                    </div>
+                    {!policyShown.length ? (
+                      <div className="text-xs text-slate-600 bg-slate-50 rounded px-3 py-2" role="status">
+                        <b>{routeLabel(cur.route)}</b> không nằm trong top 5 tuyến có đơn tránh được cao nhất do API chọn.{" "}
+                        <button className="underline text-teal-800" onClick={() => setPolicyScope("top")}>Xem top 5 để tham khảo</button>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead className="text-left text-slate-500">
+                            <tr>
+                              <th className="py-1 px-2">Tuyến</th>
+                              <th className="text-right px-2">Mức phục vụ</th>
+                              <th className="text-right px-2">Ngày cam kết cần</th>
+                              <th className="text-right px-2">Tỷ lệ trễ</th>
+                              <th className="text-right px-2">Đơn tránh được</th>
+                              <th className="text-right px-2">Đơn trễ mới</th>
+                              <th className="text-right px-2"><Tip t={TIPS.net}>Chênh ròng</Tip></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {policyShown.map((v, i) => {
+                              const isCur = v.route === cur?.route;
+                              return (
+                                <tr key={v.route + "|" + v.serviceLevel + "|" + i} className={"border-t border-slate-100 " + (isCur ? "bg-teal-50 font-medium" : "")}>
+                                  <td className="py-1.5 px-2 font-medium">
+                                    {routeLabel(v.route)}
+                                    {isCur && policyScope === "top" && <span className="ml-2 text-[11px] font-normal text-teal-800">● đang xem</span>}
+                                  </td>
+                                  <td className="text-right px-2">{pct(v.serviceLevel)}</td>
+                                  <td className="text-right px-2">{int(v.neededDays)}</td>
+                                  <td className="text-right px-2">{pct(v.lateRate)}</td>
+                                  <td className="text-right px-2">{int(v.avoidable)}</td>
+                                  <td className="text-right px-2">{int(v.newLate)}</td>
+                                  <td className="text-right px-2 font-semibold">{v.net >= 0 ? "+" : "−"}{int(Math.abs(v.net))}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 </div>
                 {br.promise_summary && (
@@ -654,7 +677,7 @@ export default function DssView({ year, setYear, sim, initRoute }) {
                     Toàn hệ thống: trễ {int(br.promise_summary.late_orders_before)} → {int(br.promise_summary.late_orders_after)} đơn; ròng <b>{int(br.promise_summary.net_avoided_orders)}</b> (phát sinh {int(br.promise_summary.new_late_orders)} đơn trễ mới).
                   </p>
                 )}
-                <Note>Đổi ngày cam kết chỉ đổi định nghĩa “trễ”, không rút ngắn thời gian giao. Bảng trên là mức phục vụ 85/90/95% cho các tuyến API chọn.</Note>
+                <Note>Đổi ngày cam kết chỉ đổi định nghĩa “trễ”, không rút ngắn thời gian giao. Bảng là mức phục vụ 85/90/95%; API chỉ trả top 5 tuyến theo đơn tránh được nên tuyến đang xem có thể không có trong bảng. Chọn “Top 5 của API” để xem toàn bộ, dòng trùng tuyến được đẩy lên đầu.</Note>
               </>
             )}
           </Block>
