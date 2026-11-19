@@ -4,6 +4,7 @@ import {
   getDssRoutes,
   getDssAttribution,
   getDssScenario,
+  postDssAction,
 } from "../data/api.js";
 import {
   mapAttribution,
@@ -44,7 +45,7 @@ const BriefCard = ({ title, owner, note, children }) => (
     <p className="text-[11px] text-slate-500 mt-auto pt-2">{note}</p>
   </section>
 );
-const BriefRow = ({ main, sub, pill, onLog }) => (
+const BriefRow = ({ main, sub, pill, onLog, saving }) => (
   <div className="border-t border-slate-100 py-1.5 text-xs flex gap-2 justify-between">
     <div className="min-w-0">
       <div>
@@ -52,8 +53,12 @@ const BriefRow = ({ main, sub, pill, onLog }) => (
       </div>
       <div className="text-slate-600">{sub}</div>
     </div>
-    <button className="btn self-start shrink-0" onClick={onLog}>
-      Ghi nhận
+    <button
+      className="btn self-start shrink-0"
+      onClick={onLog}
+      disabled={saving}
+    >
+      {saving ? "Đang lưu…" : "Ghi nhận"}
     </button>
   </div>
 );
@@ -73,7 +78,9 @@ export default function DssView({ year, setYear, sim, initRoute }) {
     [sel, setSel] = useState(initRoute),
     [q, setQ] = useState(0.5),
     [cut, setCut] = useState({ appr: 0, prep: 0, transit: 0 }),
-    [log, setLog] = useState([]);
+    [log, setLog] = useState([]),
+    [saving, setSaving] = useState(""),
+    [actionError, setActionError] = useState("");
 
   const {
     data: base,
@@ -146,6 +153,20 @@ export default function DssView({ year, setYear, sim, initRoute }) {
     setLog(
       [{ t: new Date().toLocaleTimeString("vi-VN"), g, l }, ...log].slice(0, 50),
     );
+  const saveKey = (action, label) => `${action}:${label}`;
+  const ack = async (action, label, extra = {}) => {
+    const key = saveKey(action, label);
+    setSaving(key);
+    setActionError("");
+    try {
+      await postDssAction({ action, label: String(label), ...extra });
+      rec(action, label);
+    } catch (e) {
+      setActionError(e?.message || "Không ghi được hành động.");
+    } finally {
+      setSaving("");
+    }
+  };
   const head = (
     <div className="flex flex-wrap items-center justify-between gap-2">
       <YearSel year={year} setYear={setYear} />
@@ -451,7 +472,13 @@ export default function DssView({ year, setYear, sim, initRoute }) {
                   key={r.route}
                   main={r.route}
                   pill={<Pill t={t} c={ST[k]} />}
-                  onLog={() => rec("Tuyến", r.route)}
+                  onLog={() =>
+                    ack("ack_route", r.route, {
+                      route: r.route,
+                      avoided_orders: r.avoided,
+                    })
+                  }
+                  saving={saving === saveKey("ack_route", r.route)}
                   sub={`Tránh ~${int(r.avoided)}${r.k != null ? `/${int(r.k)}` : ""} đơn trễ (${ciTxt(r.ci)})`}
                 />
               );
@@ -470,7 +497,13 @@ export default function DssView({ year, setYear, sim, initRoute }) {
                   key={p.pay}
                   main={p.pay}
                   pill={<Pill t={t} c={ST[k]} />}
-                  onLog={() => rec("Thanh toán", p.pay)}
+                  onLog={() =>
+                    ack("ack_payment", p.pay, {
+                      payment_type: p.pay,
+                      avoided_orders: p.avoided,
+                    })
+                  }
+                  saving={saving === saveKey("ack_payment", p.pay)}
                   sub={`Tránh ~${int(p.avoided)} đơn trễ (${ciTxt(p.ci)})`}
                 />
               );
@@ -491,7 +524,14 @@ export default function DssView({ year, setYear, sim, initRoute }) {
                 key={x.route}
                 main={x.route}
                 pill={x.need > 40 && <Pill t="Cam kết quá dài" c={ST.warn} />}
-                onLog={() => rec("Chính sách cam kết", x.route)}
+                onLog={() =>
+                  ack("ack_promise", x.route, {
+                    route: x.route,
+                    needed_days: x.need,
+                    net_avoided_orders: x.net,
+                  })
+                }
+                saving={saving === saveKey("ack_promise", x.route)}
                 sub={`Cần ${x.need} ngày: ròng +${int(x.net)} đơn được phân loại lại là đúng hạn`}
               />
             ))}
@@ -512,7 +552,10 @@ export default function DssView({ year, setYear, sim, initRoute }) {
                     c={s.prio ? ST.ok : ST.warn}
                   />
                 }
-                onLog={() => rec("Người bán", s.id)}
+                onLog={() =>
+                  ack("ack_seller", s.id, { seller_id: s.id })
+                }
+                saving={saving === saveKey("ack_seller", s.id)}
                 sub={`${int(s.k)}/${int(s.n)} đơn trễ (${pct(s.p)}), vượt mức hệ thống ~${num(s.excess, 0)} đơn`}
               />
             ))}
@@ -528,7 +571,14 @@ export default function DssView({ year, setYear, sim, initRoute }) {
                 key={s.route}
                 main={s.route}
                 pill={<Pill t={LV[s.level][0]} c={LV[s.level][1]} />}
-                onLog={() => rec("Cần thêm dữ liệu", s.route)}
+                onLog={() =>
+                  ack("ack_low_sample", s.route, {
+                    route: s.route,
+                    needed_orders: s.need,
+                    level: s.level,
+                  })
+                }
+                saving={saving === saveKey("ack_low_sample", s.route)}
                 sub={`${int(s.n)} đơn, tỷ lệ trễ ${pct(s.p)}; cần thêm ${int(s.need)} đơn`}
               />
             ))}
@@ -539,9 +589,14 @@ export default function DssView({ year, setYear, sim, initRoute }) {
               Nhật ký ghi nhận khuyến nghị
             </div>
             <p className="text-[11px] text-slate-500 mb-1">
-              Chỉ ghi log, không thực thi hành động (sau này gửi POST
-              /api/dss/actions).
+              Ghi nhận qua POST <code>/api/dss/actions</code>; log local chỉ để
+              theo dõi phiên này, không thực thi hành động vận hành.
             </p>
+            {actionError && (
+              <p className="text-xs text-red-700 mb-1" role="alert">
+                {actionError}
+              </p>
+            )}
             {log.length ? (
               <ul className="text-xs max-h-48 overflow-y-auto">
                 {log.map((l, i) => (
