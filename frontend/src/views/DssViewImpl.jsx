@@ -1,17 +1,18 @@
 import { useState } from "react";
 import {
-  byYear,
-  routeStats,
-  buildBrief,
-  bench,
-  attribution,
-  p25cut,
-  STAGES,
-  simulate,
-  bootCI,
-  evid,
-  LOW_SAMPLE,
-} from "../data/mockData.jsx";
+  getDssBrief,
+  getDssRoutes,
+  getDssAttribution,
+  getDssScenario,
+} from "../data/api.js";
+import {
+  mapAttribution,
+  mapBrief,
+  mapDefaultCut,
+  mapLateByRoute,
+  mapRoutes,
+  mapScenario,
+} from "../data/dssAdapter.js";
 import {
   pct,
   num,
@@ -26,6 +27,14 @@ import {
   LV,
   flagsOf,
 } from "../utils/utils.js";
+
+const STAGES = [
+  ["appr", "Duyệt thanh toán"],
+  ["prep", "Người bán chuẩn bị"],
+  ["transit", "Vận chuyển"],
+];
+// Backend chặn mức cắt theo thời gian thực tế của từng đơn (np.minimum).
+const MAX_CUT = { appr: 10, prep: 15, transit: 30 };
 
 const BriefCard = ({ title, owner, note, children }) => (
   <section className="panel p-3 flex flex-col">
@@ -52,6 +61,12 @@ const NoItem = () => (
   <p className="text-xs text-slate-500 py-2">Không có mục nào đủ điều kiện.</p>
 );
 const ciTxt = (ci) => `CI 95%: ${num(ci.avLo, 0)}–${num(ci.avHi, 0)} đơn`;
+const evidenceOf = (ci, low) =>
+  low
+    ? ["Cần thêm dữ liệu", "more"]
+    : ci && ci.avLo > 0
+      ? ["Ước lượng ổn định", "ok"]
+      : ["Chưa đủ bằng chứng", "warn"];
 
 export default function DssView({ year, setYear, sim, initRoute }) {
   const [sort, setSort] = useState("rate"),
@@ -59,39 +74,103 @@ export default function DssView({ year, setYear, sim, initRoute }) {
     [q, setQ] = useState(0.5),
     [cut, setCut] = useState({ appr: 0, prep: 0, transit: 0 }),
     [log, setLog] = useState([]);
-  const { data, loading, error, retry } = useData(
-    () => {
-      const rows = byYear(year);
-      return { rows, rs: routeStats(rows), brief: buildBrief(rows) };
+
+  const {
+    data: base,
+    loading: baseLoading,
+    error: baseError,
+    retry: retryBase,
+  } = useData(
+    async (signal) => {
+      const [routesRaw, briefRaw] = await Promise.all([
+        getDssRoutes(year, 50, signal),
+        getDssBrief(year, signal),
+      ]);
+      return {
+        rs: mapRoutes(routesRaw, briefRaw.config?.base_rate),
+        briefRaw,
+      };
     },
     [year],
     sim,
   );
+
+  const {
+    data: attData,
+    loading: attLoading,
+    error: attError,
+    retry: retryAtt,
+  } = useData(
+    async (signal) => {
+      if (q === 0.25) {
+        const only = await getDssAttribution(year, 0.25, signal);
+        return { current: only, p25: only };
+      }
+      const [current, p25] = await Promise.all([
+        getDssAttribution(year, 0.5, signal),
+        getDssAttribution(year, 0.25, signal),
+      ]);
+      return { current, p25 };
+    },
+    [year, q],
+    sim,
+  );
+
+  const list = base?.rs.list || [];
+  const cur =
+    list.find((s) => s.route === sel) ||
+    [...list].sort((a, b) => b.p - a.p)[0] ||
+    null;
+  const c = Object.fromEntries(
+    STAGES.map(([k]) => [k, Math.min(cut[k], MAX_CUT[k])]),
+  );
+  const any = STAGES.some(([k]) => c[k] > 0);
+
+  const {
+    data: scenario,
+    loading: scenarioLoading,
+    error: scenarioError,
+    retry: retryScenario,
+  } = useData(
+    async (signal) => {
+      if (!cur) return null;
+      return mapScenario(
+        await getDssScenario({ year, route: cur.route, cut: c }, signal),
+      );
+    },
+    [year, cur?.route, c.appr, c.prep, c.transit],
+    sim,
+  );
+
   const rec = (g, l) =>
     setLog(
-      [{ t: new Date().toLocaleTimeString("vi-VN"), g, l }, ...log].slice(
-        0,
-        50,
-      ),
+      [{ t: new Date().toLocaleTimeString("vi-VN"), g, l }, ...log].slice(0, 50),
     );
   const head = (
     <div className="flex flex-wrap items-center justify-between gap-2">
       <YearSel year={year} setYear={setYear} />
       <p className="text-xs text-slate-500 max-w-3xl">
-        Mọi số “tránh được” là mô phỏng theo luật trên dữ liệu mẫu, không phải
-        tác động nhân quả và không thực thi hành động vận hành. Dữ liệu thật sẽ
-        lấy từ API <code>/api/dss/*</code>.
+        Mọi số “tránh được” là mô phỏng theo luật DSS trên dữ liệu thực, không
+        phải tác động nhân quả và không thực thi hành động vận hành. Dữ liệu lấy
+        từ API <code>/api/dss/*</code>.
       </p>
     </div>
   );
+  const error = baseError || attError;
   if (error)
     return (
       <div className="space-y-3">
         {head}
-        <Errored msg={error} retry={retry} />
+        <Errored
+          msg={error}
+          retry={() => {
+            retryBase();
+            retryAtt();
+          }}
+        />
       </div>
     );
-  if (loading || !data)
+  if (baseLoading || attLoading || !base || !attData)
     return (
       <div className="space-y-3">
         {head}
@@ -99,8 +178,6 @@ export default function DssView({ year, setYear, sim, initRoute }) {
         <Skeleton h={260} />
       </div>
     );
-  const { rows, rs, brief } = data,
-    { L, list } = rs;
   if (!list.length)
     return (
       <div className="space-y-3">
@@ -108,27 +185,16 @@ export default function DssView({ year, setYear, sim, initRoute }) {
         <Empty msg="Chưa có tuyến nào đủ số đơn để phân tích" />
       </div>
     );
+
+  const { L } = base.rs;
+  const brief = mapBrief(base.briefRaw, mapLateByRoute(attData.current));
   const ranked = [...list]
     .sort((a, b) => (sort === "rate" ? b.p - a.p : b.k - a.k))
     .slice(0, 10);
-  const cur =
-    list.find((s) => s.route === sel) || [...list].sort((a, b) => b.p - a.p)[0];
-  const b = bench(rows, q),
-    b25 = bench(rows, 0.25),
-    att = attribution(cur.rows, b),
-    cutDef = p25cut(cur.rows, b25);
-  const mx = Object.fromEntries(
-    STAGES.map(([k]) => [k, Math.ceil(Math.max(...cur.rows.map((r) => r[k])))]),
-  );
-  const c = Object.fromEntries(
-      STAGES.map(([k]) => [k, Math.min(cut[k], mx[k])]),
-    ),
-    any = STAGES.some(([k]) => c[k] > 0);
-  const after = simulate(cur.rows, c),
-    avoided = cur.k - after,
-    newRate = after / cur.n,
-    ci = bootCI(cur.rows, c),
-    [evT, evK] = evid(ci, cur.low);
+  const att = cur ? mapAttribution(attData.current, cur.route) : null;
+  const cutDef = cur
+    ? mapDefaultCut(attData.p25, cur.route)
+    : { appr: 0, prep: 0, transit: 0 };
   const pick = (r) => {
     setSel(r);
     setCut({ appr: 0, prep: 0, transit: 0 });
@@ -141,6 +207,7 @@ export default function DssView({ year, setYear, sim, initRoute }) {
         ["Chưa giải thích được (liên quan ngày cam kết)", att.resid, "#64748b"],
       ]
     : [];
+
   return (
     <div className="space-y-4">
       {head}
@@ -188,14 +255,14 @@ export default function DssView({ year, setYear, sim, initRoute }) {
                   key={s.route}
                   className={
                     "border-t border-slate-100 cursor-pointer hover:bg-slate-50 " +
-                    (s.route === cur.route ? "pick" : "")
+                    (cur && s.route === cur.route ? "pick" : "")
                   }
                   onClick={() => pick(s.route)}
                 >
                   <td className="py-1.5 px-2 font-medium">
                     <button
                       className="text-left"
-                      aria-pressed={s.route === cur.route}
+                      aria-pressed={!!cur && s.route === cur.route}
                     >
                       {s.route}
                     </button>
@@ -225,12 +292,12 @@ export default function DssView({ year, setYear, sim, initRoute }) {
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
               <h2 className="font-semibold">
-                2. Giai đoạn nghẽn của tuyến {cur.route}
+                2. Giai đoạn nghẽn của tuyến {cur?.route}
               </h2>
               <p className="text-xs text-slate-500">
                 Tỷ trọng từng giai đoạn trong các đơn trễ của tuyến (Shapley
-                trên 3 giai đoạn). Nhãn phân bổ mô tả, không phải kết luận nhân
-                quả.
+                trên 3 giai đoạn, peer group theo q). Nhãn phân bổ mô tả, không
+                phải kết luận nhân quả.
               </p>
             </div>
             <div className="flex gap-1">
@@ -268,10 +335,10 @@ export default function DssView({ year, setYear, sim, initRoute }) {
                 </div>
               ))}
               <p className="text-[11px] text-slate-500">
-                Dựa trên {att.n} đơn trễ. Mỗi đơn so với phân vị q = {q} của
-                từng giai đoạn trên toàn bộ dữ liệu đang xem.
+                Dựa trên {int(att.n)} đơn trễ. Tỷ trọng lấy từ{" "}
+                <code>/api/dss/attribution</code> với q = {q}.
               </p>
-              {att.n < 10 && (
+              {att.n > 0 && att.n < 10 && (
                 <p
                   className="text-xs text-amber-800 bg-amber-50 rounded px-2 py-1"
                   role="status"
@@ -293,21 +360,12 @@ export default function DssView({ year, setYear, sim, initRoute }) {
                 3. Thử kịch bản rút ngắn (What-if)
               </h2>
               <p className="text-xs text-slate-500">
-                Giả định 1 ngày rút ngắn = 1 ngày giao sớm hơn; mức rút của mỗi
-                giai đoạn không vượt thời gian thực tế của đơn.
+                Giả định 1 ngày rút ngắn = 1 ngày giao sớm hơn; backend chặn mức
+                rút theo thời gian thực tế của từng đơn.
               </p>
             </div>
             <div className="flex gap-1">
-              <button
-                className="btn"
-                onClick={() =>
-                  setCut({
-                    appr: Math.min(cutDef.appr, mx.appr),
-                    prep: Math.min(cutDef.prep, mx.prep),
-                    transit: Math.min(cutDef.transit, mx.transit),
-                  })
-                }
-              >
+              <button className="btn" onClick={() => setCut(cutDef)}>
                 Đặt về mức P25
               </button>
               <button
@@ -325,7 +383,7 @@ export default function DssView({ year, setYear, sim, initRoute }) {
                 <input
                   type="range"
                   min="0"
-                  max={mx[k]}
+                  max={MAX_CUT[k]}
                   step="0.1"
                   value={c[k]}
                   onChange={(e) => setCut({ ...cut, [k]: +e.target.value })}
@@ -337,30 +395,35 @@ export default function DssView({ year, setYear, sim, initRoute }) {
             ))}
           </div>
           <div className="mt-3 bg-slate-50 rounded p-3 text-sm">
-            {any ? (
+            {scenarioError ? (
+              <div className="text-xs">
+                <span className="text-red-700">Không tính được kịch bản. </span>
+                <button className="btn" onClick={retryScenario}>
+                  Thử lại
+                </button>
+              </div>
+            ) : scenarioLoading || !scenario ? (
+              <span className="text-slate-600">Đang tính kịch bản…</span>
+            ) : any ? (
               <>
                 <div>
-                  Tỷ lệ trễ: <b>{pct(cur.p)}</b> → <b>{pct(newRate)}</b>{" "}
-                  <span className="text-slate-500">
-                    (−{num((cur.p - newRate) * 100, 2)} điểm %, CI 95%: −
-                    {num(ci.ppLo, 2)} đến −{num(ci.ppHi, 2)})
-                  </span>
+                  Tỷ lệ trễ: <b>{pct(scenario.baseline)}</b> →{" "}
+                  <b>{pct(scenario.projected)}</b>
                 </div>
                 <div className="mt-1">
-                  Ước tính tránh được <b>{avoided}</b> / {cur.k} đơn trễ{" "}
-                  <span className="text-slate-500">({ciTxt(ci)})</span>{" "}
-                  <Pill t={evT} c={ST[evK]} />
+                  Ước tính tránh được <b>{int(scenario.avoided)}</b> /{" "}
+                  {int(cur?.k || 0)} đơn trễ
                 </div>
                 <p className="text-[11px] text-slate-500 mt-1">
-                  CI từ bootstrap 300 lần (seed 42) chỉ phản ánh nhiễu lấy mẫu,
-                  không chứng tỏ mục tiêu khả thi. CI chứa 0 thì kết luận là
-                  “chưa đủ bằng chứng”.
+                  Kết quả từ <code>/api/dss/scenario</code>. Kịch bản tuỳ ý không
+                  có CI bootstrap; CI chỉ có trong Decision Brief cho 5 tuyến
+                  đầu.
                 </p>
               </>
             ) : (
               <span className="text-slate-600">
                 Kéo thanh trượt hoặc bấm “Đặt về mức P25” để xem ước tính cho
-                tuyến {cur.route}.
+                tuyến {cur?.route}.
               </span>
             )}
           </div>
@@ -382,14 +445,14 @@ export default function DssView({ year, setYear, sim, initRoute }) {
             note="Nếu đưa cả ba giai đoạn về P25 toàn cục thì ước tính tránh được số đơn trễ như trên. Tuyến mẫu nhỏ nằm ở nhóm “Cần thêm dữ liệu”."
           >
             {brief.routes.map((r) => {
-              const [t, k] = evid(r.ci, r.low);
+              const [t, k] = evidenceOf(r.ci, false);
               return (
                 <BriefRow
                   key={r.route}
                   main={r.route}
                   pill={<Pill t={t} c={ST[k]} />}
                   onLog={() => rec("Tuyến", r.route)}
-                  sub={`Tránh ~${r.avoided}/${r.k} đơn trễ (${ciTxt(r.ci)}). Rút: duyệt ${num(r.cut.appr)} + chuẩn bị ${num(r.cut.prep)} + vận chuyển ${num(r.cut.transit)} ngày`}
+                  sub={`Tránh ~${int(r.avoided)}${r.k != null ? `/${int(r.k)}` : ""} đơn trễ (${ciTxt(r.ci)})`}
                 />
               );
             })}
@@ -401,17 +464,18 @@ export default function DssView({ year, setYear, sim, initRoute }) {
             note="Chỉ rút giai đoạn duyệt thanh toán về P25; thường nhỏ so với vận chuyển."
           >
             {brief.pay.map((p) => {
-              const [t, k] = evid(p.ci, p.low);
+              const [t, k] = evidenceOf(p.ci, false);
               return (
                 <BriefRow
                   key={p.pay}
                   main={p.pay}
                   pill={<Pill t={t} c={ST[k]} />}
                   onLog={() => rec("Thanh toán", p.pay)}
-                  sub={`Tránh ~${p.avoided} đơn trễ (${ciTxt(p.ci)}), rút duyệt ${num(p.cut)} ngày; ${int(p.n)} đơn`}
+                  sub={`Tránh ~${int(p.avoided)} đơn trễ (${ciTxt(p.ci)})`}
                 />
               );
             })}
+            {!brief.pay.length && <NoItem />}
           </BriefCard>
           <BriefCard
             title="Chính sách cam kết (5 ô đầu, chỉ số ròng)"
@@ -419,8 +483,8 @@ export default function DssView({ year, setYear, sim, initRoute }) {
             note="Đổi định nghĩa trễ (cam kết = Q95 thời gian hoàn tất), không rút ngắn thời gian giao; chỉ hiển thị số ròng (NET). Cam kết quá dài không thực tế."
           >
             <p className="text-[11px] text-slate-600 pb-1">
-              Ô tuyến: {brief.promCnt.tight} tight / {brief.promCnt.ok} ok /{" "}
-              {brief.promCnt.loose} loose.
+              Trong các ô hiển thị: {brief.promCnt.tight} tight /{" "}
+              {brief.promCnt.ok} ok / {brief.promCnt.loose} loose.
             </p>
             {brief.promTop.map((x) => (
               <BriefRow
@@ -428,7 +492,7 @@ export default function DssView({ year, setYear, sim, initRoute }) {
                 main={x.route}
                 pill={x.need > 40 && <Pill t="Cam kết quá dài" c={ST.warn} />}
                 onLog={() => rec("Chính sách cam kết", x.route)}
-                sub={`Cam kết trung vị ${num(x.med)} → cần ${x.need} ngày: ròng +${x.net} đơn được phân loại lại là đúng hạn`}
+                sub={`Cần ${x.need} ngày: ròng +${int(x.net)} đơn được phân loại lại là đúng hạn`}
               />
             ))}
             {!brief.promTop.length && <NoItem />}
@@ -441,7 +505,7 @@ export default function DssView({ year, setYear, sim, initRoute }) {
             {brief.sellers.map((s) => (
               <BriefRow
                 key={s.id}
-                main={s.id}
+                main={s.id.slice(0, 8)}
                 pill={
                   <Pill
                     t={s.prio ? "Ưu tiên" : "Chưa đủ bằng chứng"}
@@ -449,7 +513,7 @@ export default function DssView({ year, setYear, sim, initRoute }) {
                   />
                 }
                 onLog={() => rec("Người bán", s.id)}
-                sub={`${s.k}/${s.n} đơn trễ (${pct(s.p)}), vượt mức hệ thống ~${num(s.excess, 0)} đơn`}
+                sub={`${int(s.k)}/${int(s.n)} đơn trễ (${pct(s.p)}), vượt mức hệ thống ~${num(s.excess, 0)} đơn`}
               />
             ))}
             {!brief.sellers.length && <NoItem />}
@@ -457,7 +521,7 @@ export default function DssView({ year, setYear, sim, initRoute }) {
           <BriefCard
             title="Cần thêm dữ liệu (tuyến gắn cờ, mẫu nhỏ)"
             owner="Quản lý vận hành logistics"
-            note={`Tuyến đỏ/vàng nhưng dưới ${LOW_SAMPLE} đơn-tuyến; không tính là hành động ưu tiên chính. Thu thập thêm đơn rồi đánh giá lại.`}
+            note="Tuyến đỏ/vàng nhưng dưới ngưỡng số đơn tối thiểu; không tính là hành động ưu tiên chính. Thu thập thêm đơn rồi đánh giá lại."
           >
             {brief.more.map((s) => (
               <BriefRow
@@ -465,7 +529,7 @@ export default function DssView({ year, setYear, sim, initRoute }) {
                 main={s.route}
                 pill={<Pill t={LV[s.level][0]} c={LV[s.level][1]} />}
                 onLog={() => rec("Cần thêm dữ liệu", s.route)}
-                sub={`${s.n} đơn, tỷ lệ trễ ${pct(s.p)}; cần thêm ít nhất ${LOW_SAMPLE - s.n} đơn`}
+                sub={`${int(s.n)} đơn, tỷ lệ trễ ${pct(s.p)}; cần thêm ${int(s.need)} đơn`}
               />
             ))}
             {!brief.more.length && <NoItem />}
