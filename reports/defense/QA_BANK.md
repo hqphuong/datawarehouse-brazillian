@@ -181,7 +181,7 @@ Nếu tín hiệu gắn cờ không còn khi đổi `min_orders`/ngưỡng, ho�
 "14 tuyến" (API `/routes` mặc định trả tối đa 10), tỷ lệ trễ **8,1556% theo đơn-tuyến** so với **8,1950% theo đơn duy nhất**, và GROSS so với NET của promise. Mô phỏng chỉ nói "nếu… thì ước tính". `reports/dss_eval_raw.txt`.
 
 ### 56. Tab nào là thật, tab nào mock?
-Chỉ **DSS Action Center** gọi API Django thật; Dashboard, OLAP, ETL Monitor là mock tĩnh. Nói rõ trước khi thầy bấm. `web/Olist_Logistics_DSS_v3.html:427`; `reports/run_guide.md:93-96`.
+Trong `frontend/`, **DSS Action Center**, Dashboard, OLAP và Analytics gọi API Flask thật; chỉ ETL Monitor là mock tĩnh. Nói rõ trước khi thầy bấm. `frontend/src/data/api.js`; `README.md`.
 
 ### 57. Nếu thầy yêu cầu chạy lại ngay bây giờ?
 Chạy `.\scripts\check.ps1`; nếu muốn bỏ qua tái tạo raw eval thì thêm `-Quick`. Check gần nhất có 78 pytest, 22 Django tests; `regen_eval` bị bỏ qua vì lần đó dùng `-Quick`. `reports/CHECK_OUTPUT.txt`.
@@ -223,7 +223,7 @@ Có, đây là giả định 1:1: nếu… thì ước tính ngày giao sớm h�
 Brief hiện ghép owner của ba giai đoạn thành danh sách; đó không phải một cá nhân/đơn vị duy nhất chịu trách nhiệm cho toàn tuyến. Cần phân công vận hành cụ thể trước khi dùng ngoài demo. `etl/dss_brief.py::_route_actions`; `reports/dss_eval_raw.txt`, mục Decision Brief.
 
 ### 70. Dashboard, OLAP và ETL Monitor có dùng dữ liệu thật không?
-Không. Chỉ tab DSS nối API; Dashboard, OLAP và ETL Monitor vẫn là mock. Nên nói rõ trước khi trình diễn. `web/Olist_Logistics_DSS_v3.html`; `reports/run_guide.md`.
+Có — Dashboard, OLAP và Analytics gọi API thật; chỉ ETL Monitor vẫn dùng dữ liệu mẫu. Nên nói rõ trước khi trình diễn. `frontend/src/data/api.js`; `README.md`.
 
 ### 71. Nút “Ghi nhận khuyến nghị” có thực thi hành động không?
 Không. Nút chỉ ghi bản ghi vào ActionLog; nó không thay đổi promise, tuyến, seller hay quy trình giao hàng. `backend/dss/views.py` (`/api/dss/actions`); `backend/dss/models.py::ActionLog`.

@@ -51,7 +51,7 @@ Mọi thay đổi trạng thái phải kèm evidence (lệnh chạy/file). Khôn
 | ID | Ưu tiên | Trạng thái | Evidence |
 |---|---|---|---|
 | A1 | P0 | done | `backend/dss/views.py` + `backend/dss/urls.py`: `/brief`, `/attribution`, `/promise-policy`, `/sellers`, `/portfolio`, giữ `/routes`, `/scenario`, `/promise`, `/actions`; Phase 1 `CHECK_OUTPUT.txt`: Django 22/22 pass. |
-| U1 | P1 | done | `web/Olist_Logistics_DSS_v3.html`: DSS gọi API thật; Root Cause hiển thị attribution theo route tại q=0,5 và sensitivity q=0,25 từ `/api/dss/attribution`, yêu cầu ≥100 đơn-tuyến; số system-average nằm trong details. Decision Brief đủ nhóm/GMV/owner, route priority phân biệt tỷ lệ với tác động theo số đơn, bộ lọc năm áp dụng. Dashboard/OLAP/ETL vẫn mock. |
+| U1 | P1 | done | `frontend/src/views/DssViewImpl.jsx`: tab DSS gọi API thật `/api/dss/routes`, `/attribution` (q=0,5 và q=0,25), `/scenario`, `/brief` và `POST /actions` qua `src/data/api.js` + `src/data/dssAdapter.js`; đã bỏ mock trong tab này. Root Cause lấy Shapley/peer từ `/attribution`; Decision Brief đủ 5 nhóm, route priority phân biệt tỷ lệ với tác động theo số đơn, bộ lọc năm áp dụng. CI what-if lấy từ `/brief.route_actions`, kịch bản tuỳ ý không có CI. Dashboard/OLAP/Analytics cũng gọi API thật; ETL Monitor còn mock. |
 | U2 | P2 | dropped | Không nối BI/Dashboard vào API; theo phạm vi đã chốt, chỉ DSS dùng API thật và Dashboard/OLAP/ETL vẫn mock. |
 
 ## DOCS

@@ -10,7 +10,7 @@ Hệ thống gồm 4 phần:
 | Data Warehouse | PostgreSQL (Star Schema) | Lưu dữ liệu phân tích |
 | ETL | Python + pandas + psycopg2 | Làm sạch, tính toán, nạp DW |
 | Backend | Flask 3 (app factory + Blueprint) | API DSS, BI/OLAP, auth trên một cổng `:8000`, psycopg2 |
-| Frontend | React 19 + Vite 8 + Tailwind | 5 API thật (Dashboard, OLAP, Analytics); tab DSS còn mock |
+| Frontend | React 19 + Vite 8 + Tailwind | Dashboard, OLAP, Analytics và tab DSS gọi API thật; ETL Monitor còn mock |
 
 ---
 
@@ -61,7 +61,9 @@ lấn và không phải tổng đơn tránh được. Nội dung what-if là “
   500/500 lần. CI và attribution chi tiết ở `reports/dss_eval_raw.txt`.
 
 > **⚠️ Nhãn cảnh báo giao diện:**
-> - Tab **DSS** hiển thị **dữ liệu mẫu** (mock data) và chưa nối `/api/dss/*`.
+> - Tab **DSS** lấy số liệu từ `/api/dss/*` (routes, attribution, scenario, brief)
+>   và ghi nhận qua `POST /api/dss/actions`; các số “tránh được” là mô phỏng theo
+>   luật DSS, không phải tác động nhân quả.
 > - Các tab **Dashboard**, **OLAP**, **Analytics** đã gọi API thật và phản ánh
 >   dữ liệu Olist trong database.
 
@@ -224,7 +226,10 @@ rỗng sau khi chạy test.
 Giao diện chính là React 19 + Vite 8 trong `frontend/`, gọi 5 API thật:
 `GET /api/olap/metadata`, `POST /api/olap/query`,
 `GET /api/dashboard/overview`, `GET /api/analytics/sla-breakdown`,
-`GET /api/analytics/regions`. Tab DSS vẫn dùng dữ liệu mẫu.
+`GET /api/analytics/regions`. Tab DSS gọi thêm `GET /api/dss/routes`,
+`GET /api/dss/attribution`, `GET /api/dss/scenario`, `GET /api/dss/brief` và
+`POST /api/dss/actions`; transport ở `frontend/src/data/api.js` và mapping
+response ở `frontend/src/data/dssAdapter.js`. ETL Monitor vẫn là mock.
 
 ```powershell
 cd frontend
