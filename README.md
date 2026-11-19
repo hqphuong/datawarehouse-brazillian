@@ -61,9 +61,12 @@ lấn và không phải tổng đơn tránh được. Nội dung what-if là “
   500/500 lần. CI và attribution chi tiết ở `reports/dss_eval_raw.txt`.
 
 > **⚠️ Nhãn cảnh báo giao diện:**
-> - Tab **DSS** lấy số liệu từ `/api/dss/*` (routes, attribution, scenario, brief)
->   và ghi nhận qua `POST /api/dss/actions`; các số “tránh được” là mô phỏng theo
->   luật DSS, không phải tác động nhân quả.
+> - Tab **DSS** lấy số liệu từ `/api/dss/*` (routes, attribution, scenario, promise,
+>   promise-policy, sellers, portfolio, brief, actions) và ghi nhận qua
+>   `POST /api/dss/actions`; các số “tránh được” là mô phỏng theo luật DSS, không
+>   phải tác động nhân quả. Giao diện gồm 6 khối theo luồng quyết định: Tuyến ưu
+>   tiên → Giai đoạn nghẽn → Mức rút ngắn → Ngày cam kết → Người bán → Decision
+>   Brief (hai khối giữa nằm trong phần “Phân tích hỗ trợ”).
 > - Các tab **Dashboard**, **OLAP**, **Analytics** đã gọi API thật và phản ánh
 >   dữ liệu Olist trong database.
 
@@ -227,9 +230,12 @@ Giao diện chính là React 19 + Vite 8 trong `frontend/`, gọi 5 API thật:
 `GET /api/olap/metadata`, `POST /api/olap/query`,
 `GET /api/dashboard/overview`, `GET /api/analytics/sla-breakdown`,
 `GET /api/analytics/regions`. Tab DSS gọi thêm `GET /api/dss/routes`,
-`GET /api/dss/attribution`, `GET /api/dss/scenario`, `GET /api/dss/brief` và
-`POST /api/dss/actions`; transport ở `frontend/src/data/api.js` và mapping
-response ở `frontend/src/data/dssAdapter.js`. ETL Monitor vẫn là mock.
+`GET /api/dss/attribution`, `GET /api/dss/scenario`, `GET /api/dss/promise`,
+`GET /api/dss/promise-policy`, `GET /api/dss/sellers`, `GET /api/dss/portfolio`,
+`GET /api/dss/brief`, `GET /api/dss/actions` và `POST /api/dss/actions`;
+transport ở `frontend/src/data/api.js`, mapping response ở
+`frontend/src/data/dssAdapter.js` và các thành phần dùng chung của 6 khối ở
+`frontend/src/views/dssParts.jsx`. ETL Monitor vẫn là mock.
 
 ```powershell
 cd frontend

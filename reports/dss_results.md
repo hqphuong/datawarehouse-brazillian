@@ -86,7 +86,7 @@ sign test lạc quan. CI của S4 chỉ mô tả sampling noise, không chứng 
 khả thi vận hành.
 
 - **Hai góc nhìn tuyến:** Route Priority xếp theo tỷ lệ trễ; Decision Brief xếp tác động theo số đơn trong mô phỏng P25. SP→SP đứng đầu nhóm đơn tránh ước tính nhưng không thuộc 14 tuyến gắn cờ theo tỷ lệ. Câu trả lời mẫu: “Hai khối trả lời hai câu hỏi khác nhau: tỷ lệ rủi ro và quy mô tác động ước tính.”
-- **Root Cause:** đã chuyển sang hiển thị tỷ trọng trong đơn trễ theo peer cho tuyến đang chọn ở q=0,5, kèm q=0,25 để xem độ nhạy; yêu cầu tối thiểu 100 đơn-tuyến. Nguồn là card “2. Giai đoạn nghẽn” và `/api/dss/attribution`; số so với trung bình hệ thống còn trong phần thu gọn, vẫn chưa chuẩn hoá khoảng cách. Đây là phân rã theo quy tắc, không phải nhân quả.
+- **Root Cause:** hiển thị tỷ trọng có dấu trong đơn trễ theo peer cho tuyến đang chọn ở q=0,5, kèm q=0,25 để xem độ nhạy; yêu cầu tối thiểu 100 đơn-tuyến. Nguồn là khối “2. Giai đoạn nghẽn” và `/api/dss/attribution` (`cause_share_*`, giữ φ âm); thanh vẽ từ mốc 0 ở giữa. Đây là phân rã theo quy tắc, không phải nhân quả.
 - **Scenario 1:1:** mô hình giả định ngày tiết kiệm ở một chặng chuyển tương ứng thành ngày giao sớm hơn, có chặn theo thời lượng chặng. Câu trả lời mẫu: “Nếu… thì ước tính theo giả định 1:1; chưa mô hình hoá buffer hoặc lịch carrier.”
 - **Owner của route action:** trường owner là danh sách ghép từ ba đơn vị theo ba giai đoạn, không phải một chủ thể duy nhất. Câu trả lời mẫu: “Đây là đầu mối theo từng chặng; cần phân công một người chịu trách nhiệm khi triển khai.”
 - **Các tab mock:** ETL Monitor chưa nối dữ liệu/API thật. Câu trả lời mẫu: “DSS, Dashboard, OLAP và Analytics đều dùng API thật; ETL Monitor là mock.”

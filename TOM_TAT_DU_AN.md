@@ -351,11 +351,16 @@ Giao diện chính: `frontend/` (React 19 + Vite 8 + Tailwind).
 | **Dashboard (BI)** | **Gọi API thật** `GET /api/dashboard/overview` |
 | **OLAP** | **Gọi API thật** `GET /api/olap/metadata`, `POST /api/olap/query` |
 | **Analytics** | **Gọi API thật** `GET /api/analytics/sla-breakdown`, `GET /api/analytics/regions` |
-| **DSS Action Center** | **Gọi API thật** `/api/dss/routes`, `/attribution`, `/scenario`, `/brief`; ghi nhận qua `POST /api/dss/actions` |
+| **DSS Action Center** | **Gọi API thật** `/api/dss/routes`, `/attribution`, `/scenario`, `/promise`, `/promise-policy`, `/sellers`, `/portfolio`, `/brief`, `/actions`; ghi nhận qua `POST /api/dss/actions` |
 
-Tab DSS không còn dùng dữ liệu mẫu. CI cho Decision Brief lấy từ
-`route_actions.*_ci_*`; kịch bản What-if tuỳ ý không có CI bootstrap. Các endpoint
-vẫn giữ golden parity với bản Django cũ.
+Tab DSS không còn dùng dữ liệu mẫu. Giao diện theo bản thiết kế 6 khối: Tuyến ưu
+tiên → Giai đoạn nghẽn → Mức rút ngắn → Ngày cam kết → Người bán → Decision
+Brief; bốn và năm nằm trong phần “Phân tích hỗ trợ” có thể mở rộng. Có bộ lọc
+điểm đi/điểm đến, thanh tỷ trọng có dấu (φ âm), bảng mức phục vụ 85/90/95%,
+scorecard người bán theo nhóm, popover “Cách đọc số liệu” / “Đã ghi nhận” và
+toast sau khi ghi log. CI cho Decision Brief lấy từ `route_actions.*_ci_*`;
+kịch bản What-if tuỳ ý không có CI bootstrap. Các endpoint vẫn giữ golden parity
+với bản Django cũ.
 
 Dev: Vite chạy `:5173` và proxy `/api` sang Flask `:8000`
 (`frontend/vite.config.js`), nên trình duyệt chỉ thấy một origin, không cần CORS.
