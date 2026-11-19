@@ -172,8 +172,7 @@ export default function DssView({ year, setYear, sim, initRoute }) {
       <YearSel year={year} setYear={setYear} />
       <p className="text-xs text-slate-500 max-w-3xl">
         Mọi số “tránh được” là mô phỏng theo luật DSS trên dữ liệu thực, không
-        phải tác động nhân quả và không thực thi hành động vận hành. Dữ liệu lấy
-        từ API <code>/api/dss/*</code>.
+        phải tác động nhân quả và không thực thi hành động vận hành.
       </p>
     </div>
   );
@@ -356,8 +355,8 @@ export default function DssView({ year, setYear, sim, initRoute }) {
                 </div>
               ))}
               <p className="text-[11px] text-slate-500">
-                Dựa trên {int(att.n)} đơn trễ. Tỷ trọng lấy từ{" "}
-                <code>/api/dss/attribution</code> với q = {q}.
+                Dựa trên {int(att.n)} đơn trễ. Tỷ trọng phân rã theo peer group
+                tại q = {q}.
               </p>
               {att.n > 0 && att.n < 10 && (
                 <p
@@ -436,9 +435,8 @@ export default function DssView({ year, setYear, sim, initRoute }) {
                   {int(cur?.k || 0)} đơn trễ
                 </div>
                 <p className="text-[11px] text-slate-500 mt-1">
-                  Kết quả từ <code>/api/dss/scenario</code>. Kịch bản tuỳ ý không
-                  có CI bootstrap; CI chỉ có trong Decision Brief cho 5 tuyến
-                  đầu.
+                  Kịch bản tuỳ ý không có CI bootstrap; CI chỉ có trong Decision
+                  Brief cho 5 tuyến đầu.
                 </p>
               </>
             ) : (
@@ -589,8 +587,8 @@ export default function DssView({ year, setYear, sim, initRoute }) {
               Nhật ký ghi nhận khuyến nghị
             </div>
             <p className="text-[11px] text-slate-500 mb-1">
-              Ghi nhận qua POST <code>/api/dss/actions</code>; log local chỉ để
-              theo dõi phiên này, không thực thi hành động vận hành.
+              Ghi nhận được lưu vào nhật ký hệ thống; log local chỉ để theo dõi
+              phiên này, không thực thi hành động vận hành.
             </p>
             {actionError && (
               <p className="text-xs text-red-700 mb-1" role="alert">
