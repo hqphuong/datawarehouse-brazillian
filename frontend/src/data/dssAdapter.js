@@ -35,9 +35,10 @@ export function mapAttribution(payload, route) {
   return {
     // `rows` có share_* nhưng không có late_orders; `ranked_routes` thì ngược lại.
     n: finite(ranked?.late_orders),
-    appr: finite(shares?.share_approval ?? ranked?.cause_share_approval),
-    prep: finite(shares?.share_prep ?? ranked?.cause_share_prep),
-    transit: finite(shares?.share_transit ?? ranked?.cause_share_transit),
+    // cause_share_* là tỷ trọng có dấu (φ âm được giữ lại), dùng cho thanh signed.
+    appr: finite(shares?.cause_share_approval ?? shares?.share_approval ?? ranked?.cause_share_approval),
+    prep: finite(shares?.cause_share_prep ?? shares?.share_prep ?? ranked?.cause_share_prep),
+    transit: finite(shares?.cause_share_transit ?? shares?.share_transit ?? ranked?.cause_share_transit),
     resid: finite(shares?.share_promise ?? ranked?.share_promise),
     stage: shares?.top_stage || ranked?.top_stage || null,
   };
@@ -149,3 +150,101 @@ export function mapBrief(payload = {}, lateByRoute = {}) {
     })),
   };
 }
+
+/* ============ View model cho bản thiết kế 6 khối ============ */
+
+export const routeLabel = (route) =>
+  route == null ? "—" : String(route).replace("->", "→");
+
+export const shortId = (id) => {
+  const value = String(id ?? "");
+  return value.length > 12 ? value.slice(0, 12) + "…" : value;
+};
+
+export const detailOf = (row) => {
+  try {
+    const parsed = JSON.parse(row?.detail || "{}");
+    return parsed.detail || parsed.action || row?.detail || "";
+  } catch {
+    return row?.detail || "";
+  }
+};
+
+/* /attribution.ranked_routes có mọi tuyến (kèm late_orders); /routes chỉ có
+ * tuyến bị gắn cờ (kèm CI, mức và root cause). Ghép lại thành danh sách chọn. */
+export function mapRouteRows(attribution, flagged = [], minOrders = 0) {
+  const flags = new Map((flagged || []).map((row) => [row.route, row]));
+  return (attribution?.ranked_routes || [])
+    .filter((row) => (row.order_routes ?? row.orders ?? 0) >= minOrders)
+    .map((row) => {
+      const flag = flags.get(row.route) || {};
+      return {
+        route: row.route,
+        orderRoutes: finite(row.order_routes ?? row.orders),
+        orders: finite(row.orders),
+        lateOrders: finite(row.late_orders),
+        lateRate: finite(row.late_rate),
+        ciLow: flag.ci_low == null ? null : finite(flag.ci_low),
+        ciHigh: flag.ci_high == null ? null : finite(flag.ci_high),
+        level: levelOf(flag.level),
+        lowSample: !!row.low_sample,
+        rootCause: flag.root_cause || null,
+      };
+    });
+}
+
+/* `rows` có cause_share_* và share_promise; `ranked_routes` có late_rate. */
+export function mapAttributionRow(payload, route) {
+  const row = findRoute(payload?.rows, route);
+  if (!row) return null;
+  return {
+    orders: finite(row.orders),
+    lateRate: finite(row.late_rate),
+    causeShares: {
+      approval: finite(row.cause_share_approval ?? row.share_approval),
+      prep: finite(row.cause_share_prep ?? row.share_prep),
+      transit: finite(row.cause_share_transit ?? row.share_transit),
+    },
+    sharePromise: finite(row.share_promise),
+    topStage: row.top_stage || null,
+  };
+}
+
+export const mapPromise = (payload = {}) => ({
+  extraDays: finite(payload.extra_days),
+  lateAfter: finite(payload.late_after),
+});
+
+export const mapPolicyRows = (payload = {}) =>
+  (payload.rows || []).map((row) => ({
+    route: row.route,
+    serviceLevel: finite(row.service_level),
+    neededDays: finite(row.needed_days),
+    lateRate: finite(row.late_rate),
+    avoidable: finite(row.avoidable_orders),
+    newLate: finite(row.new_late_orders),
+    net: finite(row.net_avoided_orders),
+  }));
+
+export const mapSellerRows = (payload = {}) =>
+  (payload.rows || []).map((row) => ({
+    id: row.seller_id,
+    orders: finite(row.orders),
+    lateOrders: finite(row.late_orders),
+    lateRate: finite(row.late_rate),
+    badReviewRate: finite(row.bad_review_rate),
+    level: levelOf(row.level),
+    segment: row.segment || "",
+    lowSample: !!row.low_sample,
+  }));
+
+export const mapPortfolio = (payload = {}) => ({
+  segments: (payload.segments || []).map((row) => ({
+    segment: row.segment,
+    nSellers: finite(row.n_sellers),
+    lateOrders: finite(row.late_orders),
+    lateOrdersShare: finite(row.late_orders_share),
+  })),
+  kCover50: finite(payload.coverage_50_percent?.k),
+  topShare: finite(payload.summary?.top_seller_share_late_orders),
+});

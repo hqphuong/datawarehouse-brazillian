@@ -61,5 +61,22 @@ export const getDssScenario = ({ year, route, cut }, signal) =>
     signal,
   });
 
+export const getDssPromise = ({ year, route, target }, signal) =>
+  request("/dss/promise", {
+    query: { ...dssQuery(year), route, target },
+    signal,
+  });
+
+export const getDssPromisePolicy = (year, signal) =>
+  request("/dss/promise-policy", { query: dssQuery(year), signal });
+
+export const getDssSellers = (year, signal) =>
+  request("/dss/sellers", { query: dssQuery(year), signal });
+
+export const getDssPortfolio = (year, signal) =>
+  request("/dss/portfolio", { query: dssQuery(year), signal });
+
+export const getDssActions = (signal) => request("/dss/actions", { signal });
+
 export const postDssAction = (body, signal) =>
   request("/dss/actions", { method: "POST", body, signal });
