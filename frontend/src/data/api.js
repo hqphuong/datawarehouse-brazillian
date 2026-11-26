@@ -54,7 +54,7 @@ export const getDssScenario = ({ year, route, cut }, signal) =>
     query: {
       ...dssQuery(year),
       route,
-      approval: cut.appr,
+      approval: cut.approval ?? cut.appr,
       prep: cut.prep,
       transit: cut.transit,
     },

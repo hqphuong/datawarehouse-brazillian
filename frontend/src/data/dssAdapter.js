@@ -216,7 +216,7 @@ export const mapPromise = (payload = {}) => ({
 });
 
 export const mapPolicyRows = (payload = {}) =>
-  (payload.rows || []).map((row) => ({
+  (payload?.rows || []).map((row) => ({
     route: row.route,
     serviceLevel: finite(row.service_level),
     neededDays: finite(row.needed_days),
@@ -227,7 +227,7 @@ export const mapPolicyRows = (payload = {}) =>
   }));
 
 export const mapSellerRows = (payload = {}) =>
-  (payload.rows || []).map((row) => ({
+  (payload?.rows || []).map((row) => ({
     id: row.seller_id,
     orders: finite(row.orders),
     lateOrders: finite(row.late_orders),

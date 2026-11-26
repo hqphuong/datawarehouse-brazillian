@@ -201,9 +201,8 @@ export default function DssView({ year, setYear, sim, initRoute }) {
             ) : (
               <p className="text-xs text-slate-500">Chưa có ghi nhận nào.</p>
             )}
-            <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+            <div className="mt-2 pt-2 border-t border-slate-100">
               <span className="text-[11px] text-slate-500">Chỉ ghi log, không thực thi hành động.</span>
-              <button className="btn" onClick={logApi.retry}>Tải lại</button>
             </div>
           </Pop>
         </div>
@@ -746,7 +745,7 @@ export default function DssView({ year, setYear, sim, initRoute }) {
           <BriefGroup src="route" title="Cần thêm dữ liệu" owner={ownerOf(br.low_sample_actions)}><BriefList rows={briefMore} {...listProps} /></BriefGroup>
         </div>
         <Note>
-          Năm nhóm chồng lấn trên cùng các đơn trễ nên không cộng số giữa các nhóm. Ngưỡng lấy từ /brief.parameters: min_orders={int(params.min_orders)}, low_sample&lt;{int(params.low_sample_threshold)}, seller_min={int(params.seller_min_orders)}.
+          Năm nhóm chồng lấn trên cùng các đơn trễ nên không cộng số giữa các nhóm. Ngưỡng: min_orders={int(params.min_orders)}, low_sample&lt;{int(params.low_sample_threshold)}, seller_min={int(params.seller_min_orders)}.
         </Note>
       </Block>
     </>,
