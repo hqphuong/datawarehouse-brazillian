@@ -16,7 +16,7 @@ async function request(path, { method = "GET", query, body, signal } = {}) {
   });
   const data = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(data?.message || `API request failed (${response.status})`);
+    throw new Error(data?.error || data?.message || `API request failed (${response.status})`);
   }
   return data;
 }
@@ -80,3 +80,6 @@ export const getDssActions = (signal) => request("/dss/actions", { signal });
 
 export const postDssAction = (body, signal) =>
   request("/dss/actions", { method: "POST", body, signal });
+
+export const patchDssAction = (id, status, signal) =>
+  request(`/dss/actions/${id}`, { method: "PATCH", body: { status }, signal });

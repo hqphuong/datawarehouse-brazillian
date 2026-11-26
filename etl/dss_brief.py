@@ -67,6 +67,8 @@ PROMISE_COLUMNS = [
 ]
 SELLER_COLUMNS = [
     "seller_id",
+    "city",
+    "state",
     "owner",
     "gmv",
     "action",
@@ -112,6 +114,21 @@ def _fmt_gmv(value) -> str:
     return f"{f:,.0f}".replace(",", ".")
 
 
+def _fmt_decimal(value, digits: int = 2) -> str:
+    """Số thập phân tiếng Việt: dùng dấu phẩy, không đụng đến dấu chấm GMV."""
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return "—"
+    if np.isnan(f) or np.isinf(f):
+        return "—"
+    return f"{f:.{digits}f}".replace(".", ",")
+
+
+def _fmt_percent(value, digits: int = 2) -> str:
+    return _fmt_decimal(float(value) * 100, digits) + "%"
+
+
 def _gmv_map(o: pd.DataFrame, keys) -> dict:
     """Tổng GMV theo khóa (một khóa hoặc list khóa); rỗng nếu thiếu cột gmv."""
     if "gmv" not in o.columns:
@@ -150,10 +167,10 @@ def _route_actions(
                 "gmv": gmv,
                 "action": (
                     f"Nếu cả 3 giai đoạn về peer P25 "
-                    f"(approval {shown_cuts['approval']:.2f} + "
-                    f"prep {shown_cuts['prep']:.2f} + "
-                    f"transit {shown_cuts['transit']:.2f} = "
-                    f"{sum(shown_cuts.values()):.2f} ngày), thì ước tính tránh "
+                    f"(approval {_fmt_decimal(shown_cuts['approval'])} + "
+                    f"prep {_fmt_decimal(shown_cuts['prep'])} + "
+                    f"transit {_fmt_decimal(shown_cuts['transit'])} = "
+                    f"{_fmt_decimal(sum(shown_cuts.values()))} ngày), thì ước tính tránh "
                     f"{avoided} đơn trễ (CI {lo}–{hi}); GMV toàn tuyến "
                     f"(tham chiếu): R$ {_fmt_gmv(gmv)}."
                 ),
@@ -190,7 +207,7 @@ def _payment_actions(
                 "gmv": gmv,
                 "action": (
                     f"Nếu rút ngắn duyệt thanh toán cho {r['payment_type']} "
-                    f"khoảng {cut:.2f} ngày (về peer P25), thì ước tính tránh "
+                    f"khoảng {_fmt_decimal(cut)} ngày (về peer P25), thì ước tính tránh "
                     f"{avoided} đơn trễ (CI {lo}–{hi}); GMV toàn nhóm "
                     f"(tham chiếu): R$ {_fmt_gmv(gmv)}."
                 ),
@@ -289,13 +306,15 @@ def _seller_actions(
         rows.append(
             {
                 "seller_id": r["seller_id"],
+                "city": r.get("city", "") or "",
+                "state": r.get("state", "") or "",
                 "owner": M.OWNER["prep"],
                 "gmv": int(round(float(seller_gmv.get(r["seller_id"], r["gmv"])))),
                 "action": (
                     f"Làm việc với seller {str(r['seller_id'])[:8]}…: "
                     f"{int(r['late_orders'])} đơn trễ, tỷ lệ "
-                    f"{float(r['late_rate']):.2%} (CI {float(r['wilson_low']):.2%}–"
-                    f"{float(r['wilson_high']):.2%}); ước tính "
+                    f"{_fmt_percent(r['late_rate'])} (CI {_fmt_percent(r['wilson_low'])}–"
+                    f"{_fmt_percent(r['wilson_high'])}); ước tính "
                     f"{excess} đơn trễ vượt mức hệ thống (liên hệ, không phải "
                     f"đơn tránh được); GMV toàn seller (tham chiếu): R$ "
                     f"{_fmt_gmv(seller_gmv.get(r['seller_id'], r['gmv']))}."

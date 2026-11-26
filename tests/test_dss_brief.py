@@ -83,7 +83,7 @@ def test_route_brief_text_describes_all_three_p25_cuts():
 
     assert action["action"].startswith(
         "Nếu cả 3 giai đoạn về peer P25 "
-        "(approval 0.10 + prep 0.50 + transit 2.27 = 2.87 ngày),"
+        "(approval 0,10 + prep 0,50 + transit 2,27 = 2,87 ngày),"
     )
     assert "ước tính tránh 1023 đơn trễ (CI 962–1089)" in action["action"]
     assert "GMV toàn tuyến (tham chiếu): R$ 3.451.815" in action["action"]

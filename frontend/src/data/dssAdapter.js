@@ -161,6 +161,16 @@ export const shortId = (id) => {
   return value.length > 12 ? value.slice(0, 12) + "…" : value;
 };
 
+/* Nhãn người bán: "Thành phố, BANG · 6 ký tự đầu mã" (hover xem mã đầy đủ). */
+export const sellerCode6 = (id) => String(id ?? "").slice(0, 6);
+export const sellerIdentity = (row) => {
+  const place = [
+    row?.city,
+    row?.state ? String(row.state).toUpperCase() : null,
+  ].filter(Boolean).join(", ") || "—";
+  return `${place} · ${sellerCode6(row?.id ?? row?.seller_id)}`;
+};
+
 export const detailOf = (row) => {
   try {
     const parsed = JSON.parse(row?.detail || "{}");
@@ -229,6 +239,8 @@ export const mapPolicyRows = (payload = {}) =>
 export const mapSellerRows = (payload = {}) =>
   (payload?.rows || []).map((row) => ({
     id: row.seller_id,
+    city: row.city || "",
+    state: row.state || "",
     orders: finite(row.orders),
     lateOrders: finite(row.late_orders),
     lateRate: finite(row.late_rate),

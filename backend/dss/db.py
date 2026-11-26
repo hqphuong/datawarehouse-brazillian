@@ -11,7 +11,16 @@ from psycopg2.extras import RealDictCursor
 
 from .config import postgres_settings
 
-COLUMNS = ("created_at", "action", "route", "level", "detail")
+COLUMNS = (
+    "id",
+    "created_at",
+    "action",
+    "route",
+    "level",
+    "detail",
+    "status",
+    "updated_at",
+)
 
 
 @contextmanager
@@ -66,10 +75,30 @@ def _iso_utc(value: datetime) -> str:
     return value.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
+def _action_dict(row) -> dict:
+    """Map an action-log row (with status columns) to the JSON payload."""
+    return {
+        "id": int(row[0]),
+        "created_at": _iso_utc(row[1]),
+        "action": row[2],
+        "route": row[3],
+        "level": row[4],
+        "detail": row[5],
+        "status": row[6],
+        "updated_at": _iso_utc(row[7]) if row[7] is not None else None,
+    }
+
+
+ACTION_COLUMNS = (
+    "id, created_at, action, route, level, detail, status, updated_at"
+)
+
+
 def insert_action(body: dict, config: dict | None = None) -> None:
     """Insert exactly the fields the Django model stored."""
+    now = datetime.now(timezone.utc)
     row = {
-        "created_at": datetime.now(timezone.utc),
+        "created_at": now,
         "action": str(body.get("action", ""))[:40],
         "route": str(body.get("route", ""))[:20],
         "level": str(body.get("level", ""))[:10],
@@ -77,14 +106,16 @@ def insert_action(body: dict, config: dict | None = None) -> None:
     }
     with connection(config) as conn, conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO dss_action_log (created_at, action, route, level, detail) "
-            "VALUES (%s, %s, %s, %s, %s)",
+            "INSERT INTO dss_action_log "
+            "(created_at, action, route, level, detail, status, updated_at) "
+            "VALUES (%s, %s, %s, %s, %s, 'recorded', %s)",
             (
                 row["created_at"],
                 row["action"],
                 row["route"],
                 row["level"],
                 row["detail"],
+                now,
             ),
         )
 
@@ -92,20 +123,25 @@ def insert_action(body: dict, config: dict | None = None) -> None:
 def list_actions(config: dict | None = None) -> list[dict]:
     with connection(config) as conn, conn.cursor() as cur:
         cur.execute(
-            "SELECT created_at, action, route, level, detail "
-            "FROM dss_action_log ORDER BY created_at DESC LIMIT 50"
+            f"SELECT {ACTION_COLUMNS} FROM dss_action_log "
+            "ORDER BY created_at DESC, id DESC LIMIT 50"
         )
         rows = cur.fetchall()
-    return [
-        {
-            "created_at": _iso_utc(row[0]),
-            "action": row[1],
-            "route": row[2],
-            "level": row[3],
-            "detail": row[4],
-        }
-        for row in rows
-    ]
+    return [_action_dict(row) for row in rows]
+
+
+def update_action_status(
+    action_id: int, status: str, config: dict | None = None
+) -> dict | None:
+    """Cập nhật trạng thái theo dõi thủ công; trả None nếu không tìm thấy id."""
+    with connection(config) as conn, conn.cursor() as cur:
+        cur.execute(
+            f"UPDATE dss_action_log SET status = %s, updated_at = %s "
+            f"WHERE id = %s RETURNING {ACTION_COLUMNS}",
+            (status, datetime.now(timezone.utc), action_id),
+        )
+        row = cur.fetchone()
+    return _action_dict(row) if row is not None else None
 
 
 def clear_actions(config: dict | None = None) -> None:

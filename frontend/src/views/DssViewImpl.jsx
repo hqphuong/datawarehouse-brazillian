@@ -9,6 +9,7 @@ import {
   getDssRoutes,
   getDssScenario,
   getDssSellers,
+  patchDssAction,
   postDssAction,
 } from "../data/api.js";
 import {
@@ -21,7 +22,7 @@ import {
   mapScenario,
   mapSellerRows,
   routeLabel,
-  shortId,
+  sellerIdentity,
 } from "../data/dssAdapter.js";
 import {
   pct,
@@ -81,6 +82,7 @@ export default function DssView({ year, setYear, sim, initRoute }) {
   const [openSupport, setOpenSupport] = useState(false);
   const [toast, setToast] = useState(null);
   const [posting, setPosting] = useState(false);
+  const [logFilter, setLogFilter] = useState("all");
 
   const brief = useData((signal) => getDssBrief(year, signal), [year], sim);
   const routesApi = useData((signal) => getDssRoutes(year, 1000, signal), [year], sim);
@@ -119,6 +121,19 @@ export default function DssView({ year, setYear, sim, initRoute }) {
   }, [year]);
 
   const records = logApi.data || [];
+  // Đối chiếu theo tuyến + mức + nội dung; GET trả bản ghi mới nhất trước nên
+  // find() chọn đúng bản ghi vừa ghi nhận nếu có nhiều dòng trùng nội dung.
+  const findRecord = (id, level, text) =>
+    records.find(
+      (l) =>
+        l.action === "recommendation" &&
+        l.route === String(id || "").slice(0, 20) &&
+        String(l.level || "") === String(level || "").slice(0, 10) &&
+        detailOf(l) === text &&
+        l.status !== "cancelled",
+    );
+  const isDone = (id, level, text) => !!findRecord(id, level, text);
+
   const record = async ({ id, level, text }) => {
     setPosting(true);
     try {
@@ -136,13 +151,33 @@ export default function DssView({ year, setYear, sim, initRoute }) {
       setPosting(false);
     }
   };
-  const isDone = (id, text) =>
-    records.some(
-      (l) =>
-        l.action === "recommendation" &&
-        l.route === String(id || "").slice(0, 20) &&
-        detailOf(l) === text,
-    );
+  const patchStatus = async (row, status) => {
+    if (!row?.id) return;
+    setPosting(true);
+    try {
+      await patchDssAction(row.id, status);
+      logApi.retry();
+      setToast(
+        status === "done"
+          ? "Đã đánh dấu đã xử lý (theo dõi thủ công)."
+          : "Đã hoàn tác; mục trở lại Decision Brief.",
+      );
+    } catch (e) {
+      setToast("Không cập nhật được: " + (e?.message || "lỗi kết nối"));
+    } finally {
+      setPosting(false);
+    }
+  };
+  const pendingCount = records.filter(
+    (l) => l.action === "recommendation" && l.status === "recorded",
+  ).length;
+  const shownRecords = records.filter((l) =>
+    logFilter === "all"
+      ? true
+      : logFilter === "done"
+        ? l.status === "done"
+        : l.status === "recorded",
+  );
   const jump = (id) => {
     const el = document.getElementById("dss-" + id);
     if (el) {
@@ -172,37 +207,42 @@ export default function DssView({ year, setYear, sim, initRoute }) {
       <div className="panel px-4 py-2.5 flex flex-wrap items-center justify-end gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <YearSel year={year} setYear={setYear} />
-          <Pop label="Cách đọc số liệu" w="w-96">
-            <ul className="text-xs space-y-1.5 list-disc pl-4 text-slate-700">
-              <li>Đơn vị phân tích là <b>đơn-tuyến (order-route)</b>: một đơn có nhiều người bán sẽ tạo nhiều dòng và có thể nằm trên nhiều tuyến.</li>
-              <li>Số “tránh được” là mô phỏng theo luật, không phải tác động nhân quả; hệ thống không thực thi hành động vận hành.</li>
-              <li>Tỷ trọng giai đoạn là nhãn mô tả, không phải nguyên nhân; tỷ trọng có dấu nên có thể âm.</li>
-              <li>Khoảng tin cậy 95% do API tính (Wilson); nếu chứa 0 thì kết luận là “chưa đủ bằng chứng”.</li>
-              <li>Cảnh báo mẫu nhỏ và “chưa chắc chắn” do API gắn cờ; UI không tự tính lại.</li>
-              <li>Rút ngắn 1 ngày được coi là giao sớm hơn 1 ngày. Đổi ngày cam kết chỉ đổi định nghĩa “trễ”.</li>
-              <li>Các nhóm trong Tổng hợp hành động chồng lấn trên cùng các đơn trễ nên không cộng số giữa các nhóm.</li>
-              <li>Phiếu người bán và điểm đánh giá chỉ là liên hệ, chưa hiệu chỉnh theo cơ cấu tuyến.</li>
-              <li className="text-slate-500">Nút “Ghi nhận khuyến nghị” chỉ ghi log, không thực thi hành động.</li>
-              <li className="text-slate-500">Wilson, Shapley (có dấu), bootstrap 300 lần (seed 42) đều do API tính; giao diện chỉ hiển thị.</li>
-            </ul>
-          </Pop>
-          <Pop label={`Đã ghi nhận (${records.length})`} w="w-96">
-            {logApi.error && <InlineError msg={logApi.error} retry={logApi.retry} />}
-            {records.length ? (
-              <ul className="text-xs max-h-64 overflow-y-auto">
-                {records.map((l, i) => (
-                  <li key={i} className="border-t border-slate-100 py-1.5 first:border-0">
-                    <span className="text-slate-500">{fmtTime(l.created_at)}</span> · {l.action}: <b>{routeLabel(l.route)}</b>
-                    {l.level && <> · <Status level={l.level} /></>}
-                    <div className="text-slate-600">{detailOf(l)}</div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-xs text-slate-500">Chưa có ghi nhận nào.</p>
-            )}
-            <div className="mt-2 pt-2 border-t border-slate-100">
-              <span className="text-[11px] text-slate-500">Chỉ ghi log, không thực thi hành động.</span>
+          <Pop label="Cách đọc số liệu" w="w-[480px] max-h-[70vh] overflow-y-auto">
+            <div className="text-sm text-slate-700 space-y-4">
+              <div>
+                <h3 className="font-semibold">Số liệu đếm gì?</h3>
+                <ul className="list-disc pl-5 space-y-1.5 mt-1.5">
+                  <li>Mỗi con số tính theo <b>đơn-tuyến</b>: một đơn hàng đi trên một tuyến (từ bang người bán đến bang khách). Đơn đi qua nhiều tuyến thì tính nhiều lần.</li>
+                  <li>Đơn <b>trễ</b> là đơn giao sau ngày dự kiến.</li>
+                </ul>
+              </div>
+              <div>
+                <h3 className="font-semibold">Mức độ chắc chắn</h3>
+                <ul className="list-disc pl-5 space-y-1.5 mt-1.5">
+                  <li><b>Khoảng tin cậy 95%</b>: khoảng mà tỷ lệ thật nhiều khả năng nằm trong đó. Khoảng càng rộng thì càng kém chắc. Nếu khoảng chứa 0, kết luận là "chưa đủ bằng chứng".</li>
+                  <li><b>Mẫu nhỏ</b>: tuyến dưới 200 đơn, con số có thể dao động nhiều.</li>
+                  <li><b>Chưa chắc chắn</b>: ngay cả cận dưới của khoảng cũng chưa vượt ngưỡng cảnh báo.</li>
+                </ul>
+              </div>
+              <div>
+                <h3 className="font-semibold">Hiểu đúng kết quả</h3>
+                <ul className="list-disc pl-5 space-y-1.5 mt-1.5">
+                  <li><b>Tỷ trọng giai đoạn</b> cho biết giai đoạn nào chiếm nhiều phần trễ, không khẳng định đó là nguyên nhân. Số âm nghĩa là giai đoạn đó nhanh hơn mức chuẩn.</li>
+                  <li><b>"Tránh được"</b> là ước tính từ mô phỏng, giả định rút 1 ngày thì đơn đến sớm 1 ngày. Đây không phải kết quả thực tế.</li>
+                  <li><b>Đổi ngày cam kết</b> chỉ đổi cách tính "trễ", không làm hàng giao nhanh hơn.</li>
+                  <li><b>Không cộng số giữa các nhóm</b> trong Tổng hợp hành động, vì các nhóm cùng chạm vào những đơn trễ giống nhau.</li>
+                  <li><b>Người bán và điểm đánh giá</b> chỉ cho thấy mối liên hệ, chưa điều chỉnh theo tuyến.</li>
+                </ul>
+              </div>
+              <p className="border-t border-slate-200 pt-3">
+                <b>Ghi nhận khuyến nghị:</b> lưu mục đó vào danh sách "Đã ghi nhận" để theo dõi; hệ thống không tự thực hiện hành động.
+              </p>
+              <details className="border-t border-slate-200 pt-3">
+                <summary className="cursor-pointer font-semibold">Chi tiết kỹ thuật</summary>
+                <p className="mt-1.5 text-slate-600">
+                  Khoảng tin cậy Wilson, giá trị Shapley, bootstrap 300 lần (seed 42) do backend tính; giao diện chỉ hiển thị.
+                </p>
+              </details>
             </div>
           </Pop>
         </div>
@@ -221,6 +261,71 @@ export default function DssView({ year, setYear, sim, initRoute }) {
         </div>
       )}
       {body}
+      <div className="fixed bottom-16 right-4 z-40">
+        <Pop
+          label={`Đã ghi nhận (${pendingCount})`}
+          w="w-[420px] max-h-[70vh] overflow-y-auto bottom-full mb-2 !mt-0"
+        >
+          {logApi.error && <InlineError msg={logApi.error} retry={logApi.retry} />}
+          <div className="flex flex-wrap gap-1 mb-2" role="group" aria-label="Lọc trạng thái ghi nhận">
+            {[
+              ["all", "Tất cả"],
+              ["pending", "Chờ xử lý"],
+              ["done", "Đã xử lý"],
+            ].map(([k, t]) => (
+              <button
+                key={k}
+                className={"btn !px-1.5 !py-0 text-[11px] " + (logFilter === k ? "btn-main" : "")}
+                aria-pressed={logFilter === k}
+                onClick={() => setLogFilter(k)}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+          {shownRecords.length ? (
+            <ul className="text-xs">
+              {shownRecords.map((l) => {
+                const done = l.status === "done";
+                const cancelled = l.status === "cancelled";
+                return (
+                  <li key={l.id} className="border-t border-slate-100 py-1.5 first:border-0">
+                    <span className="text-slate-500">{fmtTime(l.created_at)}</span> · {l.action}: <b>{routeLabel(l.route)}</b>
+                    {l.level && <> · <Status level={l.level} /></>}
+                    <div className="text-slate-600">{detailOf(l)}</div>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      {done ? (
+                        <span className="text-[11px] text-teal-800">Đã xử lý · {fmtTime(l.updated_at)}</span>
+                      ) : cancelled ? (
+                        <span className="text-[11px] text-slate-500">Đã hủy · trở lại Brief</span>
+                      ) : (
+                        <span className="text-[11px] text-amber-800">Chờ xử lý</span>
+                      )}
+                      {!cancelled && (
+                        <>
+                          <button className="btn !px-1.5 !py-0 text-[11px]" disabled={posting} onClick={() => patchStatus(l, "cancelled")}>
+                            Hoàn tác
+                          </button>
+                          {!done && (
+                            <button className="btn !px-1.5 !py-0 text-[11px]" disabled={posting} onClick={() => patchStatus(l, "done")}>
+                              Đánh dấu đã xử lý (theo dõi thủ công)
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-xs text-slate-500">Chưa có ghi nhận nào.</p>
+          )}
+          <div className="mt-2 pt-2 border-t border-slate-100">
+            <span className="text-[11px] text-slate-500">Chỉ ghi log, không thực thi hành động.</span>
+          </div>
+        </Pop>
+      </div>
       <div className="fixed bottom-4 right-4 z-50 max-w-[90vw]" role="status" aria-live="polite">
         {toast && (
           <div className="bg-slate-900 text-white text-sm rounded px-4 py-2 shadow-lg flex items-center gap-3">
@@ -353,7 +458,8 @@ export default function DssView({ year, setYear, sim, initRoute }) {
     key: "s|" + a.seller_id,
     id: a.seller_id,
     level: a.level,
-    main: shortId(a.seller_id),
+    main: sellerIdentity(a),
+    full: a.seller_id,
     copy: a.seller_id,
     pill: <Pill t={a.segment} c={(SG[a.segment] || SG["cần thêm dữ liệu"])[1]} />,
     owner: a.owner,
@@ -373,9 +479,10 @@ export default function DssView({ year, setYear, sim, initRoute }) {
     view: { type: "route", route: a.route },
   }));
   const listProps = {
-    done: (r) => isDone(r.id, r.text),
+    done: (r) => isDone(r.id, r.level, r.text),
     onRec: (r) => record({ id: r.id, level: r.level, text: r.text }),
     onView,
+    busy: posting,
   };
 
   return frame(
@@ -565,7 +672,7 @@ export default function DssView({ year, setYear, sim, initRoute }) {
                   <label key={k} className="flex items-center gap-3 text-xs">
                     <span className="w-36">{t}</span>
                     <input type="range" min="0" max={seriesMax} step="0.5" value={cut[k]} onChange={(e) => setCut({ ...cut, [k]: +e.target.value })} className="flex-1" aria-label={"Rút ngắn " + t} />
-                    <b className="w-16 text-right">−{num(cut[k])} ngày</b>
+                    <b className="w-16 text-right">{cut[k] > 0 ? `−${num(cut[k])}` : "0"} ngày</b>
                   </label>
                 ))}
               </div>
@@ -717,7 +824,10 @@ export default function DssView({ year, setYear, sim, initRoute }) {
                     <tbody>
                       {shownSellers.map((s) => (
                         <tr key={s.id} className="border-t border-slate-100">
-                          <td className="py-1.5 px-2 font-medium" title={s.id}>{shortId(s.id)}<CopyBtn text={s.id} /></td>
+                          <td className="py-1.5 px-2 font-medium">
+                            <span title={"Mã đầy đủ: " + s.id}>{sellerIdentity(s)}</span>
+                            <CopyBtn text={s.id} />
+                          </td>
                           <td className="text-right px-2">{int(s.orders)}</td>
                           <td className="text-right px-2">{int(s.lateOrders)}</td>
                           <td className="text-right px-2 font-semibold">{pct(s.lateRate)}</td>
@@ -728,7 +838,7 @@ export default function DssView({ year, setYear, sim, initRoute }) {
                     </tbody>
                   </table>
                 </div>
-                <Note>Hiển thị tối đa 10 người đầu mỗi nhóm. Nguồn: /portfolio (nhóm, độ phủ) và /sellers (từng người bán).</Note>
+                <Note>Hiển thị tối đa 10 người đầu mỗi nhóm.</Note>
               </>
             )}
           </Block>

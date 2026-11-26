@@ -401,37 +401,72 @@ def get_kpi(filters: dict | None = None):
     }
 
 
-def get_late_trend(granularity: str = "month", filters: dict | None = None):
-    """Late delivery trend aggregated by period (month, quarter or year)."""
+def _order_route_cte(filters: dict | None = None) -> tuple[str, dict]:
+    """CTE dùng chung: 1 dòng = 1 (đơn hàng, tuyến), cùng grain với KPI DSS.
+
+    Fact có hạt item; gộp theo order_id + bang người bán/khách rồi loại các
+    order-route có giai đoạn âm (quy ước của DSS). Không đổi công thức DSS.
+    """
     conditions, params = build_filter_conditions(filters)
-    conditions.append("t.year IS NOT NULL")
-
-    if granularity == "quarter":
-        group_cols = "t.year, t.quarter"
-        order_cols = "t.year, t.quarter"
-        select_cols = "t.year, t.quarter, NULL AS month"
-    elif granularity == "year":
-        group_cols = "t.year"
-        order_cols = "t.year"
-        select_cols = "t.year, NULL AS quarter, NULL AS month"
-    else:  # month
-        group_cols = "t.year, t.month"
-        order_cols = "t.year, t.month"
-        select_cols = "t.year, NULL AS quarter, t.month"
-
-    where_sql = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    conditions.extend(
+        ["sell_loc.state IS NOT NULL", "cust_loc.state IS NOT NULL"]
+    )
+    where_sql = "WHERE " + " AND ".join(conditions)
 
     sql = f"""
+        WITH order_routes AS (
+            SELECT DISTINCT ON (f.order_id, sell_loc.state, cust_loc.state)
+                f.order_id,
+                sell_loc.state AS seller_state,
+                cust_loc.state AS customer_state,
+                t.year,
+                t.month,
+                t.quarter,
+                f.approval_time_days AS approval,
+                f.seller_prep_time_days AS prep,
+                f.carrier_transit_time_days AS transit,
+                f.delay_days AS delay_days,
+                f.total_lead_days AS total_lead_days
+            FROM fact_delivery_sla f
+            LEFT JOIN dim_time t ON f.time_id = t.time_id
+            LEFT JOIN dim_location cust_loc ON f.customer_location_id = cust_loc.location_id
+            LEFT JOIN dim_location sell_loc ON f.seller_location_id = sell_loc.location_id
+            {where_sql}
+            ORDER BY f.order_id, sell_loc.state, cust_loc.state, f.order_item_id
+        ),
+        valid_routes AS (
+            SELECT * FROM order_routes
+            WHERE approval >= 0 AND prep >= 0 AND transit >= 0
+        )
+    """
+    return sql, params
+
+
+def get_late_trend(granularity: str = "month", filters: dict | None = None):
+    """Late delivery trend by period, on the order-route grain."""
+    cte_sql, params = _order_route_cte(filters)
+
+    if granularity == "quarter":
+        group_cols = "year, quarter"
+        order_cols = "year, quarter"
+        select_cols = "year, quarter, NULL AS month"
+    elif granularity == "year":
+        group_cols = "year"
+        order_cols = "year"
+        select_cols = "year, NULL AS quarter, NULL AS month"
+    else:  # month
+        group_cols = "year, month"
+        order_cols = "year, month"
+        select_cols = "year, NULL AS quarter, month"
+
+    sql = cte_sql + f"""
         SELECT
             {select_cols},
             COUNT(*) AS order_count,
-            COUNT(CASE WHEN f.delay_days > 0 THEN 1 END) AS late_count,
-            AVG(f.total_lead_days) AS avg_delivery_time
-        FROM fact_delivery_sla f
-        JOIN dim_time t ON f.time_id = t.time_id
-        LEFT JOIN dim_location cust_loc ON f.customer_location_id = cust_loc.location_id
-        LEFT JOIN dim_location sell_loc ON f.seller_location_id = sell_loc.location_id
-        {where_sql}
+            COUNT(CASE WHEN delay_days > 0 THEN 1 END) AS late_count,
+            AVG(total_lead_days) AS avg_delivery_time
+        FROM valid_routes
+        WHERE year IS NOT NULL
         GROUP BY {group_cols}
         ORDER BY {order_cols};
     """
@@ -439,22 +474,17 @@ def get_late_trend(granularity: str = "month", filters: dict | None = None):
 
 
 def get_sla_breakdown(filters: dict | None = None):
-    """Stage-by-stage SLA breakdown times."""
-    conditions, params = build_filter_conditions(filters)
-    where_sql = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    """Stage-by-stage SLA breakdown times on the order-route grain."""
+    cte_sql, params = _order_route_cte(filters)
 
-    sql = f"""
+    sql = cte_sql + """
         SELECT
             COUNT(*) AS order_count,
-            AVG(f.approval_time_days) AS avg_approval_time,
-            AVG(CASE WHEN f.seller_prep_time_days >= 0 THEN f.seller_prep_time_days END) AS avg_prep_time,
-            AVG(CASE WHEN f.carrier_transit_time_days >= 0 THEN f.carrier_transit_time_days END) AS avg_transit_time,
-            AVG(f.total_lead_days) AS avg_delivery_time
-        FROM fact_delivery_sla f
-        LEFT JOIN dim_time t ON f.time_id = t.time_id
-        LEFT JOIN dim_location cust_loc ON f.customer_location_id = cust_loc.location_id
-        LEFT JOIN dim_location sell_loc ON f.seller_location_id = sell_loc.location_id
-        {where_sql};
+            AVG(approval) AS avg_approval_time,
+            AVG(prep) AS avg_prep_time,
+            AVG(transit) AS avg_transit_time,
+            AVG(total_lead_days) AS avg_delivery_time
+        FROM valid_routes;
     """
     row = db.fetch_one(sql, params)
 
@@ -529,25 +559,18 @@ def get_orders(
 
 
 def get_regions(filters: dict | None = None):
-    """Regional routes grouped by seller_state and customer_state."""
-    conditions, params = build_filter_conditions(filters)
-    conditions.append("cust_loc.state IS NOT NULL")
-    conditions.append("sell_loc.state IS NOT NULL")
-    where_sql = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    """Regional routes grouped by seller/customer state, order-route grain."""
+    cte_sql, params = _order_route_cte(filters)
 
-    sql = f"""
+    sql = cte_sql + """
         SELECT
-            sell_loc.state AS seller_state,
-            cust_loc.state AS customer_state,
+            seller_state,
+            customer_state,
             COUNT(*) AS order_count,
-            COUNT(CASE WHEN f.delay_days > 0 THEN 1 END) AS late_count,
-            AVG(f.total_lead_days) AS avg_delivery_time
-        FROM fact_delivery_sla f
-        JOIN dim_location cust_loc ON f.customer_location_id = cust_loc.location_id
-        JOIN dim_location sell_loc ON f.seller_location_id = sell_loc.location_id
-        LEFT JOIN dim_time t ON f.time_id = t.time_id
-        {where_sql}
-        GROUP BY sell_loc.state, cust_loc.state
+            COUNT(CASE WHEN delay_days > 0 THEN 1 END) AS late_count,
+            AVG(total_lead_days) AS avg_delivery_time
+        FROM valid_routes
+        GROUP BY seller_state, customer_state
         ORDER BY order_count DESC, avg_delivery_time DESC;
     """
     return db.fetch_all(sql, params)

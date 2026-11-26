@@ -104,6 +104,25 @@ def actions():
     return _json(S.actions_listing(rows))
 
 
+@bp.patch("/actions/<int:action_id>")
+def action_status(action_id):
+    try:
+        body = json.loads(request.get_data() or b"{}")
+    except (TypeError, ValueError):
+        return _bad("JSON không hợp lệ")
+    if not isinstance(body, dict):
+        return _bad("JSON phải là một object")
+
+    status = body.get("status")
+    if status not in ("recorded", "done", "cancelled"):
+        return _bad("status chỉ nhận recorded|done|cancelled")
+
+    row = db.update_action_status(action_id, status, current_app.config)
+    if row is None:
+        return _bad("không tìm thấy hành động", 404)
+    return _json(S.actions_listing(row))
+
+
 @bp.get("/brief")
 def brief():
     try:

@@ -138,6 +138,22 @@ function sumCells(cells, measure) {
   return { n, [measure]: value };
 }
 
+/* Chỉ để hiển thị: dựng câu SQL minh hoạ từ payload đã gửi cho API. */
+function sqlFromPayload(payload) {
+  if (!payload) return "Chưa có truy vấn.";
+  const dims = (payload.dimensions || []).join(", ") || "—";
+  const measures = (payload.measures || []).join(", ") || "—";
+  const f = payload.filters || {};
+  const where = [];
+  if (payload.from_time) where.push(`t.full_date >= '${payload.from_time}'`);
+  if (payload.to_time) where.push(`t.full_date <= '${payload.to_time}'`);
+  const inList = (values) => (values || []).map((v) => `'${v}'`).join(", ");
+  if (inList(f.customer_states)) where.push(`cust_loc.state IN (${inList(f.customer_states)})`);
+  if (inList(f.seller_states)) where.push(`s.state IN (${inList(f.seller_states)})`);
+  if (inList(f.categories)) where.push(`p.category_name_english IN (${inList(f.categories)})`);
+  return `-- SQL tự sinh từ cấu hình OLAP\nSELECT ${dims}, ${measures}\nFROM Fact_Delivery_SLA f\nJOIN Dim_Time t ON f.time_id = t.time_id\nJOIN Dim_Location cust_loc ON f.customer_location_id = cust_loc.location_id\nJOIN Dim_Seller s ON f.seller_id = s.seller_id\nJOIN Dim_Product p ON f.product_id = p.product_id\nWHERE ${where.length ? `\n  AND ${where.join("\n  AND ")}` : "TRUE"}\nGROUP BY ${dims};`;
+}
+
 function DimensionPick({ label, field, none, config, onChange }) {
   return (
     <label className="text-xs text-slate-600">
@@ -639,11 +655,11 @@ export default function OlapView({ sim }) {
             aria-expanded={sqlOpen}
             onClick={() => setSqlOpen(!sqlOpen)}
           >
-            Payload API<span>{sqlOpen ? "▴" : "▾"}</span>
+            SQL tương ứng<span>{sqlOpen ? "▴" : "▾"}</span>
           </button>
           {sqlOpen && (
-            <pre className="px-3 pb-3 text-xs overflow-x-auto text-slate-700">
-              {JSON.stringify(data?.payload, null, 2)}
+            <pre className="px-3 pb-3 text-xs overflow-x-auto text-slate-700 bg-slate-50 p-2 font-mono">
+              {sqlFromPayload(data?.payload)}
             </pre>
           )}
         </div>

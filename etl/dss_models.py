@@ -44,6 +44,9 @@ def load_orders(include_invalid: bool = False) -> pd.DataFrame:
     )[["location_id", "state"]]
     t = pd.read_csv(PROCESSED_DIR / "cleaned_dim_time.csv")[["time_id", "year", "month"]]
     p = pd.read_csv(PROCESSED_DIR / "cleaned_dim_product.csv")
+    s = pd.read_csv(
+        PROCESSED_DIR / "cleaned_dim_seller.csv", dtype={"seller_id": str}
+    )[["seller_id", "city", "state"]]
 
     f = (
         f.merge(
@@ -58,6 +61,7 @@ def load_orders(include_invalid: bool = False) -> pd.DataFrame:
         )
         .merge(t, on="time_id", how="left")
         .merge(p, on="product_id", how="left")
+        .merge(s, on="seller_id", how="left")
     )
 
     # Fact không có cột is_late; quy ước đơn trễ khi delay_days > 0.
@@ -71,6 +75,8 @@ def load_orders(include_invalid: bool = False) -> pd.DataFrame:
         cust_state=("cust_state", "first"),
         seller_id=("seller_id", "first"),
         n_sellers=("seller_id", "nunique"),
+        city=("city", "first"),
+        state=("state", "first"),
         is_late=("is_late", "max"),
         delay_days=("delay_days", "first"),
         promise_days=("promise_days", "first"),
@@ -174,10 +180,17 @@ def _single_seller_orders(o: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     single_ids = sellers_per_order[sellers_per_order == 1].index
     single_rows = o[o["order_id"].isin(single_ids) & o["seller_id"].notna()].copy()
 
+    # city/state là metadata của Dim_Seller; frame do test dựng tay có thể thiếu.
+    location_aggs = {
+        col: (col, "first")
+        for col in ("city", "state")
+        if col in single_rows.columns
+    }
     order = single_rows.groupby(["order_id", "seller_id"], as_index=False).agg(
         is_late=("is_late", "max"),
         gmv=("gmv", "sum"),
         review_score=("review_score", "first"),
+        **location_aggs,
     )
     n_orders_single = int(len(order))
     n_multi = int((sellers_per_order > 1).sum())
@@ -232,6 +245,8 @@ def seller_scorecard(o: pd.DataFrame, min_orders: int = 30) -> pd.DataFrame:
     order, stats = _single_seller_orders(o)
     columns = [
         "seller_id",
+        "city",
+        "state",
         "orders",
         "late_orders",
         "late_rate",
@@ -261,13 +276,20 @@ def seller_scorecard(o: pd.DataFrame, min_orders: int = 30) -> pd.DataFrame:
 
     order = order.copy()
     order["bad_review"] = order["review_score"] <= BAD_REVIEW_MAX
+    location_aggs = {
+        col: (col, "first") for col in ("city", "state") if col in order.columns
+    }
     g = order.groupby("seller_id", as_index=False).agg(
         orders=("order_id", "nunique"),
         late_orders=("is_late", "sum"),
         gmv=("gmv", "sum"),
         n_reviewed=("review_score", "count"),
         bad_review_orders=("bad_review", "sum"),
+        **location_aggs,
     )
+    for col in ("city", "state"):
+        if col not in g.columns:
+            g[col] = None
     g["late_rate"] = g["late_orders"] / g["orders"]
     g["bad_review_rate"] = np.where(
         g["n_reviewed"] > 0, g["bad_review_orders"] / g["n_reviewed"], np.nan

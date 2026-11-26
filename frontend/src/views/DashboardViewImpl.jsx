@@ -6,11 +6,13 @@ import {
   Tooltip,
   LineChart,
   Line,
+  ReferenceLine,
 } from "recharts";
 import {
   getDashboardOverview,
   getDssAttribution,
   getOlapMetadata,
+  getRegions,
   getSlaBreakdown,
 } from "../data/api.js";
 import { routeLabel } from "../data/dssAdapter.js";
@@ -27,6 +29,7 @@ import {
 
 const MIN_ORDERS = 100;
 const LOW_SAMPLE = 200;
+const TREND_MIN_ORDERS = 50;
 
 function makeYearOptions(timeRange) {
   const first = Number(timeRange?.min_month?.slice(0, 4));
@@ -44,9 +47,10 @@ export default function DashboardView({ year, setYear, sim, goDss }) {
       const dateFilters = year === "all"
         ? {}
         : { start_date: `${year}-01-01`, end_date: `${year}-12-31` };
-      const [overview, sla, attribution, metadata] = await Promise.all([
+      const [overview, sla, regions, attribution, metadata] = await Promise.all([
         getDashboardOverview({ time_mode: "month", ...bounds }, signal),
         getSlaBreakdown(dateFilters, signal),
+        getRegions(dateFilters, signal),
         getDssAttribution(year, 0.5, signal),
         getOlapMetadata(signal),
       ]);
@@ -60,7 +64,28 @@ export default function DashboardView({ year, setYear, sim, goDss }) {
         n: period.order_count,
         late: period.late_count ?? Math.round(period.delay_rate * period.order_count),
         rate: period.delay_rate,
-      }));
+      })).filter((row) => row.n >= TREND_MIN_ORDERS);
+      const stageBars = [
+        ["Duyệt", sla.avg_approval_time],
+        ["Chuẩn bị", sla.avg_prep_time],
+        ["Vận chuyển", sla.avg_transit_time],
+      ].map(([label, days]) => ({ label, days: Number(days) || 0 }));
+      // /regions trả từng cặp bang; gộp theo bang khách hàng để xếp hạng.
+      const byCustomerState = new Map();
+      for (const row of regions) {
+        const state = row.customer_state || "—";
+        const cur = byCustomerState.get(state) || { state, n: 0, late: 0 };
+        cur.n += row.order_count || 0;
+        cur.late += row.late_count || 0;
+        byCustomerState.set(state, cur);
+      }
+      const stateBars = [...byCustomerState.values()]
+        .map((row) => ({
+          ...row,
+          rate: row.n ? row.late / row.n : 0,
+        }))
+        .sort((a, b) => b.rate - a.rate)
+        .slice(0, 10);
       // Tỷ lệ trễ trên Dashboard dùng chung grain order-route với DSS.
       const sys = attribution.systemwide || {};
       const list = (attribution.ranked_routes || [])
@@ -86,7 +111,9 @@ export default function DashboardView({ year, setYear, sim, goDss }) {
           transit: sla.avg_transit_time,
         },
         trend,
-        top: [...list].sort((a, b) => b.p - a.p).slice(0, 5),
+        top: [...list].sort((a, b) => b.p - a.p).slice(0, 10),
+        stageBars,
+        stateBars,
         years: makeYearOptions(metadata.time_range),
       };
     },
@@ -101,7 +128,9 @@ export default function DashboardView({ year, setYear, sim, goDss }) {
         <Skeleton h={300} />
       </div>
     );
-  const { kpi, trend, top } = data;
+  const { kpi, trend, top, stageBars, stateBars } = data;
+  const stageMax = Math.max(1, ...stageBars.map((s) => s.days));
+  const stateMax = Math.max(0.0001, ...stateBars.map((s) => s.rate));
   const cards = [
     ["Tổng đơn-tuyến đã giao", int(kpi.n), ""],
     [
@@ -154,8 +183,7 @@ export default function DashboardView({ year, setYear, sim, goDss }) {
           <h2 className="font-semibold">Xu hướng tỷ lệ trễ theo tháng</h2>
           <p className="text-xs text-slate-500 mb-2">
             Cho biết vấn đề đang tăng hay giảm; rê chuột để xem số đơn trễ và tổng
-            số đơn. Xu hướng tháng vẫn lấy từ BI (grain item); thẻ KPI và bảng tuyến
-            dùng grain order-route của DSS.
+            số đơn-tuyến. ẩn các tháng dưới {TREND_MIN_ORDERS} đơn.
           </p>
           <div className="h-64">
             <ResponsiveContainer>
@@ -168,9 +196,20 @@ export default function DashboardView({ year, setYear, sim, goDss }) {
                 />
                 <Tooltip
                   formatter={(v, n, p) => [
-                    pct(v) + ` (${p.payload.late}/${p.payload.n} đơn)`,
+                    pct(v) + ` (${p.payload.late}/${p.payload.n} đơn-tuyến)`,
                     "Tỷ lệ trễ",
                   ]}
+                />
+                <ReferenceLine
+                  y={kpi.rate}
+                  stroke="#64748b"
+                  strokeDasharray="4 3"
+                  label={{
+                    value: `Tỷ lệ trễ chung ${pct(kpi.rate)}`,
+                    position: "insideTopRight",
+                    fontSize: 11,
+                    fill: "#475569",
+                  }}
                 />
                 <Line
                   type="monotone"
@@ -186,10 +225,10 @@ export default function DashboardView({ year, setYear, sim, goDss }) {
         <section className="panel p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="font-semibold">5 tuyến có tỷ lệ trễ cao nhất</h2>
+              <h2 className="font-semibold">10 tuyến có tỷ lệ trễ cao nhất</h2>
               <p className="text-xs text-slate-500 mb-2">
-                Chỉ xét tuyến từ {MIN_ORDERS} đơn-tuyến trở lên. Tuyến dưới {LOW_SAMPLE}
-                đơn-tuyến gắn “Mẫu nhỏ”.
+                Chỉ xét tuyến từ {MIN_ORDERS} đơn-tuyến trở lên. Tuyến dưới{" "}
+                {LOW_SAMPLE} đơn-tuyến gắn “Mẫu nhỏ”.
               </p>
             </div>
             <button
@@ -231,6 +270,58 @@ export default function DashboardView({ year, setYear, sim, goDss }) {
               )}
             </tbody>
           </table>
+        </section>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <section className="panel p-4">
+          <h2 className="font-semibold">Thời gian TB theo giai đoạn</h2>
+          <p className="text-xs text-slate-500 mb-3">
+            Trung bình theo đơn-tuyến, đơn vị: ngày.
+          </p>
+          <div className="space-y-3">
+            {stageBars.map((s) => (
+              <div key={s.label}>
+                <div className="flex justify-between text-xs mb-1">
+                  <span>{s.label}</span>
+                  <b>{num(s.days)} ngày</b>
+                </div>
+                <div className="h-2 rounded bg-slate-100 overflow-hidden">
+                  <div
+                    className="h-full bg-teal-600"
+                    style={{ width: `${(s.days / stageMax) * 100}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+        <section className="panel p-4">
+          <h2 className="font-semibold">Tỷ lệ trễ theo bang khách hàng (top 10)</h2>
+          <p className="text-xs text-slate-500 mb-3">
+            Sắp theo tỷ lệ trễ giảm dần; tính trên đơn-tuyến.
+          </p>
+          <div className="space-y-2">
+            {stateBars.map((s) => (
+              <div key={s.state}>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="font-medium">{s.state}</span>
+                  <span>
+                    {pct(s.rate)}{" "}
+                    <span className="text-slate-500">({int(s.n)} đơn-tuyến)</span>
+                  </span>
+                </div>
+                <div className="h-2 rounded bg-slate-100 overflow-hidden">
+                  <div
+                    className="h-full bg-orange-500"
+                    style={{ width: `${(s.rate / stateMax) * 100}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+            {!stateBars.length && (
+              <p className="text-xs text-slate-500">Chưa có dữ liệu theo bang.</p>
+            )}
+          </div>
         </section>
       </div>
     </div>

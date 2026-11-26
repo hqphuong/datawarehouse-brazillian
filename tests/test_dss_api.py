@@ -1,12 +1,13 @@
 """Flask API parity tests ported from backend/dss/tests.py (25 Django tests).
 
-Adds the mocked empty-route-list case and an autouse fixture that keeps
-``dss_action_log`` empty before/after every test.
+Adds the mocked empty-route-list case and an autouse fixture that isolates
+action-log tests in memory (không xoá dữ liệu log thật).
 """
 
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from urllib.parse import urlencode
 
 import pandas as pd
@@ -40,13 +41,46 @@ DB_AVAILABLE = _db_available()
 
 
 @pytest.fixture(autouse=True)
-def clean_action_log():
-    """The action log must be empty before and after every test."""
-    if DB_AVAILABLE:
-        db.clear_actions()
+def clean_action_log(monkeypatch):
+    """Dùng log giả để test không ghi/sửa/xoá bản ghi thật trong PostgreSQL."""
+    rows = []
+
+    def _now():
+        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+    def insert(body, config=None):
+        rows.append(
+            {
+                "id": len(rows) + 1,
+                "created_at": _now(),
+                "action": str(body.get("action", ""))[:40],
+                "route": str(body.get("route", ""))[:20],
+                "level": str(body.get("level", ""))[:10],
+                "detail": json.dumps(body, ensure_ascii=False),
+                "status": "recorded",
+                "updated_at": _now(),
+            }
+        )
+
+    def listing(config=None):
+        return [dict(row) for row in reversed(rows)]
+
+    def count(config=None):
+        return len(rows)
+
+    def update(action_id, status, config=None):
+        for row in rows:
+            if row["id"] == action_id:
+                row["status"] = status
+                row["updated_at"] = _now()
+                return dict(row)
+        return None
+
+    monkeypatch.setattr(db, "insert_action", insert)
+    monkeypatch.setattr(db, "list_actions", listing)
+    monkeypatch.setattr(db, "count_actions", count)
+    monkeypatch.setattr(db, "update_action_status", update)
     yield
-    if DB_AVAILABLE:
-        db.clear_actions()
 
 
 @pytest.fixture()
@@ -315,6 +349,47 @@ def test_actions_reject_invalid_json(client, requires_db):
     assert db.count_actions() == 0
 
 
+def test_actions_patch_status_and_listing(client, requires_db):
+    client.post(
+        "/api/dss/actions",
+        json={
+            "action": "recommendation",
+            "route": "SP->RJ",
+            "level": "amber",
+            "detail": "Rà soát tuyến SP->RJ.",
+        },
+    )
+    created = _json(client.get("/api/dss/actions"))[0]
+    assert isinstance(created["id"], int)
+    assert created["status"] == "recorded"
+    assert created["updated_at"]
+
+    res = client.patch(f"/api/dss/actions/{created['id']}", json={"status": "done"})
+    assert res.status_code == 200
+    assert _json(res)["status"] == "done"
+
+    listing = _json(client.get("/api/dss/actions"))
+    assert listing[0]["id"] == created["id"]
+    assert listing[0]["status"] == "done"
+    assert listing[0]["updated_at"]
+
+    undo = client.patch(
+        f"/api/dss/actions/{created['id']}", json={"status": "recorded"}
+    )
+    assert undo.status_code == 200
+    assert _json(undo)["status"] == "recorded"
+
+
+def test_actions_patch_rejects_invalid_input(client, requires_db):
+    res = client.patch("/api/dss/actions/1", json={"status": "unknown"})
+    assert res.status_code == 400
+    assert _json(res)["error"]
+
+    missing = client.patch("/api/dss/actions/999", json={"status": "done"})
+    assert missing.status_code == 404
+    assert db.count_actions() == 0
+
+
 def test_scenario_series_matches_projected_with_base_cut(client):
     """series[transit_cut].projected phải bằng projected khi cut kết hợp."""
     params = urlencode({"route": "SP->RJ", "prep": 2, "transit": 1})
@@ -335,6 +410,8 @@ def test_brief_endpoint_includes_action_groups_and_notes(client):
     body = _json(res)
     assert "route_actions" in body
     assert "seller_actions" in body
+    assert "city" in body["seller_actions"][0]
+    assert "state" in body["seller_actions"][0]
     assert "low_sample_actions" in body
     assert any(
         "đổi định nghĩa trễ, không rút ngắn thời gian giao" in note
@@ -412,6 +489,8 @@ def test_sellers_endpoint_returns_single_seller_scorecard(client):
     body = _json(res)
     assert body["rows"]
     assert "segment" in body["rows"][0]
+    assert "city" in body["rows"][0]
+    assert "state" in body["rows"][0]
     assert body["summary"]["n_orders_single_seller"] > 0
 
 

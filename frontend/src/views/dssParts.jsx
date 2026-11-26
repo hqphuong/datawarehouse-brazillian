@@ -187,12 +187,20 @@ export function CopyBtn({ text, label = "mã người bán" }) {
   );
 }
 
-/* Mỗi dòng Decision Brief: xem chi tiết + ghi nhận (chỉ ghi log). */
-export function BriefList({ rows, done, onRec, onView }) {
-  if (!rows.length) return <NoItem />;
+/* Mỗi dòng Decision Brief: xem chi tiết + ghi nhận (chỉ ghi log).
+ * Mục đã ghi nhận biến mất khỏi Brief, chỉ còn trong popup "Đã ghi nhận". */
+export function BriefList({ rows, done, onRec, onView, busy = false }) {
+  const visible = rows.filter((r) => !done(r));
+  if (!visible.length) {
+    return rows.length ? (
+      <p className="text-xs text-slate-500 py-2">Đã ghi nhận hết các mục của nhóm này.</p>
+    ) : (
+      <NoItem />
+    );
+  }
   return (
     <>
-      {rows.map((r) => (
+      {visible.map((r) => (
         <div key={r.key} className="border-t border-slate-100 py-2 text-xs flex gap-2 items-start">
           {r.view ? (
             <button
@@ -200,18 +208,23 @@ export function BriefList({ rows, done, onRec, onView }) {
               onClick={() => onView(r.view)}
               title="Bấm để xem chi tiết"
             >
-              <div><b>{r.main}</b> {r.pill}</div>
+              <div><b title={r.full}>{r.main}</b> {r.pill}</div>
               <div className="text-slate-600">{r.sub}</div>
             </button>
           ) : (
             <div className="min-w-0 flex-1">
-              <div><b>{r.main}</b> {r.pill}</div>
+              <div><b title={r.full}>{r.main}</b> {r.pill}</div>
               <div className="text-slate-600">{r.sub}</div>
             </div>
           )}
           {r.copy && <CopyBtn text={r.copy} />}
-          <button className="btn shrink-0" disabled={done(r)} onClick={() => onRec(r)}>
-            {done(r) ? "Đã ghi nhận (không thực thi)" : "Ghi nhận khuyến nghị"}
+          <button
+            className="btn shrink-0"
+            disabled={busy}
+            title="Chỉ ghi log, không thực thi"
+            onClick={() => onRec(r)}
+          >
+            Ghi nhận khuyến nghị
           </button>
         </div>
       ))}

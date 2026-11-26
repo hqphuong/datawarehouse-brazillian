@@ -87,5 +87,7 @@ CREATE TABLE dss_action_log (
     action VARCHAR(40) NOT NULL,
     route VARCHAR(20) NOT NULL,
     level VARCHAR(10) NOT NULL,
-    detail TEXT NOT NULL
+    detail TEXT NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'recorded',
+    updated_at TIMESTAMPTZ
 );
