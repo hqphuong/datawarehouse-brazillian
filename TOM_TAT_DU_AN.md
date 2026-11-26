@@ -34,7 +34,7 @@ Hệ thống hỗ trợ:
 | Data Warehouse | 5 bảng đã tạo và nạp dữ liệu |
 | Backend Flask | Một app Flask duy nhất (`backend/dss/`) phục vụ 9 API `/api/dss/*`, 12 API BI/OLAP và 3 API auth trên cổng 8000 |
 | DSS rule-based | Có route priority, attribution/Shapley, promise, feasible cut, seller scorecard/portfolio, low-sample, threshold sensitivity và Decision Brief |
-| Giao diện DSS | React 19 + Vite 8 trong `frontend/` — 5 endpoint thật (`/api/olap/*`, `/api/dashboard/*`, `/api/analytics/*`); tab DSS còn mock |
+| Giao diện DSS | React 19 + Vite 8 trong `frontend/` — Dashboard, OLAP, Analytics và tab DSS đều gọi API thật (`/api/olap/*`, `/api/dashboard/*`, `/api/analytics/*`, `/api/dss/*`) |
 | Frontend | Dev qua Vite `:5173` proxy `/api` sang Flask `:8000` (cùng origin, không cần CORS) |
 | ML | Đã gỡ: không còn `etl/dss_ml.py`, endpoint `at-risk`, `scikit-learn`, `joblib` |
 | Kiểm thử gần nhất | **113 pytest**; golden parity DSS Django → Flask PASS |
@@ -351,9 +351,15 @@ Giao diện chính: `frontend/` (React 19 + Vite 8 + Tailwind).
 | **Dashboard (BI)** | **Gọi API thật** `GET /api/dashboard/overview` |
 | **OLAP** | **Gọi API thật** `GET /api/olap/metadata`, `POST /api/olap/query` |
 | **Analytics** | **Gọi API thật** `GET /api/analytics/sla-breakdown`, `GET /api/analytics/regions` |
-| **DSS Action Center** | Dữ liệu mẫu (mock) — 4 khối Route Priority, Root Cause, Scenario / What-if, Recommendation & Action |
+| **DSS Action Center** | **Gọi API thật** `/api/dss/routes`, `/attribution`, `/scenario`, `/promise`, `/promise-policy`, `/sellers`, `/portfolio`, `/brief`, `/actions`; ghi nhận qua `POST /api/dss/actions` |
 
-Tab DSS hiện chưa nối `/api/dss/*`; các endpoint đó vẫn chạy và có golden parity
+Tab DSS không còn dùng dữ liệu mẫu. Giao diện theo bản thiết kế 6 khối: Tuyến ưu
+tiên → Giai đoạn nghẽn → Mức rút ngắn → Ngày cam kết → Người bán → Decision
+Brief; bốn và năm nằm trong phần “Phân tích hỗ trợ” có thể mở rộng. Có bộ lọc
+điểm đi/điểm đến, thanh tỷ trọng có dấu (φ âm), bảng mức phục vụ 85/90/95%,
+scorecard người bán theo nhóm, popover “Cách đọc số liệu” / “Đã ghi nhận” và
+toast sau khi ghi log. CI cho Decision Brief lấy từ `route_actions.*_ci_*`;
+kịch bản What-if tuỳ ý không có CI bootstrap. Các endpoint vẫn giữ golden parity
 với bản Django cũ.
 
 Dev: Vite chạy `:5173` và proxy `/api` sang Flask `:8000`
@@ -511,9 +517,9 @@ Kết quả: **0 dòng khớp**.
   thiện** so với baseline này.
 
 ### Việc còn lại
-- Tab DSS trong `frontend/` vẫn dùng dữ liệu mẫu; 9 endpoint `/api/dss/*` đã
-  chạy nhưng chưa nối vào UI.
-- Các tab đang gọi API thật: Dashboard, OLAP, Analytics (5 endpoint).
+- ETL Monitor trong `frontend/` vẫn là mock tĩnh.
+- Các tab đang gọi API thật: Dashboard, OLAP, Analytics (5 endpoint) và DSS
+  (`/api/dss/*`).
 
 ---
 
@@ -521,6 +527,7 @@ Kết quả: **0 dòng khớp**.
 
 Đây là đồ án **Data Warehouse + DSS logistics** ở tầng dữ liệu, ETL, backend API
 và mô hình ra quyết định dựa trên luật; backend đã hợp nhất về **một app Flask
-duy nhất (cổng 8000)**, frontend React 19 + Vite 8 gọi 5 API thật, riêng tab DSS
-còn mock. Toàn bộ phần ML đã được gỡ; check gần nhất có **113 pytest** và golden
+duy nhất (cổng 8000)**, frontend React 19 + Vite 8 gọi API thật ở Dashboard,
+OLAP, Analytics và DSS (riêng ETL Monitor còn mock). Toàn bộ phần ML đã được gỡ;
+check gần nhất có **113 pytest** và golden
 parity DSS Django → Flask **PASS**.

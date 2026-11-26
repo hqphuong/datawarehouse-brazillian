@@ -284,7 +284,7 @@ Kỳ không có tuyến nào gắn cờ được ghi lại trong `periods` với
 ### Hạn chế đã quan sát
 
 > **⚠️ Nhãn cảnh báo giao diện:**
-> - Tab **Dashboard**, **OLAP**, **ETL Monitor** trong `web/Olist_Logistics_DSS_v3.html` hiển thị **dữ liệu mẫu** (mock data, Flask, chưa nối Django). Số liệu trên các tab đó **không phản ánh dữ liệu Olist thực tế**.
+> - Trong `frontend/`, tab **Dashboard**, **OLAP** và **DSS** gọi API Flask thật; chỉ **ETL Monitor** (`ETLView.jsx`) dùng dữ liệu mẫu. Số liệu trên tab ETL Monitor **không phản ánh dữ liệu Olist thực tế**.
 
 | Hạn chế | Số liệu | Ảnh hưởng |
 | --- | --- | --- |

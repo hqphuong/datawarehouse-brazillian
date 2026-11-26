@@ -9,10 +9,11 @@ import {
 } from "recharts";
 import {
   getDashboardOverview,
+  getDssAttribution,
   getOlapMetadata,
-  getRegions,
   getSlaBreakdown,
 } from "../data/api.js";
+import { routeLabel } from "../data/dssAdapter.js";
 import {
   pct,
   num,
@@ -43,10 +44,10 @@ export default function DashboardView({ year, setYear, sim, goDss }) {
       const dateFilters = year === "all"
         ? {}
         : { start_date: `${year}-01-01`, end_date: `${year}-12-31` };
-      const [overview, sla, regions, metadata] = await Promise.all([
+      const [overview, sla, attribution, metadata] = await Promise.all([
         getDashboardOverview({ time_mode: "month", ...bounds }, signal),
         getSlaBreakdown(dateFilters, signal),
-        getRegions(dateFilters, signal),
+        getDssAttribution(year, 0.5, signal),
         getOlapMetadata(signal),
       ]);
       const kpis = overview.kpis;
@@ -60,24 +61,25 @@ export default function DashboardView({ year, setYear, sim, goDss }) {
         late: period.late_count ?? Math.round(period.delay_rate * period.order_count),
         rate: period.delay_rate,
       }));
-      const list = regions
-        .map((region) => {
-          const n = region.order_count;
-          const k = region.late_count;
+      // Tỷ lệ trễ trên Dashboard dùng chung grain order-route với DSS.
+      const sys = attribution.systemwide || {};
+      const list = (attribution.ranked_routes || [])
+        .map((row) => {
+          const n = row.order_routes ?? row.orders ?? 0;
           return {
-            route: `${region.seller_state}→${region.customer_state}`,
+            route: routeLabel(row.route),
             n,
-            k,
-            p: region.late_rate,
+            k: row.late_orders ?? 0,
+            p: row.late_rate ?? (n ? (row.late_orders ?? 0) / n : 0),
             low: n < LOW_SAMPLE,
           };
         })
-        .filter((region) => region.n >= MIN_ORDERS);
+        .filter((row) => row.n >= MIN_ORDERS);
       return {
         kpi: {
-          n: kpis.order_count,
-          late: regions.reduce((total, region) => total + region.late_count, 0),
-          rate: kpis.delay_rate,
+          n: sys.orders ?? 0,
+          late: Math.round((sys.orders ?? 0) * (sys.late_rate ?? 0)),
+          rate: sys.late_rate ?? 0,
           total: kpis.avg_delivery_time,
           appr: sla.avg_approval_time,
           prep: sla.avg_prep_time,
@@ -101,11 +103,11 @@ export default function DashboardView({ year, setYear, sim, goDss }) {
     );
   const { kpi, trend, top } = data;
   const cards = [
-    ["Tổng đơn đã giao", int(kpi.n), ""],
+    ["Tổng đơn-tuyến đã giao", int(kpi.n), ""],
     [
       "Tỷ lệ giao trễ",
       pct(kpi.rate),
-      `${int(kpi.late)} / ${int(kpi.n)} đơn`,
+      `${int(kpi.late)} / ${int(kpi.n)} đơn-tuyến`,
       1,
     ],
     [
@@ -122,8 +124,8 @@ export default function DashboardView({ year, setYear, sim, goDss }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <YearSel year={year} setYear={setYear} years={data.years} />
         <p className="text-xs text-slate-500 max-w-3xl">
-          Tỷ lệ trễ = đơn giao sau ngày dự kiến ÷ tổng đơn; tuyến = bang người
-          bán → bang khách hàng.
+          Tỷ lệ trễ = đơn-tuyến giao sau ngày dự kiến ÷ tổng đơn-tuyến; tuyến = bang
+          người bán → bang khách hàng. Số liệu lấy từ API DSS để đồng nhất với trang DSS.
         </p>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
@@ -151,8 +153,9 @@ export default function DashboardView({ year, setYear, sim, goDss }) {
         <section className="panel p-4">
           <h2 className="font-semibold">Xu hướng tỷ lệ trễ theo tháng</h2>
           <p className="text-xs text-slate-500 mb-2">
-            Cho biết vấn đề đang tăng hay giảm; rê chuột để xem số đơn trễ và
-            tổng số đơn.
+            Cho biết vấn đề đang tăng hay giảm; rê chuột để xem số đơn trễ và tổng
+            số đơn. Xu hướng tháng vẫn lấy từ BI (grain item); thẻ KPI và bảng tuyến
+            dùng grain order-route của DSS.
           </p>
           <div className="h-64">
             <ResponsiveContainer>
@@ -181,19 +184,28 @@ export default function DashboardView({ year, setYear, sim, goDss }) {
           </div>
         </section>
         <section className="panel p-4">
-          <h2 className="font-semibold">5 tuyến có tỷ lệ trễ cao nhất</h2>
-          <p className="text-xs text-slate-500 mb-2">
-            Chỉ xét tuyến từ {MIN_ORDERS} đơn trở lên. Tuyến dưới {LOW_SAMPLE}
-            đơn gắn “Mẫu nhỏ”.
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="font-semibold">5 tuyến có tỷ lệ trễ cao nhất</h2>
+              <p className="text-xs text-slate-500 mb-2">
+                Chỉ xét tuyến từ {MIN_ORDERS} đơn-tuyến trở lên. Tuyến dưới {LOW_SAMPLE}
+                đơn-tuyến gắn “Mẫu nhỏ”.
+              </p>
+            </div>
+            <button
+              className="btn shrink-0"
+              onClick={() => goDss && goDss()}
+            >
+              Mở trong DSS
+            </button>
+          </div>
           <table className="w-full text-xs">
             <thead className="text-left text-slate-500">
               <tr>
                 <th className="py-1">Tuyến</th>
-                <th className="text-right">Đơn</th>
+                <th className="text-right">Đơn-tuyến</th>
                 <th className="text-right">Trễ</th>
                 <th className="text-right">Tỷ lệ</th>
-                <th />
               </tr>
             </thead>
             <tbody>
@@ -208,16 +220,11 @@ export default function DashboardView({ year, setYear, sim, goDss }) {
                   <td className="text-right">{int(s.n)}</td>
                   <td className="text-right">{int(s.k)}</td>
                   <td className="text-right font-semibold">{pct(s.p)}</td>
-                  <td className="text-right">
-                    <button className="btn" onClick={() => goDss(s.route)}>
-                      Mở trong DSS
-                    </button>
-                  </td>
                 </tr>
               ))}
               {!top.length && (
                 <tr>
-                  <td colSpan="5" className="py-4 text-center text-slate-500">
+                  <td colSpan="4" className="py-4 text-center text-slate-500">
                     Chưa có tuyến đủ mẫu.
                   </td>
                 </tr>

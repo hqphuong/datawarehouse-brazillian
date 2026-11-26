@@ -43,7 +43,7 @@ thay đổi khoảng 1–13% giữa q=0,25/0,50.
 
 1. **"Chưa đủ bằng chứng DSS tốt hơn through"** — CI chứa 0 (`reports/dss_eval_raw.txt`, mục bootstrap).
 2. **"What-if là mô phỏng, không phải nhân quả"** — nếu giả định cắt thời gian thì ước tính lại nhãn trễ; bỏ qua chi phí/năng lực.
-3. **"Chỉ tab DSS gọi API thật; Dashboard/OLAP/ETL là mock"** (`web/Olist_Logistics_DSS_v3.html:427`; `reports/run_guide.md:93-96`).
+3. **"DSS, Dashboard và OLAP gọi API thật; ETL Monitor là mock"** (`frontend/src/views/DssViewImpl.jsx`; `frontend/src/data/api.js`; `README.md`).
 
 ## 4. Những thứ **KHÔNG** được nói là đã có
 

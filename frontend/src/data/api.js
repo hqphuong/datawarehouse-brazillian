@@ -35,3 +35,48 @@ export const getRegions = (query, signal) =>
 
 export const postOlapQuery = (body, signal) =>
   request("/olap/query", { method: "POST", body, signal });
+
+/* ---------- DSS ---------- */
+
+const dssQuery = (year) => (year && year !== "all" ? { year } : {});
+
+export const getDssRoutes = (year, top = 10, signal) =>
+  request("/dss/routes", { query: { ...dssQuery(year), top }, signal });
+
+export const getDssBrief = (year, signal) =>
+  request("/dss/brief", { query: dssQuery(year), signal });
+
+export const getDssAttribution = (year, q = 0.5, signal) =>
+  request("/dss/attribution", { query: { ...dssQuery(year), q }, signal });
+
+export const getDssScenario = ({ year, route, cut }, signal) =>
+  request("/dss/scenario", {
+    query: {
+      ...dssQuery(year),
+      route,
+      approval: cut.approval ?? cut.appr,
+      prep: cut.prep,
+      transit: cut.transit,
+    },
+    signal,
+  });
+
+export const getDssPromise = ({ year, route, target }, signal) =>
+  request("/dss/promise", {
+    query: { ...dssQuery(year), route, target },
+    signal,
+  });
+
+export const getDssPromisePolicy = (year, signal) =>
+  request("/dss/promise-policy", { query: dssQuery(year), signal });
+
+export const getDssSellers = (year, signal) =>
+  request("/dss/sellers", { query: dssQuery(year), signal });
+
+export const getDssPortfolio = (year, signal) =>
+  request("/dss/portfolio", { query: dssQuery(year), signal });
+
+export const getDssActions = (signal) => request("/dss/actions", { signal });
+
+export const postDssAction = (body, signal) =>
+  request("/dss/actions", { method: "POST", body, signal });
