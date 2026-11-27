@@ -191,7 +191,7 @@ DATABASE_URL="postgresql://brazillian_admin:123456789@localhost:5432/Brazillian?
 SECRET_KEY=...
 FLASK_DEBUG=true
 BACKEND_HOST=localhost
-BACKEND_PORT=8000
+FLASK_RUN_PORT=8000
 # DJANGO_ALLOWED_HOSTS vẫn được đọc nếu muốn giới hạn Host
 DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
 
@@ -203,8 +203,10 @@ POSTGRES_PORT=5432
 
 CORS_ALLOW_ALL_ORIGINS=true
 ```
+**Lưu ý:**
 
-`SECRET_KEY` là bắt buộc khi chạy thật (chỉ được phép rỗng khi `TESTING`).
+- `SECRET_KEY` là bắt buộc khi chạy thật (chỉ được phép rỗng khi `TESTING`).
+- Không được đổi tên biến `FLASK_RUN_PORT`, vì framework Flask sẽ chạy backend bằng port từ biến có tên này. Nếu đổi thành tên khác thì backend sẽ mặc định chạy port 5000.
 
 ### 4. Backend Flask
 
@@ -244,7 +246,7 @@ npm run dev
 ```
 
 Mở `http://localhost:5173/`. Vite proxy `/api` sang Flask `:8000`
-(`frontend/vite.config.js`, đọc `BACKEND_HOST` / `BACKEND_PORT` trong `.env` ở
+(`frontend/vite.config.js`, đọc `BACKEND_HOST` / `FLASK_RUN_PORT` trong `.env` ở
 thư mục gốc, mặc định `localhost:8000`), nên trình duyệt chỉ thấy một origin và
 không cần cấu hình CORS.
 

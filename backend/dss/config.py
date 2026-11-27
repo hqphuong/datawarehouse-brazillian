@@ -8,7 +8,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
-load_dotenv(BACKEND_DIR / ".env")
+PROJECT_DIR = BACKEND_DIR.parent
+load_dotenv(PROJECT_DIR / ".env", override=True)
 
 TRUTHY = {"1", "true", "yes", "on"}
 
