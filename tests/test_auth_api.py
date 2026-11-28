@@ -107,7 +107,7 @@ def test_login_invalid_credentials(client, monkeypatch):
         "/api/auth/login", json={"username": "admin", "password": "wrong"}
     )
     assert res.status_code == 401
-    assert res.get_json() == {"message": "Invalid username or password"}
+    assert res.get_json() == {"message": "Wrong username or password"}
 
 
 def test_login_validation_errors(client):
