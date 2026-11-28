@@ -35,7 +35,7 @@ def login():
 
     authenticated = A.login(username, password)
     if not authenticated:
-        raise ApiError("Invalid username or password", 401)
+        raise ApiError("Wrong username or password", 401)
 
     session["username"] = authenticated
     return jsonify({"message": "Login successful", "username": authenticated})

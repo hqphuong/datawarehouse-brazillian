@@ -1,21 +1,117 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./App.css";
 import DashboardView from "./views/DashboardView.js";
 import OlapView from "./views/OlapView.js";
 import DssView from "./views/DssView.js";
 import { DEV } from "./utils/utils.js";
-
+import LoginView from "./components/LoginView.jsx";
+import {
+  getAuthSession,
+  postAuthLogin,
+  postAuthLogout,
+} from "./data/api.js";
 const TITLES = {
-  dashboard: "Tổng quan giao hàng và SLA",
-  olap: "Truy vấn đa chiều (OLAP)",
-  dss: "DSS Action Center",
+  dashboard: [
+    "Tổng quan giao hàng và SLA",
+    "Giám sát nhanh: vấn đề lớn đến đâu, đang tăng hay giảm, tập trung ở tuyến nào",
+  ],
+  olap: [
+    "Truy vấn đa chiều (OLAP)",
+    "Tự khám phá: trễ ở đâu, khi nào, với nhóm nào",
+  ],
+  dss: ["DSS Action Center", "Nên xem xét làm gì và kết quả ước tính ra sao"],
 };
 export default function App() {
   const [page, setPage] = useState("dashboard"),
     [open, setOpen] = useState(true),
     [year, setYear] = useState("all"),
     [sim, setSim] = useState({ error: false }),
-    [dssRoute, setDssRoute] = useState(null);
+    [dssRoute, setDssRoute] = useState(null),
+    [username, setUsername] = useState(null),
+    [authChecking, setAuthChecking] = useState(true),
+    [authError, setAuthError] = useState(""),
+    [authAttempt, setAuthAttempt] = useState(0),
+    [logoutPending, setLogoutPending] = useState(false),
+    [logoutError, setLogoutError] = useState("");
+  useEffect(() => {
+    let active = true;
+    getAuthSession()
+      .then((result) => {
+        if (!active) return;
+        setUsername(result.authenticated ? result.username : null);
+        setAuthError("");
+      })
+      .catch((error) => {
+        if (active) setAuthError(error.message);
+      })
+      .finally(() => {
+        if (active) setAuthChecking(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [authAttempt]);
+
+  const handleLogin = async (loginUsername, password) => {
+    const result = await postAuthLogin(loginUsername, password);
+    setUsername(result.username);
+    setLogoutError("");
+    setPage("dashboard");
+  };
+
+  const handleLogout = async () => {
+    setLogoutError("");
+    setLogoutPending(true);
+    try {
+      await postAuthLogout();
+      setUsername(null);
+      setDssRoute(null);
+      setPage("dashboard");
+    } catch (error) {
+      setLogoutError(error.message || "Logout failed. Please try again.");
+    } finally {
+      setLogoutPending(false);
+    }
+  };
+
+  if (authChecking) {
+    return (
+      <main
+        className="min-h-screen flex items-center justify-center bg-[#f8fafc] p-4"
+        aria-busy="true"
+      >
+        <div className="panel px-6 py-4 text-sm text-slate-600">
+          Checking login session...
+        </div>
+      </main>
+    );
+  }
+  if (authError) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-[#f8fafc] p-4">
+        <section className="panel w-full max-w-md space-y-3 p-6 text-center">
+          <h1 className="font-semibold text-slate-900">
+            Authentication service unavailable
+          </h1>
+          <p className="text-sm text-red-800" role="alert">
+            {authError}
+          </p>
+          <button
+            className="btn btn-main"
+            onClick={() => {
+              setAuthError("");
+              setAuthChecking(true);
+              setAuthAttempt((attempt) => attempt + 1);
+            }}
+          >
+            Retry
+          </button>
+        </section>
+      </main>
+    );
+  }
+  if (!username) return <LoginView onLogin={handleLogin} />;
+
   const nav = [
     ["dashboard", "▦", "BI Dashboard"],
     ["olap", "▤", "OLAP"],
@@ -72,15 +168,37 @@ export default function App() {
           ))}
         </nav>
         {open && (
-          <div className="mt-auto p-3 text-[11px] text-slate-400 border-t border-white/10">
-            Star schema: Fact_Delivery_SLA
+          <div className="mt-auto p-2 border-t border-white/10">
+            <div className="truncate px-3 pb-1 text-[11px] text-slate-400" title={username}>
+              {username}
+            </div>
+            {logoutError && (
+              <p className="px-3 pb-1 text-[11px] text-red-300" role="alert">
+                {logoutError}
+              </p>
+            )}
+            <button
+              onClick={handleLogout}
+              disabled={logoutPending}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded text-xs text-slate-400 hover:bg-white/5 hover:text-slate-200 transition-colors text-left"
+              title="Đăng xuất khỏi hệ thống"
+            >
+              <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"></path>
+              </svg>
+              <span>{logoutPending ? "Đang đăng xuất..." : "Đăng xuất"}</span>
+            </button>
           </div>
         )}
       </aside>
       <main className="flex-1 min-w-0">
         <header className="sticky top-0 z-30 bg-white border-b border-slate-300 px-5 py-2.5 flex items-center justify-between gap-3">
           <div>
-            <h1 className="font-semibold leading-tight">{TITLES[page]}</h1>
+            <h1 className="font-semibold leading-tight">{TITLES[page][0]}</h1>
+            <p className="text-xs text-slate-500">
+              {TITLES[page][1]} · Dashboard và OLAP dùng dữ liệu backend; DSS
+              hiện vẫn dùng dữ liệu mẫu
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <div className="md:hidden flex gap-1">
@@ -108,19 +226,16 @@ export default function App() {
           </div>
         </header>
         <div className="px-5 py-4 pb-8 max-w-[1400px] mx-auto">
-          {/* Giữ cả 3 view mounted: chuyển tab chỉ ẩn/hiện, không fetch lại API. */}
-          <div className={page === "dashboard" ? undefined : "hidden"}>
+          {page === "dashboard" && (
             <DashboardView
               year={year}
               setYear={setYear}
               sim={sim}
               goDss={goDss}
             />
-          </div>
-          <div className={page === "olap" ? undefined : "hidden"}>
-            <OlapView sim={sim} />
-          </div>
-          <div className={page === "dss" ? undefined : "hidden"}>
+          )}
+          {page === "olap" && <OlapView sim={sim} />}
+          {page === "dss" && (
             <DssView
               key={dssRoute || "-"}
               year={year}
@@ -128,7 +243,7 @@ export default function App() {
               sim={sim}
               initRoute={dssRoute}
             />
-          </div>
+          )}
         </div>
       </main>
     </div>
