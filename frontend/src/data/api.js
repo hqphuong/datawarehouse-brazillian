@@ -10,6 +10,7 @@ async function request(path, { method = "GET", query, body, signal } = {}) {
 
   const response = await fetch(url, {
     method,
+    credentials: "same-origin",
     signal,
     headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
@@ -20,6 +21,18 @@ async function request(path, { method = "GET", query, body, signal } = {}) {
   }
   return data;
 }
+
+export const getAuthSession = (signal) => request("/auth/me", { signal });
+
+export const postAuthLogin = (username, password, signal) =>
+  request("/auth/login", {
+    method: "POST",
+    body: { username, password },
+    signal,
+  });
+
+export const postAuthLogout = (signal) =>
+  request("/auth/logout", { method: "POST", signal });
 
 export const getOlapMetadata = (signal) =>
   request("/olap/metadata", { signal });
